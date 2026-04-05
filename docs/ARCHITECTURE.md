@@ -91,7 +91,7 @@
   - **타입 안전성**: 잘못된 페이로드를 emit하거나 처리할 수 없게 되어 컴파일 단계에서 오류를 방지함.
   - **확장성**: 새로운 기능 추가 시 기존 코드를 수정하지 않고 새로운 핸들러를 등록(`register`)하는 것만으로 기능 확장이 가능함.
 
-  > **참고**: 구현 예제 및 상세 가이드는 [EVENT_SYSTEM_GUIDE.md](./EVENT_SYSTEM_GUIDE.md)를 참고하세요.
+  > **참고**: 구현 예제 및 상세 가이드는 AI 에이전트 전용 스킬인 [.agents/skills/event-ipc-integration/SKILL.md](../.agents/skills/event-ipc-integration/SKILL.md)를 참고하여 개발을 지시하세요.
 
 #### ADR-005: Unified PowerShell & Registry Management (Standardization)
 
@@ -298,7 +298,7 @@
   - **Option Richness**: `radio`, `select` 타입의 개별 옵션에 상세 설명을 추가하여 직관적인 UI를 제공합니다.
 - **무결성 검증**: 빌드 시 `config-integrity.test.ts`를 통해 기본값과 설정 UI의 정합성(ID 일치 여부 등)을 검증합니다.
 - **계정 검증 메커니즘**: `Account` 카테고리에서는 백그라운드 로그인을 통해 계정 ID를 실시간 추출하며, 결과에 따라 버튼의 성격(Login/Logout)을 동적으로 변경합니다 (ADR-019 참고).
-- **상세 가이드**: 영속성 모델(Persistence Model) 및 타입별 구현 예제는 **[SETTINGS_GUIDE.md](./SETTINGS_GUIDE.md)**를 참고하세요.
+- **상세 가이드**: 영속성 모델(Persistence Model) 및 타입별 구현 예제는 AI 전용 스킬 문서 **[Skill: Settings Management](../.agents/skills/settings-management/SKILL.md)**를 참고하세요.
 
 > [!IMPORTANT]
 > **개발 원칙 (UI Separation)**: `SettingsContent.tsx` 및 하위 아이템(Renderer)에는 특정 설정의 비즈니스 로직을 하드코딩하지 않습니다. 모든 로직은 `settings-config.ts`의 `onInit`, `onChangeListener` 훅을 통해 구현하여 렌더러의 순수성과 확장성을 유지해야 합니다.
@@ -316,9 +316,9 @@
 | 기능 영역 (Area)        | 관련 문서 (Document)                                                                                         | 비고 (Note)                             |
 | :---------------------- | :----------------------------------------------------------------------------------------------------------- | :-------------------------------------- |
 | **설정 구성**           | [Settings Config](file:///d:/project_poe2/POE2-unofficial-launcher/src/renderer/settings/settings-config.ts) | 실제 노출 항목 정의 및 상호작용 로직    |
-| **설정 사용 가이드**    | [SETTINGS_GUIDE.md](./SETTINGS_GUIDE.md)                                                                     | 각 설정 타입별 코드 예제 및 가이드      |
+| **설정 사용 가이드**    | [Skill: Settings Management](../.agents/skills/settings-management/SKILL.md)                                 | 설정 추가 로직 및 패턴 (AI 구동 스킬)   |
 | **설정 인터페이스**     | [Settings Logic](file:///d:/project_poe2/POE2-unofficial-launcher/src/renderer/settings/types.ts)            | `SettingItem` 등 핵심 타입 정의         |
-| **이벤트 시스템**       | [EVENT_SYSTEM_GUIDE.md](./EVENT_SYSTEM_GUIDE.md)                                                             | ADR-004 관련 상세 가이드                |
+| **이벤트 시스템**       | [Skill: Event & IPC](../.agents/skills/event-ipc-integration/SKILL.md)                                       | ADR-004 관련 상세 가이드 (AI 구동 스킬) |
 | **빌드 및 릴리즈 (EN)** | [README.md](../README.md)                                                                                    | 설치 및 빌드 환경 변수 설명             |
 | **빌드 및 릴리즈 (KR)** | [README_KR.md](./README_KR.md)                                                                               | 설치 및 빌드 (한국어 버전)              |
 | **UAC 우회**            | [uac.ts](../src/main/utils/uac.ts)                                                                           | 시스템 레지스트리 및 작업 스케줄러 로직 |
