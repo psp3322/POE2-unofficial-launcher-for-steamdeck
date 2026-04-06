@@ -41,6 +41,13 @@ An Electron-based unofficial launcher designed to automate the launch process fo
 
 ## Development
 
+### Architecture Guidelines
+This project enforces strict Maintainability Patterns, particularly Type-Safe Events and Declarative Settings. Before submitting any codebase modifications, please refer to the following architectural patterns:
+
+- [Architecture Specifications](./docs/ARCHITECTURE.md)
+- [Architecture Pattern: EventBus & IPC Integration](./.agents/skills/event-ipc-integration/SKILL.md)
+- [Architecture Pattern: Settings Management](./.agents/skills/settings-management/SKILL.md)
+
 ### Prerequisites
 
 - Node.js (v18 or higher)

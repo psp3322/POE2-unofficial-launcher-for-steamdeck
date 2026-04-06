@@ -41,6 +41,13 @@
 
 ## 개발용 설정
 
+### 아키텍처 및 구현 패턴
+본 프로젝트는 코드의 유지보수성을 극대화하기 위해 '타입-안전성을 갖춘 이벤트 버스'와 '선언적 설정' 규격을 엄격하게 통제 및 적용하고 있습니다. 내부 코드를 수정하기 전, 아래의 아키텍처 명세서 및 구현 패턴 문서를 반드시 확인하시기 바랍니다:
+
+- [아키텍처 명세서](./ARCHITECTURE.md)
+- [구현 패턴: 이벤트 버스 및 IPC 연계 파이프라인](../.agents/skills/event-ipc-integration/SKILL.md)
+- [구현 패턴: 선언적 설정(Settings) 관리](../.agents/skills/settings-management/SKILL.md)
+
 ### 준비물
 
 - Node.js (v18 이상)
