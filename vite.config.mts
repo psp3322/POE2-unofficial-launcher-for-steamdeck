@@ -52,6 +52,11 @@ export default defineConfig({
         entry: "src/main/main.ts",
         vite: {
           define: defines,
+          build: {
+            rollupOptions: {
+              external: ["canvas"],
+            },
+          },
         },
       },
       {

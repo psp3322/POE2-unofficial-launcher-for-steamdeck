@@ -19,6 +19,13 @@
     icon: "build/icon.ico",
     target: "nsis",
   },
+  extraResources: [
+    {
+      from: "src/main/assets",
+      to: "assets",
+      filter: ["**/*"],
+    },
+  ],
   publish: {
     provider: "github",
     owner: "NERDHEAD-lab",

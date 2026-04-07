@@ -1,12 +1,20 @@
 import { ipcMain } from "electron";
-import { FontManager } from "../services/FontManager";
-import { AppConfig } from "../../shared/types";
-import { Logger } from "../utils/logger";
+
+import { AppConfig } from "../../../shared/types";
+import { FontManager } from "../../services/FontManager";
+import { Logger } from "../../utils/logger";
 
 const logger = new Logger({ type: "ipc-font", typeColor: "#3498db" });
 
 export class FontIpcHandler {
+  private static registered = false;
+
   public static register() {
+    if (this.registered) {
+      logger.log("Font IPC Handlers already registered. Skipping.");
+      return;
+    }
+
     ipcMain.handle("font:get-fonts", () => {
       try {
         const fm = FontManager.getInstance();
@@ -67,7 +75,8 @@ export class FontIpcHandler {
       const fm = FontManager.getInstance();
       fm.openCustomFontsFolder();
     });
-    
+
     logger.log("Font IPC Handlers registered");
+    this.registered = true;
   }
 }

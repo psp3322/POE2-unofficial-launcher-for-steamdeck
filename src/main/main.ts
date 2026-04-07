@@ -1757,8 +1757,8 @@ async function createWindow() {
     eventBus.emit(event.type, appContext, event.payload);
   });
 
-  // Register Tool Handlers
-  eventBus.register(ToolForceRepairHandler);
+  // Register Handlers
+  eventBus.register(ToolForceRepairHandler); // EventBus based
 
   printBanner();
   logger.log("[Main] Main Logger initialized.");
@@ -2707,6 +2707,9 @@ ipcMain.handle("theme:sync-force", async () => {
 });
 
 app.whenReady().then(async () => {
+  // Register Font IPC Handlers early to avoid race conditions
+  FontIpcHandler.register();
+
   // Register custom protocol to load assets from %appdata%
   protocol.handle("asset", (request) => {
     try {
@@ -2751,8 +2754,6 @@ app.whenReady().then(async () => {
 
   // Load and cache remote themes explicitly.
   themeCacheManager.init();
-
-  FontIpcHandler.register();
 
   // Also check for theme updates when the window regains focus (respects 24h cooldown internally)
   app.on("browser-window-focus", () => {

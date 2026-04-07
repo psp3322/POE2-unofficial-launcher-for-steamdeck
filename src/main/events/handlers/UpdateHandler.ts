@@ -2,7 +2,7 @@ import axios from "axios";
 import { app } from "electron";
 import { autoUpdater } from "electron-updater";
 
-import { UpdateStatus, ChangelogItem } from "../../../shared/types";
+import { UpdateStatus } from "../../../shared/types";
 import { changelogService } from "../../services/ChangelogService";
 import { logger } from "../../utils/logger";
 import { PowerShellManager } from "../../utils/powershell";

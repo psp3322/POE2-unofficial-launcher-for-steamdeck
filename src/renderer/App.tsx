@@ -222,7 +222,10 @@ function App() {
     window.addEventListener("open-font-manager-modal", handleOpenFontModal);
 
     return () => {
-      window.removeEventListener("open-font-manager-modal", handleOpenFontModal);
+      window.removeEventListener(
+        "open-font-manager-modal",
+        handleOpenFontModal,
+      );
     };
   }, []);
 
@@ -990,7 +993,6 @@ function App() {
         isVisible={isFontModalOpen}
         onClose={() => setIsFontModalOpen(false)}
         gameId={config.activeGame}
-        serviceId={config.serviceChannel}
       />
 
       <NoticeModal
