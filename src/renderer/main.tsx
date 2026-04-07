@@ -4,8 +4,9 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import DebugConsole from "./components/DebugConsole";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { DEBUG_APP_CONFIG } from "../shared/config";
 import FatalErrorModal from "./components/modals/FatalErrorModal";
+import { GameStateProvider } from "./contexts/GameStateContext";
+import { DEBUG_APP_CONFIG } from "../shared/config";
 import { logger } from "./utils/logger";
 
 import "./App.css";
@@ -87,7 +88,9 @@ export const Root = () => {
         />
       )}
       <ErrorBoundary onFatalError={setFatalError}>
-        {isDebug ? <DebugConsole /> : <App />}
+        <GameStateProvider>
+          {isDebug ? <DebugConsole /> : <App />}
+        </GameStateProvider>
       </ErrorBoundary>
     </div>
   );

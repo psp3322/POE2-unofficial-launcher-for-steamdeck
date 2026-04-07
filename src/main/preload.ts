@@ -47,6 +47,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   onGameStatusUpdate: (callback: (status: GameStatusState) => void) => {
     ipcRenderer.on("game-status-update", (_event, status) => callback(status));
   },
+  getGameStatus: (gameId: string, serviceId: string) =>
+    ipcRenderer.invoke("game:get-status", gameId, serviceId),
   onDebugLog: (callback: (log: DebugLogEvent["payload"]) => void) => {
     const handler = (_event: IpcRendererEvent, log: DebugLogEvent["payload"]) =>
       callback(log);

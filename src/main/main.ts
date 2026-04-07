@@ -59,6 +59,7 @@ import { GameInstallCheckHandler } from "./events/handlers/GameInstallCheckHandl
 import {
   GameProcessStartHandler,
   GameProcessStopHandler,
+  getGlobalGameStatus,
 } from "./events/handlers/GameProcessStatusHandler";
 import { GameStatusSyncHandler } from "./events/handlers/GameStatusSyncHandler";
 import { InactiveWindowVisibilityHandler } from "./events/handlers/InactiveWindowVisibilityHandler";
@@ -2043,6 +2044,14 @@ function initDebugWindow(triggerSource: string = "Dynamic") {
           : `file://${path.join(process.env.DIST as string, "index.html")}${DEBUG_APP_CONFIG.HASH}`;
 
         debugWindow.loadURL(debugUrl);
+
+        // --- State Synchronization ---
+        ipcMain.handle(
+          "game:get-status",
+          (_event, gameId: string, serviceId: string) => {
+            return getGlobalGameStatus(gameId, serviceId);
+          },
+        );
 
         // --- ProcessWatcher Integration for Debug Window ---
         debugWindow.on("blur", () => {

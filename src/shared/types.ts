@@ -211,6 +211,10 @@ export interface ElectronAPI {
   onGameStatusUpdate?: (callback: (status: GameStatusState) => void) => void;
   onDebugLog?: (callback: (log: DebugLogPayload) => void) => () => void;
   onPatchProgress?: (callback: (progress: PatchProgress) => void) => () => void; // New
+  getGameStatus: (
+    gameId: string,
+    serviceId: string,
+  ) => Promise<GameStatusState>;
   onShowPatchFixModal?: (
     callback: (data: {
       autoStart: boolean;
