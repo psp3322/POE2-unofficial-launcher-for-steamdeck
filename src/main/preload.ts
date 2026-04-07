@@ -273,4 +273,16 @@ contextBridge.exposeInMainWorld("electronAPI", {
     return () => ipcRenderer.off("app:fatal-error", handler);
   },
   reportFatalReady: () => ipcRenderer.send("app:fatal-error-ready"),
+
+  // [Font Management]
+  font: {
+    getFonts: () => ipcRenderer.invoke("font:get-fonts"),
+    addFont: (filePath: string) => ipcRenderer.invoke("font:add-font", filePath),
+    removeFont: (id: string) => ipcRenderer.invoke("font:remove-font", id),
+    applyFont: (service: AppConfig["serviceChannel"], fontId: string) => 
+      ipcRenderer.invoke("font:apply-font", service, fontId),
+    restoreFont: (service: AppConfig["serviceChannel"]) => 
+      ipcRenderer.invoke("font:restore-font", service),
+    openCustomFontsFolder: () => ipcRenderer.invoke("font:open-folder"),
+  },
 });

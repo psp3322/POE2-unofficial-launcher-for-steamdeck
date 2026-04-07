@@ -39,6 +39,7 @@ import NoticeModal from "./components/modals/NoticeModal";
 import { OnboardingModal } from "./components/modals/OnboardingModal";
 import { PatchFixModal } from "./components/modals/PatchFixModal";
 import { PatchReservationModal } from "./components/modals/PatchReservationModal";
+import FontManagerModal from "./components/modals/FontManagerModal";
 import NewsDashboard from "./components/news/NewsDashboard";
 import NewsSection from "./components/news/NewsSection";
 import SettingsModal from "./components/settings/SettingsModal";
@@ -141,6 +142,7 @@ function App() {
 
   // UI States (Local only)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isFontModalOpen, setIsFontModalOpen] = useState(false);
   const [settingsFocusId, setSettingsFocusId] = useState<string | undefined>(
     undefined,
   );
@@ -202,7 +204,7 @@ function App() {
   // Changelog Listener
   useEffect(() => {
     if (window.electronAPI?.onShowChangelog) {
-      return window.electronAPI.onShowChangelog((data) => {
+      window.electronAPI.onShowChangelog((data) => {
         // Handle both old (array only) and new (object) payload for safety
         if (Array.isArray(data)) {
           setChangelogs(data);
@@ -214,6 +216,14 @@ function App() {
         setIsChangelogOpen(true);
       });
     }
+
+    // [New] Event Listener for Font Manager
+    const handleOpenFontModal = () => setIsFontModalOpen(true);
+    window.addEventListener("open-font-manager-modal", handleOpenFontModal);
+
+    return () => {
+      window.removeEventListener("open-font-manager-modal", handleOpenFontModal);
+    };
   }, []);
 
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
@@ -974,6 +984,13 @@ function App() {
           skipDaumGameStarterUac: config.skipDaumGameStarterUac,
           serviceChannel: config.serviceChannel,
         }}
+      />
+
+      <FontManagerModal
+        isVisible={isFontModalOpen}
+        onClose={() => setIsFontModalOpen(false)}
+        gameId={config.activeGame}
+        serviceId={config.serviceChannel}
       />
 
       <NoticeModal

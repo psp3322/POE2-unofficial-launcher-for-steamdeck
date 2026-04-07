@@ -55,6 +55,7 @@ import {
 } from "./events/handlers/ConfigSyncHandler";
 import { DebugLogHandler } from "./events/handlers/DebugLogHandler";
 import { DevToolsVisibilityHandler } from "./events/handlers/DevToolsVisibilityHandler";
+import { FontIpcHandler } from "./events/handlers/FontIpcHandler";
 import { GameInstallCheckHandler } from "./events/handlers/GameInstallCheckHandler";
 import {
   GameProcessStartHandler,
@@ -2750,6 +2751,8 @@ app.whenReady().then(async () => {
 
   // Load and cache remote themes explicitly.
   themeCacheManager.init();
+
+  FontIpcHandler.register();
 
   // Also check for theme updates when the window regains focus (respects 24h cooldown internally)
   app.on("browser-window-focus", () => {

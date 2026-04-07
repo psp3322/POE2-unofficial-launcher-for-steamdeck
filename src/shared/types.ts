@@ -179,6 +179,24 @@ export interface RevalidateThemeColorsEventDetail {
   assetPath: string;
 }
 
+export interface CustomFontData {
+  id: string; // UUID
+  alias: string; // 폰트 표시명 (예: "내 커스텀 폰트")
+  fileName: string; // "fake_spoqa.ttf"
+  originalName: string; // 메타데이터 원본 이름
+  previewDataUrl?: string; // 미리보기 이미지 Data URI (base64)
+  createdAt: number;
+}
+
+export interface FontAPI {
+  getFonts: () => Promise<CustomFontData[]>;
+  addFont: (filePath: string) => Promise<CustomFontData>;
+  removeFont: (id: string) => Promise<void>;
+  applyFont: (service: AppConfig["serviceChannel"], fontId: string) => Promise<void>;
+  restoreFont: (service: AppConfig["serviceChannel"]) => Promise<void>;
+  openCustomFontsFolder: () => Promise<void>;
+}
+
 export interface ElectronAPI {
   getAllChangelogs: () => Promise<ChangelogItem[]>;
   onShowChangelog?: (
@@ -316,6 +334,9 @@ export interface ElectronAPI {
   // [Fatal Error Handling]
   onFatalError: (callback: (errorDetails: string) => void) => () => void;
   reportFatalReady: () => void;
+
+  // [Font Management]
+  font: FontAPI;
 }
 
 export type UpdateStatus =

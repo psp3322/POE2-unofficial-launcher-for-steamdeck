@@ -462,6 +462,57 @@ try {
     });
   }
 
+  public async installSystemFont(ttfFilePath: string, targetFontName: string, ttfFileName: string): Promise<boolean> {
+    const script = `
+try {
+  $sourcePath = "${ttfFilePath}"
+  $destPath = "$env:windir\\Fonts\\${ttfFileName}"
+  
+  # Copy file to Windows Fonts directory
+  Copy-Item -Path $sourcePath -Destination $destPath -Force
+  
+  # Registry update
+  $regPath = "HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts"
+  $regName = "${targetFontName} (TrueType)"
+  
+  Set-ItemProperty -Path $regPath -Name $regName -Value "${ttfFileName}"
+  Write-Output "Successfully installed font: ${targetFontName}"
+} catch {
+  Write-Error $_.Exception.Message
+  exit 1
+}
+    `;
+    const result = await this.execute(script, true);
+    return result.code === 0;
+  }
+
+  public async removeSystemFont(targetFontName: string, ttfFileName: string): Promise<boolean> {
+    const script = `
+try {
+  $destPath = "$env:windir\\Fonts\\${ttfFileName}"
+  
+  # Delete file from Windows Fonts directory if exists
+  if (Test-Path $destPath) {
+      Remove-Item -Path $destPath -Force
+  }
+  
+  # Registry update
+  $regPath = "HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts"
+  $regName = "${targetFontName} (TrueType)"
+  
+  if (Get-ItemProperty -Path $regPath -Name $regName -ErrorAction SilentlyContinue) {
+      Remove-ItemProperty -Path $regPath -Name $regName -Force
+  }
+  Write-Output "Successfully removed font: ${targetFontName}"
+} catch {
+  Write-Error $_.Exception.Message
+  exit 1
+}
+    `;
+    const result = await this.execute(script, true);
+    return result.code === 0;
+  }
+
   public cleanup() {
     this.isDestroyed = true;
     this.cleanupSession(this.adminSession);
