@@ -5,6 +5,13 @@ import net from "node:net";
 import { Logger } from "./logger";
 import { AppContext } from "../events/types";
 
+export class UACDeniedException extends Error {
+  constructor(message = "관리자 권한 요청이 사용자에 의해 취소되었습니다.") {
+    super(message);
+    this.name = "UACDeniedException";
+  }
+}
+
 interface PSResult {
   stdout: string;
   stderr: string;
@@ -30,6 +37,7 @@ interface SessionState {
   pendingRequests: Map<string, (res: PSResult) => void>;
   pipePath: string | null;
   initializing: Promise<void> | null;
+  rejectInit?: (reason: unknown) => void;
 }
 
 export class PowerShellManager {
@@ -73,6 +81,7 @@ export class PowerShellManager {
       pendingRequests: new Map(),
       pipePath: null,
       initializing: null,
+      rejectInit: undefined,
     };
   }
 
@@ -112,7 +121,17 @@ export class PowerShellManager {
     }
 
     // 1. Ensure Session
-    await this.ensureSession(session, isAdmin);
+    try {
+      await this.ensureSession(session, isAdmin);
+    } catch (err) {
+      if (err instanceof UACDeniedException) {
+        // 이미 child exit handler에서 warn을 남겼지만 호출부에서도 명확히 에러로 처리
+        throw err;
+      }
+      const msg = `Failed to establish connection to PowerShell session: ${err instanceof Error ? err.message : String(err)}`;
+      logger.error(msg);
+      return { stdout: "", stderr: msg, code: 1 };
+    }
 
     if (!session.socket) {
       const msg = "Failed to establish connection to PowerShell session";
@@ -210,6 +229,7 @@ export class PowerShellManager {
 
     // 3. Start new initialization
     session.initializing = new Promise((resolve, reject) => {
+      session.rejectInit = reject;
       try {
         const pipeId = randomUUID();
         const pipeName = `poe2-launcher-${isAdmin ? "admin" : "normal"}-${pipeId}`;
@@ -268,17 +288,20 @@ export class PowerShellManager {
             this.cleanupSession(session);
             // Ensure promise rejects and clears initializing
             session.initializing = null;
-            reject(err);
+            if (session.rejectInit) session.rejectInit(err);
+            else reject(err);
           });
         });
 
         session.server.on("error", (err) => {
           session.initializing = null;
-          reject(err);
+          if (session.rejectInit) session.rejectInit(err);
+          else reject(err);
         });
       } catch (e) {
         session.initializing = null;
-        reject(e);
+        if (session.rejectInit) session.rejectInit(e);
+        else reject(e);
       }
     });
 
@@ -376,7 +399,7 @@ try {
       spawnArgs = [
         "-NoProfile",
         "-Command",
-        `Start-Process powershell ${startProcessArgs}`,
+        `try { Start-Process powershell ${startProcessArgs} -ErrorAction Stop } catch { exit 1223 }`,
       ];
     } else {
       commandToSpawn = "powershell";
@@ -421,11 +444,21 @@ try {
         return;
       }
 
-      this.failAllPendingRequests(
-        session,
-        isAdmin,
-        `Process exited with code ${code}`,
-      );
+      if (isAdmin && code === 1223) {
+        logger.warn("UAC prompt was canceled by the user.");
+        const uacErr = new UACDeniedException();
+        if (session.rejectInit) {
+          session.rejectInit(uacErr);
+        }
+        this.failAllPendingRequests(session, isAdmin, uacErr.message);
+        return;
+      }
+
+      const errMsg = `Process exited with code ${code}`;
+      if (session.rejectInit) {
+        session.rejectInit(new Error(errMsg));
+      }
+      this.failAllPendingRequests(session, isAdmin, errMsg);
     });
   }
 

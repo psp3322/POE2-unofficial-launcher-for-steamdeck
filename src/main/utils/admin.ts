@@ -53,7 +53,13 @@ export async function ensureAdminSession(): Promise<boolean> {
       true,
     );
     return result.code === 0;
-  } catch (e) {
+  } catch (e: unknown) {
+    if (e instanceof Error && e.name === "UACDeniedException") {
+      logger.warn(
+        "[Admin] UAC prompt was denied by the user. Passing to renderer...",
+      );
+      throw e; // Let IPC catch it and propagate to frontend Toast
+    }
     logger.error("[Admin] Failed to ensure admin session:", e);
     return false;
   }
