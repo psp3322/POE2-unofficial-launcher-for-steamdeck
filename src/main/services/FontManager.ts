@@ -106,15 +106,27 @@ export class FontManager {
       for (const item of manifest) {
         const fontFilePath = path.join(defaultsDir, item.fileName);
 
-        // Skip if alias already exists in library
-        const exists = Array.from(this.fontsMap.values()).some(
+        // Find existing match by alias
+        const existing = Array.from(this.fontsMap.values()).find(
           (f) => f.alias === item.alias,
         );
 
-        if (!exists) {
+        let needsSync = !existing;
+        if (existing) {
+          try {
+            await fs.access(path.join(this.customFontsDir, existing.fileName));
+          } catch {
+            logger.warn(
+              `Font file missing for ${existing.alias}, re-syncing...`,
+            );
+            needsSync = true;
+          }
+        }
+
+        if (needsSync) {
           logger.info(`Syncing default font: ${item.alias} (${item.fileName})`);
           try {
-            await this.addFontInternal(fontFilePath, item.alias);
+            await this.addFontInternal(fontFilePath, item.alias, true);
             logger.info(`Successfully synced: ${item.alias}`);
           } catch (err) {
             logger.error(
@@ -139,6 +151,7 @@ export class FontManager {
   private async addFontInternal(
     sourceFilePath: string,
     customAlias?: string,
+    isDefault?: boolean,
   ): Promise<CustomFontData> {
     const font = await new Promise<opentype.Font>((resolve, reject) => {
       opentype.load(sourceFilePath, (err, font) => {
@@ -174,6 +187,7 @@ export class FontManager {
       originalName,
       previewDataUrl,
       createdAt: Date.now(),
+      isDefault,
     };
 
     await this.saveFontMetadata(data);

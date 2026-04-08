@@ -178,7 +178,7 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
                   onChange={(e) => setSelectedFontKakao(e.target.value)}
                   disabled={isLoading || isKakaoRunning || fonts.length === 0}
                 >
-                  <option value="">적용할 폰트를 선택하세요</option>
+                  <option value="">기본값</option>
                   {fonts.map((f) => (
                     <option key={`kakao-${f.id}`} value={f.id}>
                       {f.alias}
@@ -228,7 +228,7 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
                   onChange={(e) => setSelectedFontGGG(e.target.value)}
                   disabled={isLoading || isGGGRunning || fonts.length === 0}
                 >
-                  <option value="">적용할 폰트를 선택하세요</option>
+                  <option value="">기본값</option>
                   {fonts.map((f) => (
                     <option key={`ggg-${f.id}`} value={f.id}>
                       {f.alias}
@@ -263,7 +263,7 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
 
           <div className="font-section" style={{ flex: 1, marginTop: "12px" }}>
             <div className="font-section-title">
-              <span>로컬 폰트 라이브러리</span>
+              <span>내 폰트 목록</span>
               <div className="font-library-actions">
                 <button
                   className="font-control-inline-btn"
@@ -339,14 +339,20 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
                         </div>
                       )}
                     </div>
-                    <button
-                      className="font-icon-btn danger"
-                      onClick={(e) => handleDeleteFont(f.id, e)}
-                      disabled={isLoading}
-                      title="삭제"
-                    >
-                      <span className="material-symbols-outlined">delete</span>
-                    </button>
+                    {f.isDefault ? (
+                      <span className="font-default-badge">기본값</span>
+                    ) : (
+                      <button
+                        className="font-icon-btn danger"
+                        onClick={(e) => handleDeleteFont(f.id, e)}
+                        disabled={isLoading}
+                        title="삭제"
+                      >
+                        <span className="material-symbols-outlined">
+                          delete
+                        </span>
+                      </button>
+                    )}
                   </div>
                 ))
               )}

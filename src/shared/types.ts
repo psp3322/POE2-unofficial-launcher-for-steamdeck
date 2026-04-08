@@ -186,13 +186,17 @@ export interface CustomFontData {
   originalName: string; // 메타데이터 원본 이름
   previewDataUrl?: string; // 미리보기 이미지 Data URI (base64)
   createdAt: number;
+  isDefault?: boolean;
 }
 
 export interface FontAPI {
   getFonts: () => Promise<CustomFontData[]>;
   addFont: (filePath: string) => Promise<CustomFontData>;
   removeFont: (id: string) => Promise<void>;
-  applyFont: (service: AppConfig["serviceChannel"], fontId: string) => Promise<void>;
+  applyFont: (
+    service: AppConfig["serviceChannel"],
+    fontId: string,
+  ) => Promise<void>;
   restoreFont: (service: AppConfig["serviceChannel"]) => Promise<void>;
   openCustomFontsFolder: () => Promise<void>;
 }
