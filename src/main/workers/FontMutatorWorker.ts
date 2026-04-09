@@ -1,51 +1,70 @@
+import fs from "node:fs";
 import { parentPort } from "node:worker_threads";
 
-import opentype from "opentype.js";
+import { Font } from "fonteditor-core";
 
 /**
- * Mutates the font names to match the target game's expectations.
+ * [Phase 1] 폰트 메타데이터 변조 워커 (Precision Mutator)
+ *
+ * - fonteditor-core를 사용하여 Name Table(ID 1, 2, 4, 6, 16, 17)을 정밀 주입합니다.
+ * - 모든 타겟 메타데이터는 상단 MUTATION_RULES에 정의되어 관리가 용이합니다.
  */
-const mutateNames = (obj: Record<string, unknown>, newName: string) => {
-  if (!obj) return;
-  for (const key of Object.keys(obj)) {
-    const val = obj[key];
-    if (typeof val === "object" && val !== null) {
-      for (const lang of Object.keys(val as Record<string, unknown>)) {
-        (val as Record<string, unknown>)[lang] = newName;
-      }
-    } else if (typeof val === "string") {
-      obj[key] = newName;
-    }
-  }
-};
+
+import { FontMutationRule } from "../../shared/font-targets";
+
+interface MutatorMessage {
+  filePath: string;
+  rule: FontMutationRule;
+}
 
 if (parentPort) {
-  parentPort.on("message", (data) => {
-    const { filePath, newName } = data;
+  parentPort.on("message", (data: MutatorMessage) => {
+    const { filePath, rule } = data;
 
-    opentype.load(filePath, (err: Error | null, font?: opentype.Font) => {
-      if (err || !font) {
-        parentPort?.postMessage({
-          error: err?.message || "Failed to load font.",
-        });
-        return;
+    try {
+      if (!rule) {
+        throw new Error("변조 규칙(rule) 객체가 전달되지 않았습니다.");
       }
 
-      try {
-        mutateNames(font.names as unknown as Record<string, unknown>, newName);
-        const buffer = font.toArrayBuffer();
-        parentPort?.postMessage(
-          {
-            success: true,
-            buffer: buffer,
-          },
-          [buffer],
-        ); // Use Transferable for performance
-      } catch (e: unknown) {
-        parentPort?.postMessage({
-          error: (e as Error).message || "Unknown error during mutation.",
-        });
-      }
-    });
+      // 1. 폰트 로드
+      const buffer = fs.readFileSync(filePath);
+      const font = Font.create(buffer, { type: "ttf" });
+      const fontData = font.get();
+      const name = fontData.name;
+
+      // 2. Name Table 주입 (ID 1, 2, 4, 6, 16, 17)
+      // 모든 언어 레코드(en, ko 등)를 동일하게 맞춰 윈도우 타이틀 중복/깨짐 방지
+      name.fontFamily = rule.family; // ID 1
+      name.fontSubFamily = rule.subfamily; // ID 2
+      name.fullName = rule.fullName; // ID 4
+      name.postScriptName = rule.postScript; // ID 6
+      name.preferredFamily = rule.family; // ID 16
+      name.preferredSubFamily = rule.subfamily; // ID 17
+
+      // Unique ID (ID 3) 생성
+      name.uniqueSubFamily = `${rule.postScript};${name.version || "1.000"}`;
+
+      // 3. 변조된 버퍼 생성 및 반환
+      const outputData = font.write({ type: "ttf" });
+      const finalBuffer = Buffer.from(outputData as Uint8Array);
+
+      // Transferable로 넘기기 위해 ArrayBuffer 추출
+      const arrayBuffer = finalBuffer.buffer.slice(
+        finalBuffer.byteOffset,
+        finalBuffer.byteOffset + finalBuffer.byteLength,
+      );
+
+      parentPort?.postMessage(
+        {
+          success: true,
+          buffer: arrayBuffer,
+        },
+        [arrayBuffer as ArrayBuffer],
+      );
+    } catch (e: unknown) {
+      parentPort?.postMessage({
+        error: (e as Error).message || "변조 과정 중 알 수 없는 오류 발생",
+      });
+    }
   });
 }

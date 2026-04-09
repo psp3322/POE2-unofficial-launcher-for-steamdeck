@@ -526,6 +526,10 @@ ipcMain.handle("debug:get-history", () => {
   return getLogHistory();
 });
 
+ipcMain.handle("game:get-status", (_event, gameId: string, serviceId: string) => {
+  return getGlobalGameStatus(gameId, serviceId);
+});
+
 // [Removed] Old session:logout handler (duplicates new partitioned one)
 
 ipcMain.handle("config:set", (_event, key: string, value: unknown) => {
@@ -2045,14 +2049,6 @@ function initDebugWindow(triggerSource: string = "Dynamic") {
           : `file://${path.join(process.env.DIST as string, "index.html")}${DEBUG_APP_CONFIG.HASH}`;
 
         debugWindow.loadURL(debugUrl);
-
-        // --- State Synchronization ---
-        ipcMain.handle(
-          "game:get-status",
-          (_event, gameId: string, serviceId: string) => {
-            return getGlobalGameStatus(gameId, serviceId);
-          },
-        );
 
         // --- ProcessWatcher Integration for Debug Window ---
         debugWindow.on("blur", () => {

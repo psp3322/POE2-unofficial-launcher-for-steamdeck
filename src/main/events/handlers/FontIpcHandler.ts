@@ -1,6 +1,5 @@
 import { ipcMain } from "electron";
 
-import { AppConfig } from "../../../shared/types";
 import { FontManager } from "../../services/FontManager";
 import { Logger } from "../../utils/logger";
 
@@ -25,14 +24,45 @@ export class FontIpcHandler {
       }
     });
 
+    ipcMain.handle("font:get-unified-fonts", async () => {
+      try {
+        const fm = FontManager.getInstance();
+        return await fm.getUnifiedFonts();
+      } catch (err) {
+        logger.error("Failed to get unified fonts", err);
+        throw err;
+      }
+    });
+
     ipcMain.handle("font:add-font", async (_, filePath: string) => {
       try {
+        if (!filePath) throw new Error("파일 경로가 유효하지 않습니다.");
         const fm = FontManager.getInstance();
         return await fm.addFont(filePath);
       } catch (err) {
         logger.error("Failed to add font", err);
-        throw err; // Renderer will catch and show error toast
+        throw err; 
       }
+    });
+
+    ipcMain.handle("font:pick-file", async (event) => {
+      const win = import("electron").then(({ BrowserWindow }) => 
+        BrowserWindow.fromWebContents(event.sender)
+      );
+      const targetWin = await win;
+      if (!targetWin) return null;
+
+      const { dialog } = await import("electron");
+      const { canceled, filePaths } = await dialog.showOpenDialog(targetWin, {
+        title: "새 폰트 선택",
+        filters: [
+          { name: "Font Files", extensions: ["ttf", "otf"] }
+        ],
+        properties: ["openFile"]
+      });
+
+      if (canceled || filePaths.length === 0) return null;
+      return filePaths[0];
     });
 
     ipcMain.handle("font:remove-font", async (_, id: string) => {
@@ -45,31 +75,25 @@ export class FontIpcHandler {
       }
     });
 
-    ipcMain.handle(
-      "font:apply-font",
-      async (_, service: AppConfig["serviceChannel"], fontId: string) => {
-        try {
-          const fm = FontManager.getInstance();
-          await fm.applyFont(service, fontId);
-        } catch (err) {
-          logger.error(`Failed to apply font ${fontId} to ${service}`, err);
-          throw err;
-        }
-      },
-    );
+    ipcMain.handle("font:update-alias", async (_, id: string, newAlias: string) => {
+      try {
+        const fm = FontManager.getInstance();
+        await fm.updateAlias(id, newAlias);
+      } catch (err) {
+        logger.error(`Failed to update alias for ${id}`, err);
+        throw err;
+      }
+    });
 
-    ipcMain.handle(
-      "font:restore-font",
-      async (_, service: AppConfig["serviceChannel"]) => {
-        try {
-          const fm = FontManager.getInstance();
-          await fm.restoreFont(service);
-        } catch (err) {
-          logger.error(`Failed to restore font for ${service}`, err);
-          throw err;
-        }
-      },
-    );
+    ipcMain.handle("font:apply-batch", async (_, assignments: Record<string, string | null>) => {
+      try {
+        const fm = FontManager.getInstance();
+        await fm.applyBatch(assignments);
+      } catch (err) {
+        logger.error("Failed to apply batch fonts", err);
+        throw err;
+      }
+    });
 
     ipcMain.handle("font:open-folder", () => {
       const fm = FontManager.getInstance();

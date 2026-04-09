@@ -277,13 +277,15 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // [Font Management]
   font: {
     getFonts: () => ipcRenderer.invoke("font:get-fonts"),
+    getUnifiedFonts: () => ipcRenderer.invoke("font:get-unified-fonts"),
+    pickFontFile: () => ipcRenderer.invoke("font:pick-file"),
     addFont: (filePath: string) =>
       ipcRenderer.invoke("font:add-font", filePath),
     removeFont: (id: string) => ipcRenderer.invoke("font:remove-font", id),
-    applyFont: (service: AppConfig["serviceChannel"], fontId: string) =>
-      ipcRenderer.invoke("font:apply-font", service, fontId),
-    restoreFont: (service: AppConfig["serviceChannel"]) =>
-      ipcRenderer.invoke("font:restore-font", service),
+    updateAlias: (id: string, newAlias: string) =>
+      ipcRenderer.invoke("font:update-alias", id, newAlias),
+    applyBatch: (assignments: Record<string, string | null>) =>
+      ipcRenderer.invoke("font:apply-batch", assignments),
     openCustomFontsFolder: () => ipcRenderer.invoke("font:open-folder"),
     onFontUpdated: (callback: () => void) => {
       const handler = () => callback();

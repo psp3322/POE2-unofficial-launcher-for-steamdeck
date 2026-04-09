@@ -191,20 +191,26 @@ export interface CustomFontData {
   fileName: string; // "fake_spoqa.ttf"
   originalName: string; // 메타데이터 원본 이름
   previewDataUrl?: string; // 미리보기 이미지 Data URI (base64)
+  previewVersion?: number; // 미리보기 스타일 버전
   createdAt: number;
   isDefault?: boolean;
 }
 
+export interface UnifiedFontData extends CustomFontData {
+  appliedServices: string[];
+  isUnknown?: boolean;
+}
+
 export interface FontAPI {
   getFonts: () => Promise<CustomFontData[]>;
+  getUnifiedFonts: () => Promise<UnifiedFontData[]>;
+  pickFontFile: () => Promise<string | null>;
   addFont: (filePath: string) => Promise<CustomFontData>;
   removeFont: (id: string) => Promise<void>;
-  applyFont: (
-    service: AppConfig["serviceChannel"],
-    fontId: string,
-  ) => Promise<void>;
-  restoreFont: (service: AppConfig["serviceChannel"]) => Promise<void>;
+  updateAlias: (id: string, newAlias: string) => Promise<void>;
+  applyBatch: (assignments: Record<string, string | null>) => Promise<void>;
   openCustomFontsFolder: () => Promise<void>;
+  onFontUpdated: (callback: () => void) => () => void;
 }
 
 export interface ElectronAPI {

@@ -472,15 +472,19 @@ try {
   $sourcePath = "${ttfFilePath}"
   $destPath = "$env:windir\\Fonts\\${ttfFileName}"
   
-  # 1. Copy file to Windows Fonts directory
+  # 1. 이전 유력 파일 제거 (충돌 방지)
+  if (Test-Path $destPath) { Remove-Item $destPath -Force }
+
+  # 2. 보안 차단 해제 및 Fonts 경로로 복사
+  Unblock-File -Path $sourcePath
   Copy-Item -Path $sourcePath -Destination $destPath -Force
-  
-  # 2. Registry update
+
+  # 3. 레지스트리 등록
   $regPath = "HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts"
   $regName = "${targetFontName} (TrueType)"
   Set-ItemProperty -Path $regPath -Name $regName -Value "${ttfFileName}"
 
-  # 3. Real-time notification using Win32 API
+  # 4. GDI/User32 API를 통한 실시간 전파
   $Signature = @'
     [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
     public static extern int AddFontResource(string lpszFilename);
@@ -493,7 +497,7 @@ try {
   [void]$Win32API::AddFontResource($destPath)
   [void]$Win32API::PostMessage(0xffff, 0x001D, [IntPtr]::Zero, [IntPtr]::Zero) # HWND_BROADCAST, WM_FONTCHANGE
   
-  Write-Output "Successfully installed and notified system: ${targetFontName}"
+  Write-Output "Successfully installed: ${targetFontName}"
 } catch {
   Write-Error $_.Exception.Message
   exit 1
@@ -510,16 +514,15 @@ try {
     const script = `
 try {
   $destPath = "$env:windir\\Fonts\\${ttfFileName}"
-  
-  # 1. Registry update
   $regPath = "HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts"
   $regName = "${targetFontName} (TrueType)"
   
+  # 1. 레지스트리 제거
   if (Get-ItemProperty -Path $regPath -Name $regName -ErrorAction SilentlyContinue) {
       Remove-ItemProperty -Path $regPath -Name $regName -Force
   }
 
-  # 2. Real-time removal using Win32 API
+  # 2. 리소스 해제 통지
   $Signature = @'
     [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
     public static extern bool RemoveFontResource(string lpFileName);
@@ -532,12 +535,12 @@ try {
   [void]$Win32API::RemoveFontResource($destPath)
   [void]$Win32API::PostMessage(0xffff, 0x001D, [IntPtr]::Zero, [IntPtr]::Zero) # HWND_BROADCAST, WM_FONTCHANGE
 
-  # 3. Delete file if exists
+  # 3. 폰트 파일 제거
   if (Test-Path $destPath) {
       Remove-Item -Path $destPath -Force
   }
 
-  Write-Output "Successfully removed and notified system: ${targetFontName}"
+  Write-Output "Successfully removed: ${targetFontName}"
 } catch {
   Write-Error $_.Exception.Message
   exit 1
