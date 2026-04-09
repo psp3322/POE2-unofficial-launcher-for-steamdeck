@@ -40,6 +40,7 @@ import { OnboardingModal } from "./components/modals/OnboardingModal";
 import { PatchFixModal } from "./components/modals/PatchFixModal";
 import { PatchReservationModal } from "./components/modals/PatchReservationModal";
 import FontManagerModal from "./components/modals/FontManagerModal";
+import FontCatalogModal from "./components/modals/FontCatalogModal";
 import NewsDashboard from "./components/news/NewsDashboard";
 import NewsSection from "./components/news/NewsSection";
 import SettingsModal from "./components/settings/SettingsModal";
@@ -143,6 +144,7 @@ function App() {
   // UI States (Local only)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isFontModalOpen, setIsFontModalOpen] = useState(false);
+  const [isFontCatalogOpen, setIsFontCatalogOpen] = useState(false);
   const [settingsFocusId, setSettingsFocusId] = useState<string | undefined>(
     undefined,
   );
@@ -993,6 +995,21 @@ function App() {
         isVisible={isFontModalOpen}
         onClose={() => setIsFontModalOpen(false)}
         gameId={config.activeGame}
+        onOpenCatalog={() => setIsFontCatalogOpen(true)}
+      />
+
+      <FontCatalogModal
+        isVisible={isFontCatalogOpen}
+        onClose={() => setIsFontCatalogOpen(false)}
+        installedFonts={[]} // FontManagerModal에서 갱신된 데이터를 받을 수도 있음 (추후 고도화)
+        onManualAdd={() => {
+          setIsFontCatalogOpen(false);
+          // 윈도우 기반 수동 추가 트리거 (FontManagerModal의 로직 재사용 가능)
+          window.dispatchEvent(new CustomEvent("trigger-manual-font-add"));
+        }}
+        onFontInstalled={() => {
+          // 폰트 설치 시 UI 갱신 유도
+        }}
       />
 
       <NoticeModal

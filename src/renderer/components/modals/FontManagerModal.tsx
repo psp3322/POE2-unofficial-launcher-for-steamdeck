@@ -1,7 +1,8 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useCallback } from "react";
 
 import { AppConfig, UnifiedFontData } from "../../../shared/types";
 import { useGameState } from "../../contexts/GameStateContext";
+import { FontPreviewGenerator } from "../../utils/FontPreviewGenerator";
 import { Toast } from "../ui/Toast";
 import "./FontManagerModal.css";
 
@@ -9,6 +10,7 @@ interface FontManagerModalProps {
   isVisible: boolean;
   onClose: () => void;
   gameId: AppConfig["activeGame"];
+  onOpenCatalog: () => void;
 }
 
 type ServiceKey = "Kakao Games" | "GGG";
@@ -17,23 +19,28 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
   isVisible,
   onClose,
   gameId,
+  onOpenCatalog,
 }) => {
   const [fonts, setFonts] = useState<UnifiedFontData[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("");
-  
+
   // 현재 에디팅 중인 폰트 ID 및 별명
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
 
   // 서비스별 할당 상태 (로컬 변경 추적용)
-  const [assignments, setAssignments] = useState<Record<string, string | null>>({});
+  const [assignments, setAssignments] = useState<Record<string, string | null>>(
+    {},
+  );
   const [selectedFontId, setSelectedFontId] = useState<string>("DEFAULT");
   const [hoveredFontId, setHoveredFontId] = useState<string | null>(null);
 
   // Toast State
   const [toastMsg, setToastMsg] = useState("");
-  const [toastVariant, setToastVariant] = useState<"default" | "success" | "warning" | "error" | "white">("default");
+  const [toastVariant, setToastVariant] = useState<
+    "default" | "success" | "warning" | "error" | "white"
+  >("default");
   const [toastVisible, setToastVisible] = useState(false);
   const toastTimerRef = React.useRef<NodeJS.Timeout | null>(null);
 
@@ -45,7 +52,8 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
   const modalRef = React.useRef<HTMLDivElement>(null);
   const { getActiveGameState, syncGameState } = useGameState();
 
-  const isKakaoRunning = getActiveGameState(gameId, "Kakao Games").status === "running";
+  const isKakaoRunning =
+    getActiveGameState(gameId, "Kakao Games").status === "running";
   const isGGGRunning = getActiveGameState(gameId, "GGG").status === "running";
 
   const sortedFonts = useMemo(() => {
@@ -58,29 +66,35 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
 
   const displayFont = useMemo(() => {
     const targetId = hoveredFontId || selectedFontId;
-    return fonts.find(f => f.id === targetId) || fonts.find(f => f.isDefault);
+    return (
+      fonts.find((f) => f.id === targetId) || fonts.find((f) => f.isDefault)
+    );
   }, [fonts, selectedFontId, hoveredFontId]);
 
   // 초기 상태 대비 변경 여부 확인 (적용 버튼 활성화 기준)
   const isDirty = useMemo(() => {
     return Object.entries(assignments).some(([service, fontId]) => {
-      const currentAppliedFont = fonts.find(f => f.appliedServices?.includes(service));
-      const currentAppliedId = currentAppliedFont ? currentAppliedFont.id : "DEFAULT";
+      const currentAppliedFont = fonts.find((f) =>
+        f.appliedServices?.includes(service),
+      );
+      const currentAppliedId = currentAppliedFont
+        ? currentAppliedFont.id
+        : "DEFAULT";
       return fontId !== currentAppliedId;
     });
   }, [assignments, fonts]);
 
-  const fetchFonts = async () => {
+  const fetchFonts = useCallback(async () => {
     try {
       const data = await window.electronAPI.font.getUnifiedFonts();
       setFonts(data);
-      
+
       const initialAssignments: Record<string, string | null> = {
         "Kakao Games": "DEFAULT",
-        "GGG": "DEFAULT"
+        GGG: "DEFAULT",
       };
-      data.forEach(f => {
-        f.appliedServices?.forEach(s => {
+      data.forEach((f) => {
+        f.appliedServices?.forEach((s) => {
           initialAssignments[s] = f.id;
         });
       });
@@ -88,7 +102,7 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
     } catch (e) {
       console.error("Failed to fetch fonts", e);
     }
-  };
+  }, []); // Only state setters used, so empty deps
 
   useEffect(() => {
     if (isVisible) {
@@ -96,27 +110,44 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
       syncGameState(gameId, "Kakao Games");
       syncGameState(gameId, "GGG");
     }
-  }, [isVisible, gameId, syncGameState]);
+  }, [isVisible, gameId, syncGameState, fetchFonts]);
 
   useEffect(() => {
     const removeHandler = window.electronAPI.font.onFontUpdated(() => {
       fetchFonts();
     });
-    return () => removeHandler();
-  }, []);
 
-  const handleToggleAssignment = (e: React.MouseEvent, service: ServiceKey, fontId: string) => {
+    const handleManualAddEvent = () => handleAddFont();
+    window.addEventListener("trigger-manual-font-add", handleManualAddEvent);
+
+    return () => {
+      removeHandler();
+      window.removeEventListener(
+        "trigger-manual-font-add",
+        handleManualAddEvent,
+      );
+    };
+  }, [fetchFonts, handleAddFont]);
+
+  const handleToggleAssignment = (
+    e: React.MouseEvent,
+    service: ServiceKey,
+    fontId: string,
+  ) => {
     e.stopPropagation(); // 행 선택 방지
     if (service === "Kakao Games" && isKakaoRunning) return;
     if (service === "GGG" && isGGGRunning) return;
 
-    setAssignments(prev => ({
+    setAssignments((prev) => ({
       ...prev,
-      [service]: fontId
+      [service]: fontId,
     }));
   };
 
-  const showToast = (msg: string, variant: "default" | "success" | "warning" | "error" | "white" = "default") => {
+  const showToast = (
+    msg: string,
+    variant: "default" | "success" | "warning" | "error" | "white" = "default",
+  ) => {
     setToastMsg(msg);
     setToastVariant(variant);
     setToastVisible(true);
@@ -140,7 +171,7 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
     }
   };
 
-  const handleAddFont = async () => {
+  const handleAddFont = useCallback(async () => {
     setIsLoading(true);
     setLoadingMessage("폰트 파일을 선택하고 있습니다...");
     try {
@@ -151,8 +182,20 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
         return;
       }
 
-      setLoadingMessage("폰트 정보를 분석하고 등록하는 중입니다...");
-      await window.electronAPI.font.addFont(filePath);
+      setLoadingMessage("폰트 정보를 분석하고 미리보기를 생성하는 중입니다...");
+
+      // 1. 폰트 파일 데이터 읽기
+      const buffer = await window.electronAPI.font.readFile(filePath);
+
+      // 2. 렌더러 Canvas를 이용한 미리보기 생성
+      const fileName = filePath.split(/[\\/]/).pop() || "unknown.ttf";
+      const blob = new Blob([buffer], { type: "font/ttf" });
+      const file = new File([blob], fileName);
+      const previewDataUrl = await FontPreviewGenerator.generatePreview(file);
+
+      // 3. 메인 프로세스에 전달 및 등록
+      await window.electronAPI.font.addFont(filePath, previewDataUrl);
+
       await fetchFonts();
       showToast("새 폰트가 라이브러리에 추가되었습니다.", "success");
     } catch (err: unknown) {
@@ -162,15 +205,18 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
       setIsLoading(false);
       setLoadingMessage("");
     }
-  };
+  }, [fetchFonts]); // showToast is also defined in component, but typically stable if using state setters
 
   const handleDeleteFont = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    const font = fonts.find(f => f.id === id);
+    const font = fonts.find((f) => f.id === id);
     if (!font) return;
-    
+
     if (font.appliedServices && font.appliedServices.length > 0) {
-      return showToast("현재 서비스에 할당된 폰트는 삭제할 수 없습니다. '기본값'으로 변경 후 삭제해 주세요.", "warning");
+      return showToast(
+        "현재 서비스에 할당된 폰트는 삭제할 수 없습니다. '기본값'으로 변경 후 삭제해 주세요.",
+        "warning",
+      );
     }
 
     setPendingDeleteId(id);
@@ -180,7 +226,7 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
 
   const confirmDelete = async () => {
     if (!pendingDeleteId) return;
-    
+
     setIsLoading(true);
     setShowDeleteConfirm(false);
     try {
@@ -197,7 +243,12 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
     }
   };
 
-  const startEdit = (e: React.MouseEvent, id: string, currentAlias: string, isDefault?: boolean) => {
+  const startEdit = (
+    e: React.MouseEvent,
+    id: string,
+    currentAlias: string,
+    isDefault?: boolean,
+  ) => {
     e.stopPropagation();
     if (isDefault) return;
     setEditingId(id);
@@ -219,11 +270,17 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
   if (!isVisible) return null;
 
   return (
-    <div className={`font-modal-overlay ${isVisible ? "visible" : ""}`} onClick={onClose}>
-      <div className={`font-modal ${isVisible ? "visible" : ""}`} ref={modalRef} onClick={(e) => e.stopPropagation()}>
-        
+    <div
+      className={`font-modal-overlay ${isVisible ? "visible" : ""}`}
+      onClick={onClose}
+    >
+      <div
+        className={`font-modal ${isVisible ? "visible" : ""}`}
+        ref={modalRef}
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Shared Toast Notification */}
-        <Toast 
+        <Toast
           message={toastMsg}
           visible={toastVisible}
           container={modalRef.current}
@@ -252,14 +309,22 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
         {/* Selected/Hovered Font Preview (Top) */}
         <div className="font-top-preview-section">
           {displayFont?.previewDataUrl ? (
-            <img src={displayFont.previewDataUrl} alt="Preview" className="font-preview-main-img" />
+            <img
+              src={displayFont.previewDataUrl}
+              alt="Preview"
+              className="font-preview-main-img"
+            />
           ) : (
             <span className="font-preview-placeholder">
-              {displayFont?.isDefault ? "기본 시스템 폰트는 미리보기를 제공하지 않습니다." : "미리보기를 생성할 수 없는 폰트입니다."}
+              {displayFont?.isDefault
+                ? "기본 시스템 폰트는 미리보기를 제공하지 않습니다."
+                : "미리보기를 생성할 수 없는 폰트입니다."}
             </span>
           )}
           <div className="font-preview-info">
-            {displayFont ? `${displayFont.alias} (${displayFont.originalName})` : "폰트를 선택해 주세요."}
+            {displayFont
+              ? `${displayFont.alias} (${displayFont.originalName})`
+              : "폰트를 선택해 주세요."}
           </div>
         </div>
 
@@ -272,7 +337,10 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
             <span>삭제</span>
           </div>
 
-          <div className="font-list-container" onMouseLeave={() => setHoveredFontId(null)}>
+          <div
+            className="font-list-container"
+            onMouseLeave={() => setHoveredFontId(null)}
+          >
             {sortedFonts.map((f) => {
               const isDefaultRow = f.id === "DEFAULT";
               const isActiveKakao = assignments["Kakao Games"] === f.id;
@@ -280,17 +348,19 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
               const isSelected = selectedFontId === f.id;
 
               return (
-                <div 
-                  key={f.id} 
+                <div
+                  key={f.id}
                   className={`font-matrix-row ${isSelected ? "selected" : ""}`}
                   onClick={() => setSelectedFontId(f.id)}
                   onMouseEnter={() => setHoveredFontId(f.id)}
                 >
-                  
                   {/* Alias Cell */}
-                  <div className={`font-alias-cell ${f.isDefault ? "readonly" : ""}`} onClick={(e) => startEdit(e, f.id, f.alias, f.isDefault)}>
+                  <div
+                    className={`font-alias-cell ${f.isDefault ? "readonly" : ""}`}
+                    onClick={(e) => startEdit(e, f.id, f.alias, f.isDefault)}
+                  >
                     {editingId === f.id ? (
-                      <input 
+                      <input
                         autoFocus
                         className="font-alias-input"
                         value={editValue}
@@ -300,7 +370,9 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
                         onKeyDown={(e) => e.key === "Enter" && submitEdit()}
                       />
                     ) : (
-                      <span className={`font-alias-text ${isDefaultRow ? "font-label-default" : ""}`}>
+                      <span
+                        className={`font-alias-text ${isDefaultRow ? "font-label-default" : ""}`}
+                      >
                         {f.alias}
                       </span>
                     )}
@@ -313,9 +385,11 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
 
                   {/* Kakao Radio Column */}
                   <div className="font-radio-cell">
-                    <div 
+                    <div
                       className={`font-radio-wrapper ${isActiveKakao ? "active" : ""}`}
-                      onClick={(e) => handleToggleAssignment(e, "Kakao Games", f.id)}
+                      onClick={(e) =>
+                        handleToggleAssignment(e, "Kakao Games", f.id)
+                      }
                     >
                       <div className="font-radio-indicator"></div>
                     </div>
@@ -323,7 +397,7 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
 
                   {/* GGG Radio Column */}
                   <div className="font-radio-cell">
-                    <div 
+                    <div
                       className={`font-radio-wrapper ${isActiveGGG ? "active" : ""}`}
                       onClick={(e) => handleToggleAssignment(e, "GGG", f.id)}
                     >
@@ -331,18 +405,29 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
                     </div>
                   </div>
 
-                    {/* Delete Cell */}
-                    <div className="font-delete-cell">
-                      {f.isDefault ? (
-                        <button className="font-delete-btn disabled" title="런처에 기본 내장된 폰트입니다." disabled>
-                          <span className="material-symbols-outlined">delete_forever</span>
-                        </button>
-                      ) : (
-                        <button className="font-delete-btn" onClick={(e) => handleDeleteFont(e, f.id)}>
-                          <span className="material-symbols-outlined">delete</span>
-                        </button>
-                      )}
-                    </div>
+                  {/* Delete Cell */}
+                  <div className="font-delete-cell">
+                    {f.isDefault ? (
+                      <button
+                        className="font-delete-btn disabled"
+                        title="런처에 기본 내장된 폰트입니다."
+                        disabled
+                      >
+                        <span className="material-symbols-outlined">
+                          delete_forever
+                        </span>
+                      </button>
+                    ) : (
+                      <button
+                        className="font-delete-btn"
+                        onClick={(e) => handleDeleteFont(e, f.id)}
+                      >
+                        <span className="material-symbols-outlined">
+                          delete
+                        </span>
+                      </button>
+                    )}
+                  </div>
                 </div>
               );
             })}
@@ -351,19 +436,27 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
 
         <div className="font-footer">
           <div className="font-library-actions">
-            <button className="font-btn secondary" onClick={handleAddFont} disabled={isLoading}>
+            <button
+              className="font-btn secondary"
+              onClick={onOpenCatalog}
+              disabled={isLoading}
+            >
               <span className="material-symbols-outlined">add_circle</span>
               <span>새 폰트 추가</span>
             </button>
-            <button className="font-btn secondary" onClick={() => window.electronAPI.font.openCustomFontsFolder()} title="폴더 열기">
+            <button
+              className="font-btn secondary"
+              onClick={() => window.electronAPI.font.openCustomFontsFolder()}
+              title="폴더 열기"
+            >
               <span className="material-symbols-outlined">folder_open</span>
             </button>
           </div>
 
           <div className="font-main-actions">
-            <button 
-              className="font-btn primary" 
-              onClick={handleApply} 
+            <button
+              className="font-btn primary"
+              onClick={handleApply}
               disabled={!isDirty || isLoading}
             >
               <span className="material-symbols-outlined">check_circle</span>
@@ -374,18 +467,36 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
 
         {/* Custom Confirm Modal for Deletion */}
         {showDeleteConfirm && (
-          <div className="confirm-overlay" onClick={() => setShowDeleteConfirm(false)}>
+          <div
+            className="confirm-overlay"
+            onClick={() => setShowDeleteConfirm(false)}
+          >
             <div className="confirm-modal" onClick={(e) => e.stopPropagation()}>
               <div className="confirm-header">폰트 삭제 확인</div>
               <div className="confirm-body">
-                '<strong>{pendingDeleteAlias}</strong>' 항목을 정말 삭제하시겠습니까?<br/>
-                <small style={{ color: "#888", display: "inline-block", marginTop: "8px" }}>
+                '<strong>{pendingDeleteAlias}</strong>' 항목을 정말
+                삭제하시겠습니까?
+                <br />
+                <small
+                  style={{
+                    color: "#888",
+                    display: "inline-block",
+                    marginTop: "8px",
+                  }}
+                >
                   (이 작업은 되돌릴 수 없습니다.)
                 </small>
               </div>
               <div className="confirm-footer">
-                <button className="confirm-btn cancel" onClick={() => setShowDeleteConfirm(false)}>취소</button>
-                <button className="confirm-btn primary" onClick={confirmDelete}>삭제하기</button>
+                <button
+                  className="confirm-btn cancel"
+                  onClick={() => setShowDeleteConfirm(false)}
+                >
+                  취소
+                </button>
+                <button className="confirm-btn primary" onClick={confirmDelete}>
+                  삭제하기
+                </button>
               </div>
             </div>
           </div>

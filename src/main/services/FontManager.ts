@@ -3,10 +3,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { Worker } from "node:worker_threads";
 
-import { createCanvas } from "canvas";
 import { app } from "electron";
 import opentype from "opentype.js";
 
+import { SyncEngine, RemoteFontItem } from "./SyncEngine";
 import {
   FONT_MUTATION_DEFINITIONS,
   TARGET_SERVICES_CONFIG,
@@ -23,11 +23,14 @@ const logger = new Logger({ type: "font-manager", typeColor: "#f39c12" });
 export class FontManager {
   private static instance: FontManager;
   private readonly customFontsDir: string;
+  private readonly syncEngine: SyncEngine;
   private fontsMap: Map<string, CustomFontData> = new Map();
+  private remoteCatalog: RemoteFontItem[] = [];
   private initPromise: Promise<void>;
 
   private constructor() {
     this.customFontsDir = path.join(app.getPath("userData"), "CustomFonts");
+    this.syncEngine = SyncEngine.getInstance();
     this.initPromise = this.ensureDirectory().catch((err) => {
       logger.error(`Failed to ensure CustomFonts directory: ${err}`);
     });
@@ -47,102 +50,22 @@ export class FontManager {
       await fs.mkdir(this.customFontsDir, { recursive: true });
     }
     await this.loadFontsFromDisk();
-    await this.initializeDefaultFonts();
+    // 백그라운드에서 원격 카탈로그 동기화 시작
+    this.syncWithRemote().catch((err) => {
+      logger.error(`Background sync failed: ${err}`);
+    });
   }
 
   /**
-   * 런처 기본 제공 폰트 초기화 (manifest.json 기반)
+   * 원격 저장소와 카탈로그 동기화
    */
-  private async initializeDefaultFonts() {
-    logger.info("Initializing default fonts...");
-    try {
-      let defaultsDir = path.join(
-        process.resourcesPath,
-        "assets",
-        "fonts",
-        "defaults",
-      );
+  public async syncWithRemote(force: boolean = false): Promise<void> {
+    this.remoteCatalog = await this.syncEngine.fetchCatalog({ force });
+    this.notifyRenderer();
+  }
 
-      if (!app.isPackaged) {
-        // [Development] Override with local source paths
-        const devDirs = [
-          path.join(
-            app.getAppPath(),
-            "src",
-            "main",
-            "assets",
-            "fonts",
-            "defaults",
-          ),
-          path.join(
-            process.cwd(),
-            "src",
-            "main",
-            "assets",
-            "fonts",
-            "defaults",
-          ),
-        ];
-
-        for (const dir of devDirs) {
-          try {
-            await fs.access(dir);
-            defaultsDir = dir;
-            break;
-          } catch {
-            continue;
-          }
-        }
-      }
-
-      if (!defaultsDir) {
-        logger.error(
-          "Could not locate defaults font directory in any environment.",
-        );
-        return;
-      }
-
-      const manifestPath = path.join(defaultsDir, "manifest.json");
-      try {
-        await fs.access(manifestPath);
-      } catch {
-        logger.warn(`Manifest not found at: ${manifestPath}`);
-        return;
-      }
-
-      const manifestContent = await fs.readFile(manifestPath, "utf-8");
-      const manifest = JSON.parse(manifestContent) as {
-        fileName: string;
-        alias: string;
-      }[];
-
-      for (const item of manifest) {
-        const fontFilePath = path.join(defaultsDir, item.fileName);
-        const existing = Array.from(this.fontsMap.values()).find(
-          (f) => f.alias === item.alias,
-        );
-
-        let needsSync = !existing;
-        if (existing) {
-          try {
-            await fs.access(path.join(this.customFontsDir, existing.fileName));
-          } catch {
-            needsSync = true;
-          }
-        }
-
-        if (needsSync) {
-          try {
-            await this.addFontInternal(fontFilePath, item.alias, true);
-          } catch (err) {
-            logger.error(`Failed to sync default font ${item.alias}: ${err}`);
-          }
-        }
-      }
-      this.notifyRenderer();
-    } catch (err) {
-      logger.error(`Error in initializeDefaultFonts: ${err}`);
-    }
+  public getCatalog(): RemoteFontItem[] {
+    return this.remoteCatalog;
   }
 
   /**
@@ -152,6 +75,7 @@ export class FontManager {
     sourceFilePath: string,
     customAlias?: string,
     isDefault?: boolean,
+    previewDataUrl: string = "",
   ): Promise<CustomFontData> {
     if (!sourceFilePath) throw new Error("유효하지 않은 파일 경로입니다.");
 
@@ -186,7 +110,9 @@ export class FontManager {
               font.names.fontFamily?.en ||
               font.names.fullName?.en ||
               "Unknown Font";
-            const previewDataUrl = this.generatePreviewPNG(font);
+
+            // 프리뷰 데이터: 외부(렌더러/GitHub)에서 전달받은 데이터를 우선 사용
+            const finalPreviewDataUrl = previewDataUrl;
 
             const id = randomUUID();
             const extension = path.extname(sourceFilePath).toLowerCase();
@@ -200,7 +126,7 @@ export class FontManager {
                 alias: customAlias || originalName,
                 fileName: newFileName,
                 originalName,
-                previewDataUrl,
+                previewDataUrl: finalPreviewDataUrl,
                 previewVersion: 2,
                 createdAt: Date.now(),
                 isDefault,
@@ -218,6 +144,19 @@ export class FontManager {
     });
   }
 
+  /**
+   * 새 폰트 등록 (Public)
+   */
+  public async addFont(filePath: string, previewDataUrl: string = "") {
+    await this.initPromise;
+    return await this.addFontInternal(
+      filePath,
+      undefined,
+      false,
+      previewDataUrl,
+    );
+  }
+
   private async loadFontsFromDisk() {
     try {
       const files = await fs.readdir(this.customFontsDir);
@@ -229,34 +168,12 @@ export class FontManager {
           );
           const data = JSON.parse(content) as CustomFontData;
 
-          // [Migration] 꼼꼼하게: 구버전 미리보기 자동 갱신
-          if (!data.previewVersion || data.previewVersion < 2) {
-            logger.log(`[Migration] Updating preview style for: ${data.alias}`);
-            const fontFile = path.join(this.customFontsDir, data.fileName);
-            try {
-              await new Promise<void>((resolve, reject) => {
-                opentype.load(
-                  fontFile,
-                  async (
-                    err: Error | null,
-                    font: opentype.Font | undefined,
-                  ) => {
-                    if (err || !font) return reject(err);
-                    data.previewDataUrl = this.generatePreviewPNG(font);
-                    data.previewVersion = 2;
-                    await this.saveFontMetadata(data);
-                    resolve();
-                  },
-                );
-              });
-            } catch (err) {
-              logger.error(`Migration failed for ${data.alias}: ${err}`);
-            }
-          }
-
           this.fontsMap.set(data.id, data);
         }
       }
+
+      // 로드 완료 후 디스크 정리 수행
+      this.cleanupOrphanedFiles();
     } catch (err) {
       logger.error(`Error loading fonts from disk: ${err}`);
     }
@@ -394,9 +311,48 @@ export class FontManager {
       if (fontId === currentApplied[service]) continue;
 
       const data = this.fontsMap.get(fontId);
-      if (!data) continue;
+      if (!data) {
+        // [New] 로컬에 없지만 원격 카탈로그에 있는 폰트인지 확인
+        const remoteItem = this.remoteCatalog.find(
+          (item) => item.id === fontId,
+        );
+        if (remoteItem) {
+          logger.info(
+            `Requested font ${remoteItem.alias} is remote. Starting automatic download...`,
+          );
+          const success = await this.syncEngine.downloadFont(remoteItem);
+          if (success) {
+            // 다운로드 성공 시 메타데이터 생성 및 맵 갱신
+            const newData: CustomFontData = {
+              id: remoteItem.id,
+              alias: remoteItem.alias,
+              fileName: remoteItem.fileName,
+              originalName: remoteItem.alias, // 원격 아이템의 경우 alias를 기본 이름으로 사용
+              previewDataUrl: this.syncEngine.getPreviewUrl(
+                remoteItem.previewPath,
+              ),
+              previewVersion: 2,
+              createdAt: new Date(remoteItem.createdAt).getTime(),
+              isDefault: false,
+            };
+            await this.saveFontMetadata(newData);
+            // 메타데이터가 갱신되었으므로 실제 위치 재로딩 없이 바로 진행 가능
+          } else {
+            logger.error(
+              `Automatic download failed for ${remoteItem.alias}. Skipping assignment.`,
+            );
+            continue;
+          }
+        } else {
+          continue;
+        }
+      }
 
-      const sourcePath = path.join(this.customFontsDir, data.fileName);
+      // 갱신된 맵에서 다시 가져옴
+      const fontData = this.fontsMap.get(fontId);
+      if (!fontData) continue;
+
+      const sourcePath = path.join(this.customFontsDir, fontData.fileName);
       for (const targetName of targetNames) {
         const rule = FONT_MUTATION_DEFINITIONS[targetName];
         if (!rule) {
@@ -462,6 +418,18 @@ export class FontManager {
     );
   }
 
+  private async cleanupOrphanedFiles(): Promise<void> {
+    await this.initPromise;
+    const keptFiles: string[] = [];
+
+    this.fontsMap.forEach((f) => {
+      if (f.fileName) keptFiles.push(f.fileName);
+      keptFiles.push(`${f.id}.json`);
+    });
+
+    await this.syncEngine.clearOrphaned(keptFiles);
+  }
+
   private mutateFontName(
     filePath: string,
     rule: FontMutationRule,
@@ -497,53 +465,5 @@ export class FontManager {
         worker.terminate();
       });
     });
-  }
-
-  private generatePreviewPNG(font: opentype.Font): string {
-    try {
-      const text = "패스오브액자일2 - 한글 테스트";
-      const fontSize = 48;
-      const width = 800;
-      const height = 120;
-      const canvas = createCanvas(width, height);
-      const ctx = canvas.getContext("2d");
-
-      // 캔버스 배경은 투명하게 유지
-      ctx.clearRect(0, 0, width, height);
-
-      const x = 20;
-      const y = 80;
-      const fontPath = font.getPath(text, x, y, fontSize);
-
-      // 1. 외곽선 스타일 설정
-      ctx.strokeStyle = "#ffffff";
-      ctx.lineWidth = 6;
-      ctx.lineJoin = "round";
-      ctx.lineCap = "round";
-
-      // 2. 패스를 직접 수동으로 그리기 (Stroke/Fill 분리 제어)
-      ctx.beginPath();
-      fontPath.commands.forEach((cmd: opentype.PathCommand) => {
-        if (cmd.type === "M") ctx.moveTo(cmd.x, cmd.y);
-        else if (cmd.type === "L") ctx.lineTo(cmd.x, cmd.y);
-        else if (cmd.type === "C")
-          ctx.bezierCurveTo(cmd.x1, cmd.y1, cmd.x2, cmd.y2, cmd.x, cmd.y);
-        else if (cmd.type === "Q")
-          ctx.quadraticCurveTo(cmd.x1, cmd.y1, cmd.x, cmd.y);
-        else if (cmd.type === "Z") ctx.closePath();
-      });
-
-      // 흰색 외곽선 먼저 그리기
-      ctx.stroke();
-
-      // 내부 채우기 (어두운 배경 대비 가독성 확보)
-      ctx.fillStyle = "#1a1a1a";
-      ctx.fill();
-
-      return canvas.toDataURL("image/png");
-    } catch (e) {
-      logger.error(`Failed to generate preview PNG: ${e}`);
-      return "";
-    }
   }
 }

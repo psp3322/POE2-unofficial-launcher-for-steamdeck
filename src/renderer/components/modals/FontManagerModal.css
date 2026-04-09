@@ -72,7 +72,7 @@
 /* Top Preview Area */
 .font-top-preview-section {
     padding: 24px;
-    background: rgba(255, 255, 255, 0.02);
+    background: #ffffff;
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
     height: 120px;
     display: flex;

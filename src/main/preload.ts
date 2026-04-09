@@ -279,14 +279,19 @@ contextBridge.exposeInMainWorld("electronAPI", {
     getFonts: () => ipcRenderer.invoke("font:get-fonts"),
     getUnifiedFonts: () => ipcRenderer.invoke("font:get-unified-fonts"),
     pickFontFile: () => ipcRenderer.invoke("font:pick-file"),
-    addFont: (filePath: string) =>
-      ipcRenderer.invoke("font:add-font", filePath),
+    readFile: (filePath: string) =>
+      ipcRenderer.invoke("font:read-file", filePath),
+    addFont: (filePath: string, previewDataUrl?: string) =>
+      ipcRenderer.invoke("font:add-font", filePath, previewDataUrl),
     removeFont: (id: string) => ipcRenderer.invoke("font:remove-font", id),
     updateAlias: (id: string, newAlias: string) =>
       ipcRenderer.invoke("font:update-alias", id, newAlias),
     applyBatch: (assignments: Record<string, string | null>) =>
       ipcRenderer.invoke("font:apply-batch", assignments),
     openCustomFontsFolder: () => ipcRenderer.invoke("font:open-folder"),
+    getCatalog: () => ipcRenderer.invoke("font:get-catalog"),
+    syncCatalog: (force: boolean = false) =>
+      ipcRenderer.invoke("font:sync-catalog", force),
     onFontUpdated: (callback: () => void) => {
       const handler = () => callback();
       ipcRenderer.on("font:updated", handler);

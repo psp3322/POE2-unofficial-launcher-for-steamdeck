@@ -1,0 +1,296 @@
+.font-catalog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(8px);
+  z-index: 2100; /* FontManagerModal(2000)보다 높게 설정 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.font-catalog-overlay.visible {
+  opacity: 1;
+  visibility: visible;
+}
+
+.font-catalog-modal {
+  width: 900px;
+  max-width: 95vw;
+  height: 80vh;
+  background: linear-gradient(145deg, #1e1e1e 0%, #121212 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+  transform: translateY(20px) scale(0.98);
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  overflow: hidden;
+}
+
+.font-catalog-overlay.visible .font-catalog-modal {
+  transform: translateY(0) scale(1);
+}
+
+/* Header */
+.catalog-header {
+  padding: 24px 32px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.catalog-header-info h2 {
+  margin: 0;
+  font-size: 24px;
+  color: var(--theme-primary, #f39c12);
+  font-weight: 700;
+  text-shadow: 0 0 10px rgba(243, 156, 18, 0.3);
+}
+
+.catalog-header-info p {
+  margin: 4px 0 0 0;
+  font-size: 13px;
+  color: #888;
+}
+
+.catalog-close-btn {
+  background: none;
+  border: none;
+  color: #666;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.catalog-close-btn:hover {
+  color: #fff;
+}
+
+.catalog-refresh-btn {
+  background: none;
+  border: none;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 8px;
+}
+
+.catalog-refresh-btn:hover {
+  color: var(--theme-primary, #f39c12);
+}
+
+.catalog-refresh-btn.spinning {
+  animation: spin 1s linear infinite;
+  color: var(--theme-primary, #f39c12);
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Content */
+.catalog-content {
+  flex: 1;
+  padding: 20px 32px;
+  overflow-y: auto;
+}
+
+.catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+  gap: 20px;
+}
+
+/* Font Card */
+.font-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.font-card:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.15);
+  transform: translateY(-2px);
+}
+
+.font-card-preview {
+  width: 100%;
+  height: 100px;
+  background: #ffffff;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.font-card-preview img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  opacity: 0;
+  transition: opacity 0.5s ease;
+}
+
+.font-card-preview img.loaded {
+  opacity: 1;
+}
+
+.font-card-preview .placeholder {
+  color: #444;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.font-card-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.font-card-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: #eee;
+}
+
+.font-card-meta {
+  font-size: 11px;
+  color: #666;
+  margin-top: 4px;
+  display: flex;
+  gap: 8px;
+}
+
+.font-card-btn {
+  height: 36px;
+  border-radius: 6px;
+  border: none;
+  background: #333;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s;
+  position: relative;
+  overflow: hidden;
+}
+
+.font-card-btn:hover:not(:disabled) {
+  background: #444;
+}
+
+.font-card-btn.download-ready {
+  background: #27ae60;
+}
+
+.font-card-btn.download-ready:hover {
+  background: #2ecc71;
+}
+
+.font-card-btn.installed {
+  background: #1a1a1a;
+  color: #666;
+  cursor: default;
+}
+
+/* Progress Bar in Button */
+.card-progress-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.1);
+  transition: width 0.2s ease;
+}
+
+/* Footer */
+.catalog-footer {
+  padding: 24px 32px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  display: flex;
+  justify-content: space-between;
+}
+
+.footer-left {
+  display: flex;
+  gap: 12px;
+}
+
+.manual-add-btn {
+  background: transparent;
+  border: 1px solid #444;
+  color: #aaa;
+  padding: 0 16px;
+  height: 40px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.manual-add-btn:hover {
+  border-color: #666;
+  color: #eee;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.catalog-close-main {
+  background: #333;
+  color: #fff;
+  border: none;
+  padding: 0 24px;
+  height: 40px;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.catalog-close-main:hover {
+  background: #444;
+}
+
+/* Scrollbar Customization */
+.catalog-content::-webkit-scrollbar {
+  width: 6px;
+}
+.catalog-content::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.02);
+}
+.catalog-content::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+.catalog-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
