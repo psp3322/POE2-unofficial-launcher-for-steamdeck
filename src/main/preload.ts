@@ -297,5 +297,15 @@ contextBridge.exposeInMainWorld("electronAPI", {
       ipcRenderer.on("font:updated", handler);
       return () => ipcRenderer.off("font:updated", handler);
     },
+    onDownloadProgress: (
+      callback: (data: { id: string; progress: number }) => void,
+    ) => {
+      const handler = (
+        _event: IpcRendererEvent,
+        data: { id: string; progress: number },
+      ) => callback(data);
+      ipcRenderer.on("font:download-progress", handler);
+      return () => ipcRenderer.off("font:download-progress", handler);
+    },
   },
 });

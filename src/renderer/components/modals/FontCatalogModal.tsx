@@ -32,6 +32,17 @@ const FontCatalogModal: React.FC<FontCatalogModalProps> = ({
     }
   }, [isVisible]);
 
+  useEffect(() => {
+    const removeListener = window.electronAPI.font.onDownloadProgress(
+      (data: { id: string; progress: number }) => {
+        if (downloadingId === data.id) {
+          setDownloadProgress(data.progress);
+        }
+      },
+    );
+    return () => removeListener();
+  }, [downloadingId]);
+
   const loadCatalog = async (force: boolean = false) => {
     if (force) setIsSyncing(true);
     else setIsLoading(true);
@@ -156,6 +167,7 @@ const FontCard: React.FC<FontCardProps> = ({
   onDownload,
 }) => {
   const [isVisible, setIsVisible] = useState(false);
+  const [imgLoaded, setImgLoaded] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -178,13 +190,13 @@ const FontCard: React.FC<FontCardProps> = ({
 
   return (
     <div className="font-card" ref={cardRef}>
-      <div className="font-card-preview">
+      <div className={`font-card-preview ${imgLoaded ? "has-image" : ""}`}>
         {isVisible ? (
           <img
             src={previewUrl}
             alt={item.alias}
-            className="loaded"
-            onLoad={(e) => (e.currentTarget.style.opacity = "1")}
+            className={imgLoaded ? "loaded" : ""}
+            onLoad={() => setImgLoaded(true)}
           />
         ) : (
           <div className="placeholder">썸네일 로딩 중...</div>

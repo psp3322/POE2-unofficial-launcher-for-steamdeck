@@ -193,12 +193,13 @@ export interface CustomFontData {
   previewDataUrl?: string; // 미리보기 이미지 Data URI (base64)
   previewVersion?: number; // 미리보기 스타일 버전
   createdAt: number;
-  isDefault?: boolean;
+  updatedAt: number;
 }
 
 export interface UnifiedFontData extends CustomFontData {
   appliedServices: string[];
   isUnknown?: boolean;
+  isDefault?: boolean; // UI 리스트에서의 식별용으로만 유지
 }
 
 export interface FontAPI {

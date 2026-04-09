@@ -5,7 +5,7 @@ import path from "node:path";
 import axios from "axios";
 import { app } from "electron";
 
-import { logger } from "../utils/logger";
+import { Logger } from "../utils/logger";
 
 const logger = new Logger({ type: "sync-engine", typeColor: "#3498db" });
 
@@ -125,6 +125,7 @@ export class SyncEngine {
         url: `${this.baseUrl}/fonts/${item.fileName}`,
         method: "GET",
         responseType: "arraybuffer",
+        timeout: 60000,
         onDownloadProgress: (progressEvent) => {
           if (progressEvent.total && onProgress) {
             const percent = Math.round(

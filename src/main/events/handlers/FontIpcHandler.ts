@@ -1,3 +1,5 @@
+import fs from "node:fs/promises";
+
 import { ipcMain } from "electron";
 
 import { FontManager } from "../../services/FontManager";

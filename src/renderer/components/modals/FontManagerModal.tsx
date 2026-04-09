@@ -35,6 +35,9 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
   );
   const [selectedFontId, setSelectedFontId] = useState<string>("DEFAULT");
   const [hoveredFontId, setHoveredFontId] = useState<string | null>(null);
+  const [downloadProgressMap, setDownloadProgressMap] = useState<
+    Record<string, number>
+  >({});
 
   // Toast State
   const [toastMsg, setToastMsg] = useState("");
@@ -104,6 +107,70 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
     }
   }, []); // Only state setters used, so empty deps
 
+  const showToast = useCallback(
+    (
+      msg: string,
+      variant:
+        | "default"
+        | "success"
+        | "warning"
+        | "error"
+        | "white" = "default",
+    ) => {
+      setToastMsg(msg);
+      setToastVariant(variant);
+      setToastVisible(true);
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = setTimeout(() => setToastVisible(false), 3000);
+    },
+    [],
+  );
+
+  const handleApply = useCallback(async () => {
+    setIsLoading(true);
+    setLoadingMessage("변경 사항을 시스템에 반영하고 있습니다...");
+    try {
+      await window.electronAPI.font.applyBatch(assignments);
+      await fetchFonts();
+      showToast("변경 사항이 성공적으로 적용되었습니다.", "success");
+    } catch (err: unknown) {
+      const error = err as Error;
+      showToast(`적용 중 오류가 발생했습니다: ${error.message}`, "error");
+    } finally {
+      setIsLoading(false);
+      setLoadingMessage("");
+    }
+  }, [assignments, fetchFonts, showToast]);
+
+  const handleAddFont = useCallback(async () => {
+    setIsLoading(true);
+    setLoadingMessage("폰트 파일을 선택하고 있습니다...");
+    try {
+      const filePath = await window.electronAPI.font.pickFontFile();
+      if (!filePath) {
+        setIsLoading(false);
+        return;
+      }
+
+      setLoadingMessage("폰트 정보를 분석하고 미리보기를 생성하는 중입니다...");
+      const buffer = await window.electronAPI.font.readFile(filePath);
+      const fileName = filePath.split(/[\\/]/).pop() || "unknown.ttf";
+      const blob = new Blob([buffer], { type: "font/ttf" });
+      const file = new File([blob], fileName);
+      const previewDataUrl = await FontPreviewGenerator.generatePreview(file);
+
+      await window.electronAPI.font.addFont(filePath, previewDataUrl);
+      await fetchFonts();
+      showToast("새 폰트가 라이브러리에 추가되었습니다.", "success");
+    } catch (err: unknown) {
+      const error = err as Error;
+      showToast(`폰트 등록 중 오류가 발생했습니다: ${error.message}`, "error");
+    } finally {
+      setIsLoading(false);
+      setLoadingMessage("");
+    }
+  }, [fetchFonts, showToast]);
+
   useEffect(() => {
     if (isVisible) {
       fetchFonts();
@@ -113,15 +180,25 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
   }, [isVisible, gameId, syncGameState, fetchFonts]);
 
   useEffect(() => {
-    const removeHandler = window.electronAPI.font.onFontUpdated(() => {
+    const removeUpdateListener = window.electronAPI.font.onFontUpdated(() => {
       fetchFonts();
     });
+
+    const removeProgressListener = window.electronAPI.font.onDownloadProgress(
+      (data) => {
+        setDownloadProgressMap((prev) => ({
+          ...prev,
+          [data.id]: data.progress,
+        }));
+      },
+    );
 
     const handleManualAddEvent = () => handleAddFont();
     window.addEventListener("trigger-manual-font-add", handleManualAddEvent);
 
     return () => {
-      removeHandler();
+      removeUpdateListener();
+      removeProgressListener();
       window.removeEventListener(
         "trigger-manual-font-add",
         handleManualAddEvent,
@@ -143,69 +220,6 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
       [service]: fontId,
     }));
   };
-
-  const showToast = (
-    msg: string,
-    variant: "default" | "success" | "warning" | "error" | "white" = "default",
-  ) => {
-    setToastMsg(msg);
-    setToastVariant(variant);
-    setToastVisible(true);
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = setTimeout(() => setToastVisible(false), 3000);
-  };
-
-  const handleApply = async () => {
-    setIsLoading(true);
-    setLoadingMessage("변경 사항을 시스템에 반영하고 있습니다...");
-    try {
-      await window.electronAPI.font.applyBatch(assignments);
-      await fetchFonts();
-      showToast("변경 사항이 성공적으로 적용되었습니다.", "success");
-    } catch (err: unknown) {
-      const error = err as Error;
-      showToast(`적용 중 오류가 발생했습니다: ${error.message}`, "error");
-    } finally {
-      setIsLoading(false);
-      setLoadingMessage("");
-    }
-  };
-
-  const handleAddFont = useCallback(async () => {
-    setIsLoading(true);
-    setLoadingMessage("폰트 파일을 선택하고 있습니다...");
-    try {
-      const filePath = await window.electronAPI.font.pickFontFile();
-      if (!filePath) {
-        // 취소된 경우
-        setIsLoading(false);
-        return;
-      }
-
-      setLoadingMessage("폰트 정보를 분석하고 미리보기를 생성하는 중입니다...");
-
-      // 1. 폰트 파일 데이터 읽기
-      const buffer = await window.electronAPI.font.readFile(filePath);
-
-      // 2. 렌더러 Canvas를 이용한 미리보기 생성
-      const fileName = filePath.split(/[\\/]/).pop() || "unknown.ttf";
-      const blob = new Blob([buffer], { type: "font/ttf" });
-      const file = new File([blob], fileName);
-      const previewDataUrl = await FontPreviewGenerator.generatePreview(file);
-
-      // 3. 메인 프로세스에 전달 및 등록
-      await window.electronAPI.font.addFont(filePath, previewDataUrl);
-
-      await fetchFonts();
-      showToast("새 폰트가 라이브러리에 추가되었습니다.", "success");
-    } catch (err: unknown) {
-      const error = err as Error;
-      showToast(`폰트 등록 중 오류가 발생했습니다: ${error.message}`, "error");
-    } finally {
-      setIsLoading(false);
-      setLoadingMessage("");
-    }
-  }, [fetchFonts]); // showToast is also defined in component, but typically stable if using state setters
 
   const handleDeleteFont = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
@@ -243,14 +257,10 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
     }
   };
 
-  const startEdit = (
-    e: React.MouseEvent,
-    id: string,
-    currentAlias: string,
-    isDefault?: boolean,
-  ) => {
+  const startEdit = (e: React.MouseEvent, id: string, currentAlias: string) => {
     e.stopPropagation();
-    if (isDefault) return;
+    // 가상 항목인 '기본값'만 수정 금지
+    if (id === "DEFAULT") return;
     setEditingId(id);
     setEditValue(currentAlias);
   };
@@ -259,8 +269,11 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
     if (!editingId) return;
     try {
       await window.electronAPI.font.updateAlias(editingId, editValue);
+      await fetchFonts();
+      showToast("별칭이 수정되었습니다.", "success");
     } catch (e: unknown) {
       const error = e as Error;
+      // 에러 메시지에서 '이미 ... 별칭을 가진' 문구가 있으면 경고 토스트
       showToast(error.message, "error");
     } finally {
       setEditingId(null);
@@ -309,11 +322,13 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
         {/* Selected/Hovered Font Preview (Top) */}
         <div className="font-top-preview-section">
           {displayFont?.previewDataUrl ? (
-            <img
-              src={displayFont.previewDataUrl}
-              alt="Preview"
-              className="font-preview-main-img"
-            />
+            <div className="font-preview-img-container">
+              <img
+                src={displayFont.previewDataUrl}
+                alt="Preview"
+                className="font-preview-main-img"
+              />
+            </div>
           ) : (
             <span className="font-preview-placeholder">
               {displayFont?.isDefault
@@ -346,6 +361,9 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
               const isActiveKakao = assignments["Kakao Games"] === f.id;
               const isActiveGGG = assignments["GGG"] === f.id;
               const isSelected = selectedFontId === f.id;
+              const currentProgress = downloadProgressMap[f.id] || 0;
+              const isDownloading =
+                currentProgress > 0 && currentProgress < 100;
 
               return (
                 <div
@@ -356,8 +374,8 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
                 >
                   {/* Alias Cell */}
                   <div
-                    className={`font-alias-cell ${f.isDefault ? "readonly" : ""}`}
-                    onClick={(e) => startEdit(e, f.id, f.alias, f.isDefault)}
+                    className={`font-alias-cell ${isDefaultRow ? "readonly" : ""}`}
+                    onClick={(e) => startEdit(e, f.id, f.alias)}
                   >
                     {editingId === f.id ? (
                       <input
@@ -385,32 +403,56 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
 
                   {/* Kakao Radio Column */}
                   <div className="font-radio-cell">
-                    <div
-                      className={`font-radio-wrapper ${isActiveKakao ? "active" : ""}`}
-                      onClick={(e) =>
-                        handleToggleAssignment(e, "Kakao Games", f.id)
-                      }
-                    >
-                      <div className="font-radio-indicator"></div>
-                    </div>
+                    {isDownloading ? (
+                      <div
+                        className="font-inline-progress"
+                        title={`다운로드 중: ${currentProgress}%`}
+                      >
+                        <div
+                          className="inline-progress-fill"
+                          style={{ width: `${currentProgress}%` }}
+                        ></div>
+                      </div>
+                    ) : (
+                      <div
+                        className={`font-radio-wrapper ${isActiveKakao ? "active" : ""}`}
+                        onClick={(e) =>
+                          handleToggleAssignment(e, "Kakao Games", f.id)
+                        }
+                      >
+                        <div className="font-radio-indicator"></div>
+                      </div>
+                    )}
                   </div>
 
                   {/* GGG Radio Column */}
                   <div className="font-radio-cell">
-                    <div
-                      className={`font-radio-wrapper ${isActiveGGG ? "active" : ""}`}
-                      onClick={(e) => handleToggleAssignment(e, "GGG", f.id)}
-                    >
-                      <div className="font-radio-indicator"></div>
-                    </div>
+                    {isDownloading ? (
+                      <div
+                        className="font-inline-progress"
+                        title={`다운로드 중: ${currentProgress}%`}
+                      >
+                        <div
+                          className="inline-progress-fill"
+                          style={{ width: `${currentProgress}%` }}
+                        ></div>
+                      </div>
+                    ) : (
+                      <div
+                        className={`font-radio-wrapper ${isActiveGGG ? "active" : ""}`}
+                        onClick={(e) => handleToggleAssignment(e, "GGG", f.id)}
+                      >
+                        <div className="font-radio-indicator"></div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Delete Cell */}
                   <div className="font-delete-cell">
-                    {f.isDefault ? (
+                    {f.id === "DEFAULT" ? (
                       <button
                         className="font-delete-btn disabled"
-                        title="런처에 기본 내장된 폰트입니다."
+                        title="게임 기본 설정으로 되돌리기 위한 항목입니다. (삭제 불가)"
                         disabled
                       >
                         <span className="material-symbols-outlined">
