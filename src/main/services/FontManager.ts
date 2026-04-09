@@ -1,12 +1,15 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { Worker } from "node:worker_threads";
 
 import { createCanvas } from "canvas";
 import { app } from "electron";
 import opentype from "opentype.js";
 
 import { AppConfig, CustomFontData } from "../../shared/types";
+import { getConfig } from "../store";
+import { setConfigWithEvent } from "../utils/config-utils";
 import { Logger } from "../utils/logger";
 import { PowerShellManager } from "../utils/powershell";
 
@@ -284,8 +287,22 @@ export class FontManager {
 
       logger.info(`Installing mutated font: ${targetName}`);
       const ttfFileName = targetName.replace(/\s+/g, "") + ".ttf";
-      await pm.installSystemFont(tempPath, targetName, ttfFileName);
+      const success = await pm.installSystemFont(
+        tempPath,
+        targetName,
+        ttfFileName,
+      );
+      if (!success) {
+        throw new Error(`폰트 설치 실패: ${targetName}`);
+      }
     }
+
+    // Save applied font state
+    const appliedFonts =
+      (getConfig("appliedFonts") as Record<string, string>) || {};
+    appliedFonts[service] = fontId;
+    setConfigWithEvent("appliedFonts", appliedFonts);
+
     logger.info(`Successfully applied custom font for ${service}.`);
   }
 
@@ -299,8 +316,18 @@ export class FontManager {
 
     for (const targetName of targetNames) {
       const ttfFileName = targetName.replace(/\s+/g, "") + ".ttf";
-      await pm.removeSystemFont(targetName, ttfFileName);
+      const success = await pm.removeSystemFont(targetName, ttfFileName);
+      if (!success) {
+        throw new Error(`기본 폰트 복구 실패: ${targetName}`);
+      }
     }
+
+    // Remove applied font state
+    const appliedFonts =
+      (getConfig("appliedFonts") as Record<string, string>) || {};
+    delete appliedFonts[service];
+    setConfigWithEvent("appliedFonts", appliedFonts);
+
     logger.info(`Successfully restored default fonts.`);
   }
 
@@ -315,31 +342,36 @@ export class FontManager {
     newName: string,
   ): Promise<ArrayBuffer> {
     return new Promise((resolve, reject) => {
-      opentype.load(filePath, (err: Error | null, font?: opentype.Font) => {
-        if (err || !font) {
-          return reject(err || new Error("Failed to load font."));
+      const workerPath = path.join(
+        __dirname,
+        "workers",
+        "FontMutatorWorker.js",
+      );
+      logger.info(`Spawning font mutator worker: ${workerPath}`);
+
+      const worker = new Worker(workerPath);
+
+      worker.postMessage({ filePath, newName });
+
+      worker.on("message", (msg) => {
+        if (msg.success) {
+          resolve(msg.buffer);
+        } else {
+          reject(
+            new Error(msg.error || "Worker failed without error message."),
+          );
         }
+        worker.terminate();
+      });
 
-        const mutateNames = (obj: Record<string, unknown>) => {
-          if (!obj) return;
-          for (const key of Object.keys(obj)) {
-            const val = obj[key];
-            if (typeof val === "object" && val !== null) {
-              for (const lang of Object.keys(val as Record<string, unknown>)) {
-                (val as Record<string, unknown>)[lang] = newName;
-              }
-            } else if (typeof val === "string") {
-              obj[key] = newName;
-            }
-          }
-        };
+      worker.on("error", (err) => {
+        reject(err);
+        worker.terminate();
+      });
 
-        mutateNames(font.names as unknown as Record<string, unknown>);
-        try {
-          const buffer = font.toArrayBuffer();
-          resolve(buffer);
-        } catch (e) {
-          reject(e);
+      worker.on("exit", (code) => {
+        if (code !== 0) {
+          reject(new Error(`Worker exited with code ${code}`));
         }
       });
     });

@@ -462,21 +462,38 @@ try {
     });
   }
 
-  public async installSystemFont(ttfFilePath: string, targetFontName: string, ttfFileName: string): Promise<boolean> {
+  public async installSystemFont(
+    ttfFilePath: string,
+    targetFontName: string,
+    ttfFileName: string,
+  ): Promise<boolean> {
     const script = `
 try {
   $sourcePath = "${ttfFilePath}"
   $destPath = "$env:windir\\Fonts\\${ttfFileName}"
   
-  # Copy file to Windows Fonts directory
+  # 1. Copy file to Windows Fonts directory
   Copy-Item -Path $sourcePath -Destination $destPath -Force
   
-  # Registry update
+  # 2. Registry update
   $regPath = "HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts"
   $regName = "${targetFontName} (TrueType)"
-  
   Set-ItemProperty -Path $regPath -Name $regName -Value "${ttfFileName}"
-  Write-Output "Successfully installed font: ${targetFontName}"
+
+  # 3. Real-time notification using Win32 API
+  $Signature = @'
+    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
+    public static extern int AddFontResource(string lpszFilename);
+    
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+'@
+  $Win32API = Add-Type -MemberDefinition $Signature -Name "Win32FontAPI_Install" -Namespace "Win32Functions" -PassThru
+  
+  [void]$Win32API::AddFontResource($destPath)
+  [void]$Win32API::PostMessage(0xffff, 0x001D, [IntPtr]::Zero, [IntPtr]::Zero) # HWND_BROADCAST, WM_FONTCHANGE
+  
+  Write-Output "Successfully installed and notified system: ${targetFontName}"
 } catch {
   Write-Error $_.Exception.Message
   exit 1
@@ -486,24 +503,41 @@ try {
     return result.code === 0;
   }
 
-  public async removeSystemFont(targetFontName: string, ttfFileName: string): Promise<boolean> {
+  public async removeSystemFont(
+    targetFontName: string,
+    ttfFileName: string,
+  ): Promise<boolean> {
     const script = `
 try {
   $destPath = "$env:windir\\Fonts\\${ttfFileName}"
   
-  # Delete file from Windows Fonts directory if exists
-  if (Test-Path $destPath) {
-      Remove-Item -Path $destPath -Force
-  }
-  
-  # Registry update
+  # 1. Registry update
   $regPath = "HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts"
   $regName = "${targetFontName} (TrueType)"
   
   if (Get-ItemProperty -Path $regPath -Name $regName -ErrorAction SilentlyContinue) {
       Remove-ItemProperty -Path $regPath -Name $regName -Force
   }
-  Write-Output "Successfully removed font: ${targetFontName}"
+
+  # 2. Real-time removal using Win32 API
+  $Signature = @'
+    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
+    public static extern bool RemoveFontResource(string lpFileName);
+    
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+'@
+  $Win32API = Add-Type -MemberDefinition $Signature -Name "Win32FontAPI_Remove" -Namespace "Win32Functions" -PassThru
+  
+  [void]$Win32API::RemoveFontResource($destPath)
+  [void]$Win32API::PostMessage(0xffff, 0x001D, [IntPtr]::Zero, [IntPtr]::Zero) # HWND_BROADCAST, WM_FONTCHANGE
+
+  # 3. Delete file if exists
+  if (Test-Path $destPath) {
+      Remove-Item -Path $destPath -Force
+  }
+
+  Write-Output "Successfully removed and notified system: ${targetFontName}"
 } catch {
   Write-Error $_.Exception.Message
   exit 1

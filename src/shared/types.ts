@@ -75,6 +75,12 @@ export interface AppConfig {
   patchReservations: PatchReservation[];
   silentPatchNotification: boolean;
   terminateAfterPatch: boolean;
+  /**
+   * Service specific applied font IDs.
+   * Key: ServiceChannel ("Kakao Games", "GGG")
+   * Value: Font ID (UUID)
+   */
+  appliedFonts?: Record<string, string>;
 }
 
 export interface PatchReservation {

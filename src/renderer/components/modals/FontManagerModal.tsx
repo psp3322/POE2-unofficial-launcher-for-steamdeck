@@ -17,6 +17,14 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
 }) => {
   const [fonts, setFonts] = useState<CustomFontData[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState("");
+  const [operationResult, setOperationResult] = useState<
+    "success" | "error" | null
+  >(null);
+  const [errorDetail, setErrorDetail] = useState("");
+
+  // Tracking applied fonts from config
+  const [appliedFonts, setAppliedFonts] = useState<Record<string, string>>({});
 
   // Independent selection state for each service
   const [selectedFontKakao, setSelectedFontKakao] = useState<string>("");
@@ -44,9 +52,20 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
       fetchFonts();
       syncGameState(gameId, "Kakao Games");
       syncGameState(gameId, "GGG");
-    } else {
-      setSelectedFontKakao("");
-      setSelectedFontGGG("");
+
+      // Load applied fonts state from config
+      window.electronAPI
+        .getConfig("appliedFonts")
+        .then((config) => {
+          if (config && typeof config === "object") {
+            const af = config as Record<string, string>;
+            setAppliedFonts(af);
+            // Default selection to applied fonts
+            if (af["Kakao Games"]) setSelectedFontKakao(af["Kakao Games"]);
+            if (af["GGG"]) setSelectedFontGGG(af["GGG"]);
+          }
+        })
+        .catch(console.error);
     }
   }, [isVisible, gameId, syncGameState]);
 
@@ -101,20 +120,42 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
     }
 
     setIsLoading(true);
+    setLoadingMessage(
+      "단계 1: 폰트 무결성 분석 및 변조 중... (대용량 폰트의 경우 20~30초 소요될 수 있습니다)",
+    );
     try {
-      await window.electronAPI.font.applyFont(serviceId, selectedFontId);
-      alert(
-        `${serviceId} 서비스에 폰트가 성공적으로 적용되었습니다.\n게임에 재접속하면 반영됩니다.`,
+      // Small delay to ensure the UI updates before the heavy worker starts
+      await new Promise((r) => setTimeout(r, 100));
+
+      // Actually, applyFont involves potentially multiple targets, we'll just keep the message simple
+      // Ideally we'd have IPC progress events, but for now we set the installer message
+      const mutationFinishPromise = window.electronAPI.font.applyFont(
+        serviceId,
+        selectedFontId,
       );
+
+      // We don't have perfect progress tracking for the system install part yet,
+      // but we know it happens after mutation.
+      await mutationFinishPromise;
+
+      // Update local state after success
+      setAppliedFonts((prev) => ({ ...prev, [serviceId]: selectedFontId }));
+      setOperationResult("success");
+
+      // Auto clear result after 3 seconds
+      setTimeout(() => setOperationResult(null), 3000);
     } catch (err: unknown) {
       const error = err as Error;
       if (error.message?.includes("UAC")) {
         console.warn("UAC Denied");
+        setOperationResult(null); // Just close
       } else {
-        alert(`적용 중 오류가 발생했습니다: ${error.message || String(err)}`);
+        setOperationResult("error");
+        setErrorDetail(error.message || String(err));
       }
     } finally {
       setIsLoading(false);
+      setLoadingMessage("");
     }
   };
 
@@ -123,17 +164,36 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
       !confirm(`정말로 ${serviceId}의 폰트 설정을 기본값으로 복구하시겠습니까?`)
     )
       return;
+
     setIsLoading(true);
+    setLoadingMessage("시스템 폰트 설정 복구 중...");
     try {
       await window.electronAPI.font.restoreFont(serviceId);
-      alert("기본 폰트로 복구되었습니다.");
+
+      // Update local state
+      setAppliedFonts((prev) => {
+        const next = { ...prev };
+        delete next[serviceId];
+        return next;
+      });
+
+      // Clear selection too
+      if (serviceId === "Kakao Games") setSelectedFontKakao("");
+      if (serviceId === "GGG") setSelectedFontGGG("");
+
+      setOperationResult("success");
+      setTimeout(() => setOperationResult(null), 3000);
     } catch (err: unknown) {
       const error = err as Error;
       if (!error.message?.includes("UAC")) {
-        alert(`복구 중 오류가 발생했습니다: ${error.message || String(err)}`);
+        setOperationResult("error");
+        setErrorDetail(error.message || String(err));
+      } else {
+        setOperationResult(null);
       }
     } finally {
       setIsLoading(false);
+      setLoadingMessage("");
     }
   };
 
@@ -148,9 +208,50 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
       onClick={handleClose}
     >
       <div
-        className="font-modal settings-modal-like"
+        className={`font-modal ${isVisible ? "visible" : ""}`}
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Loading Overlay */}
+        {isLoading && (
+          <div className="font-loading-overlay">
+            <div className="font-loading-content">
+              <div className="font-spinner"></div>
+              <div className="font-loading-text">
+                <h3>잠시만 기다려 주세요...</h3>
+                <p>{loadingMessage}</p>
+                <div className="font-loading-sub">
+                  작업이 진행되는 동안 런처를 종료하지 마세요.
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Result Overlay */}
+        {operationResult && (
+          <div className={`font-result-overlay ${operationResult}`}>
+            <div className="font-result-content">
+              <span className="material-symbols-outlined font-result-icon">
+                {operationResult === "success" ? "check_circle" : "error"}
+              </span>
+              <h3>
+                {operationResult === "success" ? "작업 완료" : "작업 실패"}
+              </h3>
+              <p>
+                {operationResult === "success"
+                  ? "설정이 성공적으로 반영되었습니다."
+                  : errorDetail}
+              </p>
+              <button
+                className="font-btn"
+                onClick={() => setOperationResult(null)}
+              >
+                닫기
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Header (Aligned with Settings Style) */}
         <div className="font-header">
           <h2>커스텀 폰트 관리</h2>
@@ -166,9 +267,9 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
             <div className="font-service-card">
               <div className="font-service-header">
                 <h3>Kakao Games 환경 설정</h3>
-                <span className="font-status-badge">
-                  {isKakaoRunning ? "게임 실행 중" : "사용 가능"}
-                </span>
+                {appliedFonts["Kakao Games"] && (
+                  <span className="font-status-badge">커스텀 적용됨</span>
+                )}
               </div>
 
               <div className="font-service-controls">
@@ -176,14 +277,23 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
                   className="font-select"
                   value={selectedFontKakao}
                   onChange={(e) => setSelectedFontKakao(e.target.value)}
-                  disabled={isLoading || isKakaoRunning || fonts.length === 0}
+                  disabled={isLoading || isKakaoRunning}
                 >
                   <option value="">기본값</option>
                   {fonts.map((f) => (
-                    <option key={`kakao-${f.id}`} value={f.id}>
+                    <option key={f.id} value={f.id}>
                       {f.alias}
                     </option>
                   ))}
+                  {/* Handle 'unknown' font situation */}
+                  {appliedFonts["Kakao Games"] &&
+                    !fonts.some(
+                      (f) => f.id === appliedFonts["Kakao Games"],
+                    ) && (
+                      <option value={appliedFonts["Kakao Games"]}>
+                        알 수 없는 폰트 (설치됨)
+                      </option>
+                    )}
                 </select>
                 <div className="font-btn-group">
                   <button
@@ -191,23 +301,27 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
                     onClick={() =>
                       handleApplyFont("Kakao Games", selectedFontKakao)
                     }
-                    disabled={isLoading || !selectedFontKakao || isKakaoRunning}
+                    disabled={
+                      isLoading ||
+                      isKakaoRunning ||
+                      !selectedFontKakao ||
+                      selectedFontKakao === appliedFonts["Kakao Games"]
+                    }
                   >
-                    적용하기
+                    {selectedFontKakao === appliedFonts["Kakao Games"] &&
+                    selectedFontKakao !== ""
+                      ? "현재 적용됨"
+                      : "적용"}
                   </button>
-                  <button
-                    className="font-btn danger"
-                    onClick={() => handleRestoreFont("Kakao Games")}
-                    disabled={isLoading || isKakaoRunning}
-                    title="기본값 폰트로 복원"
-                  >
-                    <span
-                      className="material-symbols-outlined"
-                      style={{ fontSize: "16px" }}
+                  {(selectedFontKakao || appliedFonts["Kakao Games"]) && (
+                    <button
+                      className="font-btn danger"
+                      onClick={() => handleRestoreFont("Kakao Games")}
+                      disabled={isLoading || isKakaoRunning}
                     >
-                      restart_alt
-                    </span>
-                  </button>
+                      복구
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -216,9 +330,9 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
             <div className="font-service-card">
               <div className="font-service-header">
                 <h3>GGG (Global) 환경 설정</h3>
-                <span className="font-status-badge">
-                  {isGGGRunning ? "게임 실행 중" : "사용 가능"}
-                </span>
+                {appliedFonts["GGG"] && (
+                  <span className="font-status-badge">커스텀 적용됨</span>
+                )}
               </div>
 
               <div className="font-service-controls">
@@ -226,36 +340,47 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
                   className="font-select"
                   value={selectedFontGGG}
                   onChange={(e) => setSelectedFontGGG(e.target.value)}
-                  disabled={isLoading || isGGGRunning || fonts.length === 0}
+                  disabled={isLoading || isGGGRunning}
                 >
                   <option value="">기본값</option>
                   {fonts.map((f) => (
-                    <option key={`ggg-${f.id}`} value={f.id}>
+                    <option key={f.id} value={f.id}>
                       {f.alias}
                     </option>
                   ))}
+                  {/* Handle 'unknown' font situation */}
+                  {appliedFonts["GGG"] &&
+                    !fonts.some((f) => f.id === appliedFonts["GGG"]) && (
+                      <option value={appliedFonts["GGG"]}>
+                        알 수 없는 폰트 (설치됨)
+                      </option>
+                    )}
                 </select>
                 <div className="font-btn-group">
                   <button
                     className="font-btn primary"
                     onClick={() => handleApplyFont("GGG", selectedFontGGG)}
-                    disabled={isLoading || !selectedFontGGG || isGGGRunning}
+                    disabled={
+                      isLoading ||
+                      isGGGRunning ||
+                      !selectedFontGGG ||
+                      selectedFontGGG === appliedFonts["GGG"]
+                    }
                   >
-                    적용하기
+                    {selectedFontGGG === appliedFonts["GGG"] &&
+                    selectedFontGGG !== ""
+                      ? "현재 적용됨"
+                      : "적용"}
                   </button>
-                  <button
-                    className="font-btn danger"
-                    onClick={() => handleRestoreFont("GGG")}
-                    disabled={isLoading || isGGGRunning}
-                    title="기본값 폰트로 복원"
-                  >
-                    <span
-                      className="material-symbols-outlined"
-                      style={{ fontSize: "16px" }}
+                  {(selectedFontGGG || appliedFonts["GGG"]) && (
+                    <button
+                      className="font-btn danger"
+                      onClick={() => handleRestoreFont("GGG")}
+                      disabled={isLoading || isGGGRunning}
                     >
-                      restart_alt
-                    </span>
-                  </button>
+                      복구
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
