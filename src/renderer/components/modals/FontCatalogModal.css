@@ -364,3 +364,16 @@
   from { opacity: 0; }
   to { opacity: 1; }
 }
+
+.font-card-license.has-link {
+  cursor: pointer;
+  color: var(--theme-accent);
+  opacity: 0.8;
+  transition: all 0.2s ease;
+}
+
+.font-card-license.has-link:hover {
+  opacity: 1;
+  text-decoration: underline;
+  filter: brightness(1.2);
+}

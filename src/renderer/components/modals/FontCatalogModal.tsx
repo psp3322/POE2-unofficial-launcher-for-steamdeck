@@ -293,7 +293,7 @@ const FontCatalogModal: React.FC<FontCatalogModalProps> = ({
             key={pendingItem.id}
             isVisible={true}
             title="폰트 추가 - 별칭 지정"
-            defaultAlias={getLabel(pendingItem.displayNames, currentLang)}
+            defaultAlias={getLabel(pendingItem.fullNames, currentLang)}
             onConfirm={confirmDownload}
             onCancel={() => {
               setIsAliasOpen(false);
@@ -391,17 +391,33 @@ const FontCard: React.FC<FontCardProps> = ({
         <div>
           <div className="font-card-name" title={fullName}>
             {fullName}
-            {fullName !== familyName && (
-              <span className="font-card-id-sub"> - {familyName}</span>
-            )}
+            <span className="font-card-id-sub"> - {familyName}</span>
           </div>
           <div className="font-card-meta">
             <span>{fileSizeMB} MB</span>
             <span>•</span>
-            <span title={licenseText}>
-              {licenseText.length > 25
-                ? licenseText.substring(0, 25) + "..."
-                : licenseText}
+            <span
+              className={`font-card-license ${item.licenseUrl ? "has-link" : ""}`}
+              title={licenseText || item.licenseUrl || "No license info"}
+              onClick={() => {
+                if (item.licenseUrl) {
+                  window.open(item.licenseUrl, "_blank");
+                }
+              }}
+            >
+              {(() => {
+                const isUnknown =
+                  !licenseText ||
+                  licenseText.toLowerCase() === "unknown license";
+                const displayLicense = isUnknown
+                  ? item.licenseUrl
+                    ? "Link"
+                    : "Unknown License"
+                  : licenseText;
+                return displayLicense.length > 25
+                  ? displayLicense.substring(0, 25) + "..."
+                  : displayLicense;
+              })()}
             </span>
           </div>
         </div>

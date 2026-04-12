@@ -104,7 +104,7 @@ export class SyncEngine {
     const tempPath = `${destPath}.tmp`;
 
     // UI용 이름 추출 (한국어 우선)
-    const displayName = item.displayNames.ko || item.displayNames.en || item.id;
+    const displayName = item.fullNames.ko || item.fullNames.en || item.id;
 
     try {
       logger.info(`Downloading font: ${displayName} (${item.id})`);

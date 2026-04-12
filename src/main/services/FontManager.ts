@@ -426,12 +426,13 @@ export class FontManager {
           (item) => item.id === fontId,
         );
         if (remoteItem) {
-          const remoteName =
-            remoteItem.displayNames[currentLang] ||
-            remoteItem.displayNames.en ||
+          const currentLang = (await storage.getConfig("language")) || "ko";
+          const defaultAlias =
+            remoteItem.fullNames[currentLang] ||
+            remoteItem.fullNames.en ||
             remoteItem.id;
           logger.info(
-            `Requested font ${remoteName} is remote. Starting automatic download...`,
+            `Requested font ${defaultAlias} is remote. Starting automatic download...`,
           );
           const success = await this.syncEngine.downloadFont(
             remoteItem,
