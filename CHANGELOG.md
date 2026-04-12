@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.2.0](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/compare/1.1.0...1.2.0) (2026-04-12)
+
+
+### Features
+
+* 게임 실행/종료 감지 구조 개선 ([c2bb692](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/c2bb692566466ad778b0c320d450d41993b4823c))
+* 커스텀 폰트 관리 파이프라인 및 모달 UI 구현 ([bb6fdac](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/bb6fdac4aa5044bbf60f2a9dd462a80405366c38))
+* 커스텀 폰트 관리 파이프라인 및 모달 UI 구현 - 10 ([edb62e8](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/edb62e8e955f4e4c6321e32d6881e2cc16b8fb94))
+* 커스텀 폰트 관리 파이프라인 및 모달 UI 구현 - 11 ([dfe7d06](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/dfe7d06313960ded6f450b5299a4840064ad9602))
+* 커스텀 폰트 관리 파이프라인 및 모달 UI 구현 - 12 ([861a06d](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/861a06ddcc97972960e2e77eb97fba6f37fa9f52))
+* 커스텀 폰트 관리 파이프라인 및 모달 UI 구현 - 13 ([5854848](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/5854848d139917548836ef716dd1bb40587daf2d))
+* 커스텀 폰트 관리 파이프라인 및 모달 UI 구현 - 14 ([02e79ce](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/02e79ce4e0084a7874650f136cc6e686c45540bb))
+* 커스텀 폰트 관리 파이프라인 및 모달 UI 구현 - 2 ([8522cd1](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/8522cd12d437ed48725c84c4ae0366fa941f3dc1))
+* 커스텀 폰트 관리 파이프라인 및 모달 UI 구현 - 3 ([5f7bcfd](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/5f7bcfd4a2f8cefad17da8e4ca0f88b49b5dd0c4))
+* 커스텀 폰트 관리 파이프라인 및 모달 UI 구현 - 4 ([2b24dfb](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/2b24dfbce30dee102a59e1bd52ef0d919e653729))
+* 커스텀 폰트 관리 파이프라인 및 모달 UI 구현 - 5 ([dfb6e33](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/dfb6e33c82c313cbf665616bc534cce12bfbf4fd))
+* 커스텀 폰트 관리 파이프라인 및 모달 UI 구현 - 6 ([2f40772](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/2f4077240310f429c85b5aa4ba735cf0cc03dcd6))
+* 커스텀 폰트 관리 파이프라인 및 모달 UI 구현 - 7 ([00e5ed3](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/00e5ed3ceb4583f25f3984f2b71c87f6487810df))
+* 커스텀 폰트 관리 파이프라인 및 모달 UI 구현 - 8 ( unstable ) ([665d28e](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/665d28e029e94c6ee24ca23db46ac7e7a90f8e64))
+* 커스텀 폰트 관리 파이프라인 및 모달 UI 구현 - 9 ( unstable ) ([0196b3a](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/0196b3a42cd6ae91fa6e8cbdcdb6eaa229846826))
+
+
+### Code Refactoring
+
+* UACDeniedException 커스텀 예외 추가 및 전역 PowerShell 세션 로직 개선 ([9c2138b](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/9c2138b0d069825402d2569471d8e59dd38d8cd8))
+
 ## [1.1.0](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/compare/1.0.3...1.1.0) (2026-03-31)
 
 
