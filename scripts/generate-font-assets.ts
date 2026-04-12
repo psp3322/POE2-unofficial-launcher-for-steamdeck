@@ -125,7 +125,8 @@ async function main() {
       const font = await opentype.load(filePath);
       const names = font.names;
 
-      const displayNames = getAllNames(names.fontFamily);
+      const fullNames = getAllNames(names.fullName);
+      const familyNames = getAllNames(names.fontFamily);
       const license = getAllNames(names.license);
       const licenseUrl = (names.licenseURL?.en ||
         names.licenseURL?.ko ||
@@ -140,9 +141,13 @@ async function main() {
       const item: RemoteFontItem = {
         id,
         fileName,
-        displayNames:
-          Object.keys(displayNames).length > 0
-            ? displayNames
+        fullNames:
+          Object.keys(fullNames).length > 0
+            ? fullNames
+            : { en: path.parse(fileName).name },
+        familyNames:
+          Object.keys(familyNames).length > 0
+            ? familyNames
             : { en: path.parse(fileName).name },
         previewPath: `preview/${id}.png`,
         fileSize,
@@ -155,7 +160,7 @@ async function main() {
 
       newList.push(item);
       console.log(
-        `- [${item.displayNames.ko || item.displayNames.en}] Processed.`,
+        `- [${item.fullNames.ko || item.fullNames.en || fileName}] Processed.`,
       );
 
       if (!fs.existsSync(fullPreviewPath)) {
