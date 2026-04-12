@@ -6,28 +6,33 @@ import { createCanvas } from "canvas";
 import opentype from "opentype.js";
 
 /**
- * 폰트 원격 저장소 자동화 스크립트
- * 역할: fonts/ 폴더를 스캔하여 list.json 및 preview/*.png 생성 (Smart Merge 지원)
+ * 폰트 원격 저장소 자동화 스크립트 (NORMALIZED VERSION)
+ *
+ * 변경 사항:
+ * 1. id: 파일 바이너리 SHA-256 해시로 고정
+ * 2. displayNames: 다국어 이름 객체로 확장 ({ ko, en, ... })
+ * 3. license: 다국어 라이선스 객체로 확장
+ * 4. previewPath: preview/${id}.png 규칙 강제
  */
 
 interface RemoteFontItem {
   id: string;
-  alias: string;
   fileName: string;
-  hash: string;
+  displayNames: { [lang: string]: string };
   previewPath: string;
   fileSize: number;
-  license: string;
+  license: { [lang: string]: string };
   licenseUrl: string;
   createdAt: string;
   updatedAt: string;
 }
 
-const FONTS_DIR = path.join(process.cwd(), "fonts");
+// 실행 인자로 경로를 받거나 기본 경로 사용
+const targetFontsDir = process.argv[2] || path.join(process.cwd(), "fonts");
+const FONTS_DIR = path.resolve(targetFontsDir);
 const PREVIEW_DIR = path.join(FONTS_DIR, "preview");
 const LIST_JSON_PATH = path.join(FONTS_DIR, "list.json");
 
-// 디렉토리 체크
 if (!fs.existsSync(FONTS_DIR)) {
   console.error("Error: fonts/ directory not found.");
   process.exit(1);
@@ -36,17 +41,24 @@ if (!fs.existsSync(PREVIEW_DIR)) {
   fs.mkdirSync(PREVIEW_DIR, { recursive: true });
 }
 
-/**
- * 파일의 SHA-256 해시 계산
- */
 function calculateHash(filePath: string): string {
   const buffer = fs.readFileSync(filePath);
   return crypto.createHash("sha256").update(buffer).digest("hex");
 }
 
-/**
- * 미리보기 PNG 생성 (800x120)
- */
+const getAllNames = (
+  nameObj: { [lang: string]: string | undefined } | undefined,
+) => {
+  if (!nameObj) return {};
+  const names: { [lang: string]: string } = {};
+  // 가용한 모든 언어 필드 수집
+  Object.keys(nameObj).forEach((lang) => {
+    const val = nameObj[lang];
+    if (typeof val === "string") names[lang] = val;
+  });
+  return names;
+};
+
 async function generatePreview(fontPath: string, destPath: string) {
   try {
     const font = await opentype.load(fontPath);
@@ -55,16 +67,13 @@ async function generatePreview(fontPath: string, destPath: string) {
     const canvas = createCanvas(800, 120);
     const ctx = canvas.getContext("2d");
 
-    // 투명 배경
     ctx.clearRect(0, 0, 800, 120);
-
     const x = 20;
     const y = 80;
     const textPath = font.getPath(text, x, y, fontSize);
 
-    // 외곽선 없이 폰트 경로를 따라 내부만 채우기
     ctx.beginPath();
-    textPath.commands.forEach((cmd: any) => {
+    textPath.commands.forEach((cmd: opentype.PathCommand) => {
       if (cmd.type === "M") ctx.moveTo(cmd.x, cmd.y);
       else if (cmd.type === "L") ctx.lineTo(cmd.x, cmd.y);
       else if (cmd.type === "C")
@@ -74,7 +83,7 @@ async function generatePreview(fontPath: string, destPath: string) {
       else if (cmd.type === "Z") ctx.closePath();
     });
 
-    ctx.fillStyle = "#1a1a1a"; // 검은색 글씨
+    ctx.fillStyle = "#1a1a1a";
     ctx.fill();
 
     fs.writeFileSync(destPath, canvas.toBuffer("image/png"));
@@ -84,9 +93,6 @@ async function generatePreview(fontPath: string, destPath: string) {
   }
 }
 
-/**
- * 메인 실행 로직 (Smart Merge)
- */
 async function main() {
   console.log("--- Starting Font Asset Synchronization ---");
 
@@ -95,96 +101,73 @@ async function main() {
   if (fs.existsSync(LIST_JSON_PATH)) {
     try {
       existingList = JSON.parse(fs.readFileSync(LIST_JSON_PATH, "utf-8"));
-      console.log(
-        `Loaded existing list.json with ${existingList.length} items.`,
-      );
-    } catch (err) {
-      console.warn(
-        "Warning: Failed to parse existing list.json, starting fresh.",
-      );
+    } catch {
+      // 기존 리스트가 없거나 파싱 실패 시 무시하고 진행
     }
   }
 
-  // 2. 폰트 폴더 스캔
   const files = fs
     .readdirSync(FONTS_DIR)
     .filter(
       (f) =>
         f.toLowerCase().endsWith(".ttf") || f.toLowerCase().endsWith(".otf"),
     );
-  console.log(`Scanning fonts directory... Found ${files.length} font files.`);
-
   const newList: RemoteFontItem[] = [];
   const now = new Date().toISOString();
 
   for (const fileName of files) {
     const filePath = path.join(FONTS_DIR, fileName);
-    const hash = calculateHash(filePath);
+    const id = calculateHash(filePath); // 해시 기반 ID
     const fileSize = fs.statSync(filePath).size;
-
-    // ID는 파일명을 기반으로 일관되게 생성 (확장자 제외)
-    const id = path
-      .parse(fileName)
-      .name.replace(/[^a-z0-9]/gi, "_")
-      .toLowerCase();
-
-    const existingEntry = existingList.find((e) => e.id === id);
-    const previewPath = `preview/${id}.png`;
     const fullPreviewPath = path.join(PREVIEW_DIR, `${id}.png`);
 
-    let fontInfo: any = {};
     try {
       const font = await opentype.load(filePath);
-      fontInfo = {
-        familyName: font.names.fontFamily?.en || id,
-        license: font.names.license?.en || "Unknown License",
-        licenseUrl: font.names.licenseURL?.en || "",
-      };
-    } catch (e) {
-      console.warn(
-        `  - [${fileName}] Could not extract metadata, using defaults.`,
+      const names = font.names;
+
+      const displayNames = getAllNames(names.fontFamily);
+      const license = getAllNames(names.license);
+      const licenseUrl = (names.licenseURL?.en ||
+        names.licenseURL?.ko ||
+        Object.values(names.licenseURL || {})[0] ||
+        "") as string;
+
+      // Smart Merge: 기존 데이터 매핑 (파일명 또는 이전 해시 기반)
+      const existing = existingList.find(
+        (e) => e.id === id || e.fileName === fileName,
       );
-      fontInfo = { familyName: id, license: "Unknown License", licenseUrl: "" };
-    }
 
-    // 3. Smart Merge 로직 적용
-    const item: RemoteFontItem = {
-      id,
-      fileName,
-      hash,
-      fileSize,
-      previewPath,
-      // 기존 alias가 수동으로 수정되었을 수 있으므로 보존
-      alias: existingEntry?.alias || fontInfo.familyName,
-      license: fontInfo.license,
-      // 기존 licenseUrl도 보존 (수동 링크 연결 지원)
-      licenseUrl: existingEntry?.licenseUrl || fontInfo.licenseUrl,
-      createdAt: existingEntry?.createdAt || now,
-      // 해시가 다를 때만 updatedAt 업데이트
-      updatedAt:
-        existingEntry && existingEntry.hash === hash
-          ? existingEntry.updatedAt
-          : now,
-    };
+      const item: RemoteFontItem = {
+        id,
+        fileName,
+        displayNames:
+          Object.keys(displayNames).length > 0
+            ? displayNames
+            : { en: path.parse(fileName).name },
+        previewPath: `preview/${id}.png`,
+        fileSize,
+        license:
+          Object.keys(license).length > 0 ? license : { en: "Unknown License" },
+        licenseUrl,
+        createdAt: existing?.createdAt || now,
+        updatedAt: existing && existing.id === id ? existing.updatedAt : now,
+      };
 
-    newList.push(item);
-    console.log(
-      `  - [${id}] Processed. Alias: ${item.alias}${existingEntry ? " (Merged)" : " (New)"}`,
-    );
+      newList.push(item);
+      console.log(
+        `- [${item.displayNames.ko || item.displayNames.en}] Processed.`,
+      );
 
-    // 미리보기 재생성 조건: 해시 불일치 혹은 이미지 부재
-    if (
-      !existingEntry ||
-      existingEntry.hash !== hash ||
-      !fs.existsSync(fullPreviewPath)
-    ) {
-      await generatePreview(filePath, fullPreviewPath);
+      if (!fs.existsSync(fullPreviewPath)) {
+        await generatePreview(filePath, fullPreviewPath);
+      }
+    } catch (err) {
+      console.error(`Error processing ${fileName}:`, err);
     }
   }
 
-  // 4. list.json 저장
   fs.writeFileSync(LIST_JSON_PATH, JSON.stringify(newList, null, 2), "utf-8");
-  console.log("--- Sync Completed successfully ---");
+  console.log("\n--- Sync Completed successfully ---");
   console.log(`Updated list.json at: ${LIST_JSON_PATH}`);
 }
 
