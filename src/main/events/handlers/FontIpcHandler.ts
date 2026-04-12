@@ -5,6 +5,8 @@ import { ipcMain } from "electron";
 import { FontManager } from "../../services/FontManager";
 import { Logger } from "../../utils/logger";
 
+import type { RemoteFontItem } from "../../../shared/types";
+
 const logger = new Logger({ type: "ipc-font", typeColor: "#3498db" });
 
 export class FontIpcHandler {
@@ -76,7 +78,10 @@ export class FontIpcHandler {
           // [v14] 객체 및 별칭 전달 보장
           return await fm.downloadAndInstallRemoteFont(item, customAlias);
         } catch (err) {
-          logger.error(`Failed to download remote font ${customAlias || item.alias}`, err);
+          logger.error(
+            `Failed to download remote font ${customAlias || item.id}`,
+            err,
+          );
           throw err;
         }
       },
@@ -94,7 +99,12 @@ export class FontIpcHandler {
 
     ipcMain.handle(
       "font:add-font",
-      async (_, filePath: string, previewDataUrl?: string, customAlias?: string) => {
+      async (
+        _,
+        filePath: string,
+        previewDataUrl?: string,
+        customAlias?: string,
+      ) => {
         try {
           if (!filePath) throw new Error("파일 경로가 유효하지 않습니다.");
           const fm = FontManager.getInstance();

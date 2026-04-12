@@ -5,8 +5,11 @@ import path from "node:path";
 import axios from "axios";
 import { app } from "electron";
 
-import { RemoteFontItem } from "../../shared/types";
 import { Logger } from "../utils/logger";
+
+import type { RemoteFontItem } from "../../shared/types";
+
+export type { RemoteFontItem };
 
 const logger = new Logger({ type: "sync-engine", typeColor: "#3498db" });
 

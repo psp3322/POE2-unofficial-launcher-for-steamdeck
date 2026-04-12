@@ -14,37 +14,34 @@ export class FontPreviewGenerator {
       // 1. 렌더러에 폰트 동적 등록
       const fontFace = new FontFace(fontName, `url(${fontUrl})`);
       const loadedFace = await fontFace.load();
-      document.fonts.add(loadedFace);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (document.fonts as any).add(loadedFace);
 
       // 2. Canvas 생성 및 렌더링 (800x120)
       const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Canvas context를 생성할 수 없습니다.");
+
       canvas.width = 800;
       canvas.height = 120;
-      const ctx = canvas.getContext("2d");
 
-      if (!ctx) throw new Error("Could not get canvas context");
+      // 배경 (투명)
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // 디자인 가이드 준수 (투명 배경 + 흰색 외곽선 + 어두운 채우기)
-      const text = "Path of Exile 2 - 한글 테스트";
-      const fontSize = 48;
-
-      ctx.clearRect(0, 0, 800, 120);
-      ctx.font = `${fontSize}px "${fontName}"`;
-      ctx.textAlign = "left";
+      // 텍스트 스타일 설정
+      ctx.fillStyle = "#ffffff";
+      ctx.font = `40px "${fontName}"`;
       ctx.textBaseline = "middle";
 
-      const x = 20;
-      const y = 60;
+      // 텍스트 렌더링
+      const previewText = "Path Of Exile 2 - 패스 오브 액자일 2";
+      ctx.fillText(previewText, 20, 60);
 
-      // 외곽선 없이 깔끔하게 텍스트만 채우기
-      ctx.fillStyle = "#1a1a1a"; // 검은색 글씨
-      ctx.fillText(text, x, y);
-
-      // 3. 결과물 추출
       const dataUrl = canvas.toDataURL("image/png");
 
       // Cleanup
-      document.fonts.delete(loadedFace);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (document.fonts as any).delete(loadedFace);
 
       return dataUrl;
     } catch (err) {

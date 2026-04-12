@@ -1,4 +1,10 @@
-import React, { useEffect, useState, useRef, useCallback } from "react";
+import React, {
+  useEffect,
+  useState,
+  useRef,
+  useCallback,
+  useMemo,
+} from "react";
 
 import AliasDialog from "./AliasDialog";
 import { RemoteFontItem } from "../../../main/services/SyncEngine";
@@ -27,6 +33,7 @@ const FontCatalogModal: React.FC<FontCatalogModalProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [pendingItem, setPendingItem] = useState<RemoteFontItem | null>(null);
   const [isAliasOpen, setIsAliasOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
 
   // [v13] 언어 설정 상태
   const [currentLang, setCurrentLang] = useState<string>("ko");
@@ -79,17 +86,19 @@ const FontCatalogModal: React.FC<FontCatalogModalProps> = ({
     setErrorMsg(null);
     try {
       // 설치된 폰트 및 설정 언어 동시 로드
-      const [installed, lang, data] = await Promise.all([
+      const [installed, lang] = await Promise.all([
         window.electronAPI.font.getUnifiedFonts(),
         window.electronAPI.getConfig("language") as Promise<string>,
-        window.electronAPI.font.syncCatalog(force),
       ]);
+
+      await window.electronAPI.font.syncCatalog(force);
+      const catalog = await window.electronAPI.font.getCatalog();
 
       setInstalledFonts(installed);
       setCurrentLang(lang || "ko");
-      setCatalog(data);
+      setCatalog(catalog || []);
 
-      if (data.length === 0) {
+      if (!catalog || catalog.length === 0) {
         setErrorMsg(
           "폰트 목록을 가져올 수 없습니다. 서버 상태를 확인해 주세요.",
         );
@@ -101,6 +110,31 @@ const FontCatalogModal: React.FC<FontCatalogModalProps> = ({
       setIsSyncing(false);
     }
   }, []);
+
+  // [v16] 실시간 검색 필터링 로직 (Multi-language Support)
+  const filteredCatalog = useMemo(() => {
+    if (!searchTerm.trim()) return catalog;
+
+    const term = searchTerm.toLowerCase().trim();
+    return catalog.filter((item) => {
+      // 1. Full Names (ko, en 등 모든 언어) 검색
+      const matchName = Object.values(item.fullNames).some((val) =>
+        val.toLowerCase().includes(term),
+      );
+      if (matchName) return true;
+
+      // 2. Family Names 검색
+      const matchFamily = Object.values(item.familyNames).some((val) =>
+        val.toLowerCase().includes(term),
+      );
+      if (matchFamily) return true;
+
+      // 3. ID(Hash) 검색
+      if (item.id.toLowerCase().includes(term)) return true;
+
+      return false;
+    });
+  }, [catalog, searchTerm]);
 
   useEffect(() => {
     if (isVisible) {
@@ -238,14 +272,45 @@ const FontCatalogModal: React.FC<FontCatalogModalProps> = ({
           </div>
         </header>
 
+        <section className="catalog-search-section">
+          <div className="search-bar-inner">
+            <span className="material-symbols-outlined search-icon">
+              search
+            </span>
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="catalog-search-input"
+            />
+            {searchTerm && (
+              <button
+                className="search-clear-btn"
+                onClick={() => setSearchTerm("")}
+                title="검색어 초기화"
+              >
+                <span className="material-symbols-outlined">backspace</span>
+              </button>
+            )}
+          </div>
+        </section>
+
         <main className="catalog-content">
           {isLoading ? (
             <div className="catalog-status">목록을 불러오는 중...</div>
           ) : errorMsg ? (
             <div className="catalog-status error">{errorMsg}</div>
+          ) : filteredCatalog.length === 0 ? (
+            <div className="catalog-status empty">
+              <span className="material-symbols-outlined status-icon">
+                search_off
+              </span>
+              <p>검색 결과가 없습니다.</p>
+              <small>다른 검색어를 입력해 보세요.</small>
+            </div>
           ) : (
             <div className="catalog-grid">
-              {catalog.map((item) => {
+              {filteredCatalog.map((item) => {
                 const isInstalled = installedFonts.some(
                   (f) => f.remoteSourceId === item.id,
                 );

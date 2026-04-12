@@ -208,19 +208,52 @@ export interface CustomFontData {
 export interface UnifiedFontData extends CustomFontData {
   appliedServices: string[];
   isUnknown?: boolean;
-  isDefault?: boolean; // UI 리스트에서의 식별용: 시스템 기본값(가상 항목)인 경우 true
+  isDefault: boolean;
+}
+
+/**
+ * 폰트 파일 분석 결과 메타데이터
+ */
+export interface FontMetadata {
+  id: string;
+  originalName: string;
+  fullNames: { [lang: string]: string };
+  familyNames: { [lang: string]: string };
+  previewDataUrl?: string;
+  isKrSupported: boolean;
 }
 
 export interface FontAPI {
   getFonts: () => Promise<CustomFontData[]>;
   getUnifiedFonts: () => Promise<UnifiedFontData[]>;
   pickFontFile: () => Promise<string | null>;
-  addFont: (filePath: string) => Promise<CustomFontData>;
+  readFile: (filePath: string) => Promise<string | null>;
+  analyzeFile: (filePath: string) => Promise<FontMetadata>;
+  addFont: (
+    filePath: string,
+    previewDataUrl?: string,
+    customAlias?: string,
+    remoteSourceId?: string | null,
+  ) => Promise<CustomFontData>;
   removeFont: (id: string) => Promise<void>;
   updateAlias: (id: string, newAlias: string) => Promise<void>;
   applyBatch: (assignments: Record<string, string | null>) => Promise<void>;
+  downloadRemote: (
+    item: RemoteFontItem,
+    customAlias?: string,
+  ) => Promise<boolean>;
   openCustomFontsFolder: () => Promise<void>;
+  getCatalog: () => Promise<RemoteFontItem[]>;
+  syncCatalog: (force?: boolean) => Promise<void>;
   onFontUpdated: (callback: () => void) => () => void;
+  onDownloadProgress: (
+    callback: (data: { id: string; progress: number }) => void,
+  ) => () => void;
+}
+
+export interface RevalidateThemeColorsEventDetail {
+  game: "POE1" | "POE2";
+  assetPath: string;
 }
 
 export interface ElectronAPI {

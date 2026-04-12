@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import crypto, { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { Worker } from "node:worker_threads";
@@ -6,13 +6,17 @@ import { Worker } from "node:worker_threads";
 import { app } from "electron";
 import opentype from "opentype.js";
 
-import { SyncEngine, RemoteFontItem } from "./SyncEngine";
+import { SyncEngine } from "./SyncEngine";
 import {
-  FONT_MUTATION_DEFINITIONS,
   TARGET_SERVICES_CONFIG,
+  FONT_MUTATION_DEFINITIONS,
   FontMutationRule,
 } from "../../shared/font-targets";
-import { UnifiedFontData, CustomFontData } from "../../shared/types";
+import {
+  UnifiedFontData,
+  CustomFontData,
+  RemoteFontItem,
+} from "../../shared/types";
 import { getConfig } from "../store";
 import { setConfigWithEvent } from "../utils/config-utils";
 import { Logger } from "../utils/logger";
@@ -123,7 +127,7 @@ export class FontManager {
       const y = 40;
 
       const pathData = font.getPath(text, x, y, fontSize);
-      const svgPath = pathData.toSVG();
+      const svgPath = pathData.toSVG(2);
 
       // 뷰박스 확장 (문구가 길어짐에 따라 너비 확보)
       const width = 500;
@@ -324,13 +328,15 @@ export class FontManager {
       });
     }
 
-    const baseFonts = Array.from(this.fontsMap.values()).map((f) => {
-      const appliedServices = Object.entries(appliedStore)
-        .filter(([_, id]) => id === f.id)
-        .map(([svc]) => svc);
-      // 모든 커스텀/원격 폰트는 isDefault를 false로 강제하여 관리 자유도 보장
-      return { ...f, appliedServices, isDefault: false };
-    });
+    const baseFonts: UnifiedFontData[] = Array.from(this.fontsMap.values()).map(
+      (f) => {
+        const appliedServices = Object.entries(appliedStore)
+          .filter(([_, id]) => id === f.id)
+          .map(([svc]) => svc);
+        // 모든 커스텀/원격 폰트는 isDefault를 false로 강제하여 관리 자유도 보장
+        return { ...f, appliedServices, isDefault: false };
+      },
+    );
 
     // 기본값 항목 추가
     const defaultAppliedServices = Object.entries(appliedStore)
@@ -351,8 +357,10 @@ export class FontManager {
       originalName: "System Standard",
       fileName: "",
       previewDataUrl: "",
+      previewVersion: 1,
       createdAt: 0,
-      isDefault: true, // 오직 가상 항목에만 플래그 유지
+      updatedAt: 0,
+      isDefault: true,
       appliedServices: defaultAppliedServices,
     } as UnifiedFontData);
 
@@ -363,8 +371,10 @@ export class FontManager {
         originalName: "System Assigned",
         fileName: "",
         previewDataUrl: "",
+        previewVersion: 1,
         createdAt: 0,
-        isUnknown: true,
+        updatedAt: 0,
+        isDefault: false,
         appliedServices: unknownServices,
       } as UnifiedFontData);
     }
@@ -426,7 +436,6 @@ export class FontManager {
           (item) => item.id === fontId,
         );
         if (remoteItem) {
-          const currentLang = (await storage.getConfig("language")) || "ko";
           const defaultAlias =
             remoteItem.fullNames[currentLang] ||
             remoteItem.fullNames.en ||
@@ -461,7 +470,7 @@ export class FontManager {
                 previewDataUrl: this.syncEngine.getPreviewUrl(
                   remoteItem.previewPath,
                 ),
-                customAlias: remoteName,
+                customAlias: defaultAlias,
                 remoteSourceId: remoteItem.id,
               });
             } catch (err) {
@@ -469,7 +478,7 @@ export class FontManager {
             }
           } else {
             logger.error(
-              `Automatic download failed for ${remoteName}. Skipping assignment.`,
+              `Automatic download failed for ${defaultAlias}. Skipping assignment.`,
             );
             continue;
           }
@@ -544,7 +553,7 @@ export class FontManager {
       });
 
       if (!success) {
-        throw new Error(`폰트 다운로드에 실패했습니다: ${remoteName}`);
+        throw new Error(`폰트 다운로드에 실패했습니다: ${resolvedAlias}`);
       }
 
       const downloadedPath = path.join(this.customFontsDir, item.fileName);
@@ -552,7 +561,7 @@ export class FontManager {
       // [v14] 객체 기반 파라미터 전달로 순서 오인 사태 방지
       const result = await this.addFontInternal({
         filePath: downloadedPath,
-        customAlias: customAlias || remoteName, // 사용자가 입력한 별칭 우선, 없으면 서버 별칭
+        customAlias: customAlias || resolvedAlias, // 사용자가 입력한 별칭 우선, 없으면 서버 별칭
         remoteSourceId: item.id,
       });
 
