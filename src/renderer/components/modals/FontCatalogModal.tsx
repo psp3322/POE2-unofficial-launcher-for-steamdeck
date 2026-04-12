@@ -18,7 +18,7 @@ const FontCatalogModal: React.FC<FontCatalogModalProps> = ({
   onFontInstalled,
 }) => {
   const [catalog, setCatalog] = useState<RemoteFontItem[]>([]);
-  const [installedFonts, setInstalledFonts] = useState<UnifiedFontData[]>([]); // internal state (v12)
+  const [installedFonts, setInstalledFonts] = useState<UnifiedFontData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
@@ -27,27 +27,50 @@ const FontCatalogModal: React.FC<FontCatalogModalProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [pendingItem, setPendingItem] = useState<RemoteFontItem | null>(null);
   const [isAliasOpen, setIsAliasOpen] = useState(false);
-  
-  // [v12.3] Toast UI 상태 추가
+
+  // [v13] 언어 설정 상태
+  const [currentLang, setCurrentLang] = useState<string>("ko");
+
   const [toastMsg, setToastMsg] = useState("");
-  const [toastVariant, setToastVariant] = useState<"default" | "success" | "warning" | "error" | "white">("default");
+  const [toastVariant, setToastVariant] = useState<
+    "default" | "success" | "warning" | "error" | "white"
+  >("default");
   const [toastVisible, setToastVisible] = useState(false);
   const toastTimerRef = React.useRef<NodeJS.Timeout | null>(null);
 
   const modalRef = useRef<HTMLDivElement>(null);
 
-  // [v12] 로컬 파일 추가용 별도 상태
   const [pendingLocalPath, setPendingLocalPath] = useState<string | null>(null);
   const [analyzedLocalName, setAnalyzedLocalName] = useState("");
   const [isLocalAliasOpen, setIsLocalAliasOpen] = useState(false);
 
-  const showToast = useCallback((msg: string, variant: "default" | "success" | "warning" | "error" | "white" = "default") => {
-    setToastMsg(msg);
-    setToastVariant(variant);
-    setToastVisible(true);
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = setTimeout(() => setToastVisible(false), 3000);
-  }, []);
+  // [v13] 텍스트 추출 헬퍼 (Fallback: ko/en -> en -> first)
+  const getLabel = useCallback(
+    (data: { [langCode: string]: string } | undefined, lang: string) => {
+      if (!data) return "";
+      return data[lang] || data["en"] || Object.values(data)[0] || "";
+    },
+    [],
+  );
+
+  const showToast = useCallback(
+    (
+      msg: string,
+      variant:
+        | "default"
+        | "success"
+        | "warning"
+        | "error"
+        | "white" = "default",
+    ) => {
+      setToastMsg(msg);
+      setToastVariant(variant);
+      setToastVisible(true);
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = setTimeout(() => setToastVisible(false), 3000);
+    },
+    [],
+  );
 
   const loadCatalog = useCallback(async (force: boolean = false) => {
     if (force) setIsSyncing(true);
@@ -55,13 +78,17 @@ const FontCatalogModal: React.FC<FontCatalogModalProps> = ({
 
     setErrorMsg(null);
     try {
-      // 1. 설치된 폰트 목록 먼저 가져오기 (v12)
-      const installed = await window.electronAPI.font.getUnifiedFonts();
-      setInstalledFonts(installed);
+      // 설치된 폰트 및 설정 언어 동시 로드
+      const [installed, lang, data] = await Promise.all([
+        window.electronAPI.font.getUnifiedFonts(),
+        window.electronAPI.getConfig("language") as Promise<string>,
+        window.electronAPI.font.syncCatalog(force),
+      ]);
 
-      // 2. 카탈로그 동기화
-      const data = await window.electronAPI.font.syncCatalog(force);
+      setInstalledFonts(installed);
+      setCurrentLang(lang || "ko");
       setCatalog(data);
+
       if (data.length === 0) {
         setErrorMsg(
           "폰트 목록을 가져올 수 없습니다. 서버 상태를 확인해 주세요.",
@@ -94,37 +121,31 @@ const FontCatalogModal: React.FC<FontCatalogModalProps> = ({
 
   const handleManualAdd = async () => {
     try {
-      // 1. 파일 선택
       const filePath = await window.electronAPI.font.pickFontFile();
       if (!filePath) return;
 
-      setIsProcessing(true); // 오버레이 표시
-      // 2. 바이너리 메타데이터 선분석
+      setIsProcessing(true);
       const metadata = await window.electronAPI.font.analyzeFile(filePath);
 
-      // 3. 기존 라이브러리와 중복 대조
       const isDuplicate = installedFonts.some(
         (f) => f.originalName === metadata.originalName,
       );
 
       if (isDuplicate) {
-        showToast(`동일한 폰트('${metadata.originalName}')가 이미 라이브러리에 등록되어 있습니다.`, "error");
+        showToast(
+          `동일한 폰트('${metadata.originalName}')가 이미 라이브러리에 등록되어 있습니다.`,
+          "error",
+        );
         setIsProcessing(false);
         return;
       }
 
-      // 4. 신규 파일이면 별칭 입력 다이얼로그 오픈
       setPendingLocalPath(filePath);
       setAnalyzedLocalName(metadata.originalName);
       setIsLocalAliasOpen(true);
       setIsProcessing(false);
-    } catch (err: unknown) {
-      let message = "유효하지 않은 폰트 파일입니다.";
-      const errStr = String(err);
-      if (errStr.includes("이미 라이브러리에 등록")) {
-        message = "이미 등록된 동일한 폰트가 존재합니다.";
-      }
-      showToast(message, "error");
+    } catch {
+      showToast("유효하지 않은 폰트 파일입니다.", "error");
       setIsProcessing(false);
     }
   };
@@ -135,16 +156,16 @@ const FontCatalogModal: React.FC<FontCatalogModalProps> = ({
 
     try {
       setIsProcessing(true);
-      await window.electronAPI.font.addFont(pendingLocalPath, undefined, customAlias);
-      onFontInstalled(); // 라이브러리 리프레시 유도
-      await loadCatalog(true); // 카탈로그 상태 업데이트
+      await window.electronAPI.font.addFont(
+        pendingLocalPath,
+        undefined,
+        customAlias,
+      );
+      onFontInstalled();
+      await loadCatalog(true);
       showToast("로컬 폰트가 성공적으로 등록되었습니다.", "success");
-    } catch (err: unknown) {
-      let message = "폰트 등록 중 오류가 발생했습니다.";
-      if (String(err).includes("이미 라이브러리에 등록")) {
-        message = "이미 라이브러리에 등록된 폰트입니다.";
-      }
-      showToast(message, "error");
+    } catch {
+      showToast("폰트 등록 중 오류가 발생했습니다.", "error");
     } finally {
       setIsProcessing(false);
       setPendingLocalPath(null);
@@ -153,7 +174,9 @@ const FontCatalogModal: React.FC<FontCatalogModalProps> = ({
   };
 
   const handleDownloadClick = (item: RemoteFontItem) => {
-    const isInstalled = installedFonts.some((f) => f.remoteSourceId === item.id);
+    const isInstalled = installedFonts.some(
+      (f) => f.remoteSourceId === item.id,
+    );
     if (isInstalled) return;
 
     setPendingItem(item);
@@ -169,17 +192,8 @@ const FontCatalogModal: React.FC<FontCatalogModalProps> = ({
     try {
       await window.electronAPI.font.downloadRemote(pendingItem, customAlias);
       showToast("폰트 설치가 완료되었습니다.", "success");
-    } catch (err: unknown) {
-      let message = "폰트 설치 중 오류가 발생했습니다.";
-      const errStr = String(err);
-      
-      if (errStr.includes("이미 라이브러리에 등록")) {
-        message = "이미 라이브러리에 등록되어 있는 폰트입니다.";
-      } else if (errStr.includes("timeout")) {
-        message = "연결 시간이 초과되었습니다. 다시 시도해 주세요.";
-      }
-      
-      showToast(message, "error");
+    } catch {
+      showToast("폰트 설치 중 오류가 발생했습니다.", "error");
     } finally {
       setDownloadingId(null);
       setDownloadProgress(0);
@@ -195,7 +209,11 @@ const FontCatalogModal: React.FC<FontCatalogModalProps> = ({
       className={`font-catalog-overlay ${isVisible ? "visible" : ""}`}
       onClick={onClose}
     >
-      <div className="font-catalog-modal" onClick={(e) => e.stopPropagation()} ref={modalRef}>
+      <div
+        className="font-catalog-modal"
+        onClick={(e) => e.stopPropagation()}
+        ref={modalRef}
+      >
         <Toast
           message={toastMsg}
           visible={toastVisible}
@@ -228,7 +246,6 @@ const FontCatalogModal: React.FC<FontCatalogModalProps> = ({
           ) : (
             <div className="catalog-grid">
               {catalog.map((item) => {
-                // [v12.1] 계획 준수: 오직 remoteSourceId만으로 설치 여부 판별
                 const isInstalled = installedFonts.some(
                   (f) => f.remoteSourceId === item.id,
                 );
@@ -236,6 +253,8 @@ const FontCatalogModal: React.FC<FontCatalogModalProps> = ({
                   <FontCard
                     key={item.id}
                     item={item}
+                    currentLang={currentLang}
+                    getLabel={getLabel}
                     isInstalled={isInstalled}
                     isDownloading={downloadingId === item.id}
                     progress={downloadProgress}
@@ -259,7 +278,6 @@ const FontCatalogModal: React.FC<FontCatalogModalProps> = ({
           </button>
         </footer>
 
-        {/* 설치 처리 중 오버레이 */}
         {isProcessing && (
           <div className="font-loading-overlay">
             <div className="font-loading-content">
@@ -269,13 +287,13 @@ const FontCatalogModal: React.FC<FontCatalogModalProps> = ({
             </div>
           </div>
         )}
-        {/* Alias Input Dialog [v11/v12] */}
+
         {isAliasOpen && pendingItem && (
           <AliasDialog
             key={pendingItem.id}
             isVisible={true}
             title="폰트 추가 - 별칭 지정"
-            defaultAlias={pendingItem.alias}
+            defaultAlias={getLabel(pendingItem.displayNames, currentLang)}
             onConfirm={confirmDownload}
             onCancel={() => {
               setIsAliasOpen(false);
@@ -284,7 +302,6 @@ const FontCatalogModal: React.FC<FontCatalogModalProps> = ({
           />
         )}
 
-        {/* Local File Alias Dialog [v12] */}
         {isLocalAliasOpen && analyzedLocalName && (
           <AliasDialog
             key={pendingLocalPath}
@@ -293,7 +310,7 @@ const FontCatalogModal: React.FC<FontCatalogModalProps> = ({
             defaultAlias={analyzedLocalName}
             onConfirm={confirmLocalAdd}
             onCancel={() => {
-              setIsLocalAliasOpen(false);
+              setIsLocalAliasOpen(true);
               setPendingLocalPath(null);
               setAnalyzedLocalName("");
             }}
@@ -306,6 +323,11 @@ const FontCatalogModal: React.FC<FontCatalogModalProps> = ({
 
 interface FontCardProps {
   item: RemoteFontItem;
+  currentLang: string;
+  getLabel: (
+    data: { [lang: string]: string } | undefined,
+    lang: string,
+  ) => string;
   isInstalled: boolean;
   isDownloading: boolean;
   progress: number;
@@ -314,6 +336,8 @@ interface FontCardProps {
 
 const FontCard: React.FC<FontCardProps> = ({
   item,
+  currentLang,
+  getLabel,
   isInstalled,
   isDownloading,
   progress,
@@ -340,6 +364,8 @@ const FontCard: React.FC<FontCardProps> = ({
 
   const fileSizeMB = (item.fileSize / (1024 * 1024)).toFixed(1);
   const previewUrl = `https://nerdhead-lab.github.io/POE2-unofficial-launcher/fonts/${item.previewPath}`;
+  const displayName = getLabel(item.displayNames, currentLang);
+  const licenseText = getLabel(item.license, currentLang);
 
   return (
     <div className="font-card" ref={cardRef}>
@@ -347,7 +373,7 @@ const FontCard: React.FC<FontCardProps> = ({
         {isVisible ? (
           <img
             src={previewUrl}
-            alt={item.alias}
+            alt={displayName}
             className={imgLoaded ? "loaded" : ""}
             onLoad={() => setImgLoaded(true)}
           />
@@ -358,15 +384,18 @@ const FontCard: React.FC<FontCardProps> = ({
       <div className="font-card-info">
         <div>
           <div className="font-card-name">
-            {item.alias} <span className="font-card-id-sub">- {item.id}</span>
+            {displayName}{" "}
+            <span className="font-card-id-sub">
+              - {item.id.substring(0, 8)}
+            </span>
           </div>
           <div className="font-card-meta">
             <span>{fileSizeMB} MB</span>
             <span>•</span>
-            <span title={item.license}>
-              {item.license.length > 20
-                ? item.license.substring(0, 20) + "..."
-                : item.license}
+            <span title={licenseText}>
+              {licenseText.length > 25
+                ? licenseText.substring(0, 25) + "..."
+                : licenseText}
             </span>
           </div>
         </div>
@@ -375,13 +404,6 @@ const FontCard: React.FC<FontCardProps> = ({
         className={`font-card-btn ${isInstalled ? "installed" : "download-ready"}`}
         disabled={isInstalled || isDownloading}
         onClick={onDownload}
-        title={
-          isInstalled
-            ? "이미 라이브러리에 추가되었습니다."
-            : isDownloading
-              ? "다운로드가 진행 중입니다."
-              : "이 폰트를 라이브러리에 다운로드하고 추가합니다."
-        }
       >
         {isDownloading && (
           <div

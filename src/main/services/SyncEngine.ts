@@ -10,7 +10,6 @@ import { Logger } from "../utils/logger";
 
 const logger = new Logger({ type: "sync-engine", typeColor: "#3498db" });
 
-
 export class SyncEngine {
   private static instance: SyncEngine;
   private readonly baseUrl =
@@ -97,9 +96,6 @@ export class SyncEngine {
     }
   }
 
-  /**
-   * 개별 폰트를 다운로드하고 무결성을 검증합니다.
-   */
   public async downloadFont(
     item: RemoteFontItem,
     onProgress?: (progress: number) => void,
@@ -107,8 +103,11 @@ export class SyncEngine {
     const destPath = path.join(this.customFontsDir, item.fileName);
     const tempPath = `${destPath}.tmp`;
 
+    // UI용 이름 추출 (한국어 우선)
+    const displayName = item.displayNames.ko || item.displayNames.en || item.id;
+
     try {
-      logger.info(`Downloading font: ${item.alias} (${item.id})`);
+      logger.info(`Downloading font: ${displayName} (${item.id})`);
 
       const response = await axios({
         url: `${this.baseUrl}/fonts/${item.fileName}`,
@@ -127,14 +126,14 @@ export class SyncEngine {
 
       const buffer = Buffer.from(response.data);
 
-      // 무결성 검증 (SHA-256)
+      // 무결성 검증 (SHA-256) - 이제 아이디가 곧 해시입니다.
       const downloadHash = crypto
         .createHash("sha256")
         .update(buffer)
         .digest("hex");
-      if (downloadHash !== item.hash) {
+      if (downloadHash !== item.id) {
         throw new Error(
-          `Hash mismatch! Expected: ${item.hash}, Got: ${downloadHash}`,
+          `Hash mismatch! Expected: ${item.id}, Got: ${downloadHash}`,
         );
       }
 
@@ -142,10 +141,10 @@ export class SyncEngine {
       await fs.writeFile(tempPath, buffer);
       await fs.rename(tempPath, destPath);
 
-      logger.info(`Successfully downloaded and verified: ${item.alias}`);
+      logger.info(`Successfully downloaded and verified: ${displayName}`);
       return true;
     } catch (err) {
-      logger.error(`Failed to download font ${item.alias}: ${err}`);
+      logger.error(`Failed to download font ${displayName}: ${err}`);
       if (await this.exists(tempPath)) await fs.unlink(tempPath);
       return false;
     }

@@ -181,13 +181,12 @@ export interface AccountUpdateData {
 }
 
 export interface RemoteFontItem {
-  id: string;
-  alias: string;
+  id: string; // 폰트 바이너리 해시 (SHA-256)
   fileName: string;
-  hash: string;
-  previewPath: string;
+  displayNames: { [lang: string]: string };
+  previewPath: string; // preview/${id}.png
   fileSize: number;
-  license: string;
+  license: { [lang: string]: string };
   licenseUrl: string;
   createdAt: string;
   updatedAt: string;
