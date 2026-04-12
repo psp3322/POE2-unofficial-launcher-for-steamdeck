@@ -779,7 +779,7 @@ export const SETTINGS_CONFIG: SettingsCategory[] = [
           {
             id: "openFontManagerBtn",
             type: "button",
-            label: "커스텀 폰트 관리",
+            label: "커스텀 폰트 관리 (BETA)",
             buttonText: "열기",
             variant: "primary",
             description: "게임 내 폰트를 교체하거나 원본으로 복구합니다.",

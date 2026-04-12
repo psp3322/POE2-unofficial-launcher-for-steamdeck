@@ -12,6 +12,7 @@ import {
   PatchProgress,
   AccountUpdateData,
   PatchReservation,
+  RemoteFontItem,
 } from "../shared/types";
 
 const logger = new PreloadLogger({ type: "PRELOAD", typeColor: "#8BE9FD" });
@@ -281,13 +282,28 @@ contextBridge.exposeInMainWorld("electronAPI", {
     pickFontFile: () => ipcRenderer.invoke("font:pick-file"),
     readFile: (filePath: string) =>
       ipcRenderer.invoke("font:read-file", filePath),
-    addFont: (filePath: string, previewDataUrl?: string) =>
-      ipcRenderer.invoke("font:add-font", filePath, previewDataUrl),
+    analyzeFile: (filePath: string) =>
+      ipcRenderer.invoke("font:analyze-file", filePath),
+    addFont: (
+      filePath: string,
+      previewDataUrl?: string,
+      customAlias?: string,
+      remoteSourceId?: string | null,
+    ) =>
+      ipcRenderer.invoke(
+        "font:add-font",
+        filePath,
+        previewDataUrl,
+        customAlias,
+        remoteSourceId,
+      ),
     removeFont: (id: string) => ipcRenderer.invoke("font:remove-font", id),
     updateAlias: (id: string, newAlias: string) =>
       ipcRenderer.invoke("font:update-alias", id, newAlias),
     applyBatch: (assignments: Record<string, string | null>) =>
       ipcRenderer.invoke("font:apply-batch", assignments),
+    downloadRemote: (item: RemoteFontItem, customAlias?: string) =>
+      ipcRenderer.invoke("font:download-remote", item, customAlias),
     openCustomFontsFolder: () => ipcRenderer.invoke("font:open-folder"),
     getCatalog: () => ipcRenderer.invoke("font:get-catalog"),
     syncCatalog: (force: boolean = false) =>

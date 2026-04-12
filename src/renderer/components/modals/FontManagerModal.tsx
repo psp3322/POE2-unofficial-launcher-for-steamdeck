@@ -2,7 +2,6 @@ import React, { useEffect, useState, useMemo, useCallback } from "react";
 
 import { AppConfig, UnifiedFontData } from "../../../shared/types";
 import { useGameState } from "../../contexts/GameStateContext";
-import { FontPreviewGenerator } from "../../utils/FontPreviewGenerator";
 import { Toast } from "../ui/Toast";
 import "./FontManagerModal.css";
 
@@ -25,11 +24,9 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("");
 
-  // 현재 에디팅 중인 폰트 ID 및 별명
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
 
-  // 서비스별 할당 상태 (로컬 변경 추적용)
   const [assignments, setAssignments] = useState<Record<string, string | null>>(
     {},
   );
@@ -39,7 +36,6 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
     Record<string, number>
   >({});
 
-  // Toast State
   const [toastMsg, setToastMsg] = useState("");
   const [toastVariant, setToastVariant] = useState<
     "default" | "success" | "warning" | "error" | "white"
@@ -47,7 +43,6 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
   const [toastVisible, setToastVisible] = useState(false);
   const toastTimerRef = React.useRef<NodeJS.Timeout | null>(null);
 
-  // Confirm Modal State
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [pendingDeleteAlias, setPendingDeleteAlias] = useState("");
@@ -74,7 +69,6 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
     );
   }, [fonts, selectedFontId, hoveredFontId]);
 
-  // 초기 상태 대비 변경 여부 확인 (적용 버튼 활성화 기준)
   const isDirty = useMemo(() => {
     return Object.entries(assignments).some(([service, fontId]) => {
       const currentAppliedFont = fonts.find((f) =>
@@ -105,7 +99,7 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
     } catch (e) {
       console.error("Failed to fetch fonts", e);
     }
-  }, []); // Only state setters used, so empty deps
+  }, []);
 
   const showToast = useCallback(
     (
@@ -142,35 +136,6 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
     }
   }, [assignments, fetchFonts, showToast]);
 
-  const handleAddFont = useCallback(async () => {
-    setIsLoading(true);
-    setLoadingMessage("폰트 파일을 선택하고 있습니다...");
-    try {
-      const filePath = await window.electronAPI.font.pickFontFile();
-      if (!filePath) {
-        setIsLoading(false);
-        return;
-      }
-
-      setLoadingMessage("폰트 정보를 분석하고 미리보기를 생성하는 중입니다...");
-      const buffer = await window.electronAPI.font.readFile(filePath);
-      const fileName = filePath.split(/[\\/]/).pop() || "unknown.ttf";
-      const blob = new Blob([buffer], { type: "font/ttf" });
-      const file = new File([blob], fileName);
-      const previewDataUrl = await FontPreviewGenerator.generatePreview(file);
-
-      await window.electronAPI.font.addFont(filePath, previewDataUrl);
-      await fetchFonts();
-      showToast("새 폰트가 라이브러리에 추가되었습니다.", "success");
-    } catch (err: unknown) {
-      const error = err as Error;
-      showToast(`폰트 등록 중 오류가 발생했습니다: ${error.message}`, "error");
-    } finally {
-      setIsLoading(false);
-      setLoadingMessage("");
-    }
-  }, [fetchFonts, showToast]);
-
   useEffect(() => {
     if (isVisible) {
       fetchFonts();
@@ -193,25 +158,18 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
       },
     );
 
-    const handleManualAddEvent = () => handleAddFont();
-    window.addEventListener("trigger-manual-font-add", handleManualAddEvent);
-
     return () => {
       removeUpdateListener();
       removeProgressListener();
-      window.removeEventListener(
-        "trigger-manual-font-add",
-        handleManualAddEvent,
-      );
     };
-  }, [fetchFonts, handleAddFont]);
+  }, [fetchFonts]);
 
   const handleToggleAssignment = (
     e: React.MouseEvent,
     service: ServiceKey,
     fontId: string,
   ) => {
-    e.stopPropagation(); // 행 선택 방지
+    e.stopPropagation();
     if (service === "Kakao Games" && isKakaoRunning) return;
     if (service === "GGG" && isGGGRunning) return;
 
@@ -226,13 +184,6 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
     const font = fonts.find((f) => f.id === id);
     if (!font) return;
 
-    if (font.appliedServices && font.appliedServices.length > 0) {
-      return showToast(
-        "현재 서비스에 할당된 폰트는 삭제할 수 없습니다. '기본값'으로 변경 후 삭제해 주세요.",
-        "warning",
-      );
-    }
-
     setPendingDeleteId(id);
     setPendingDeleteAlias(font.alias);
     setShowDeleteConfirm(true);
@@ -246,6 +197,11 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
     try {
       await window.electronAPI.font.removeFont(pendingDeleteId);
       await fetchFonts();
+
+      if (selectedFontId === pendingDeleteId) {
+        setSelectedFontId("DEFAULT");
+      }
+
       showToast("폰트가 삭제되었습니다.", "success");
     } catch (err) {
       console.error(err);
@@ -259,7 +215,6 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
 
   const startEdit = (e: React.MouseEvent, id: string, currentAlias: string) => {
     e.stopPropagation();
-    // 가상 항목인 '기본값'만 수정 금지
     if (id === "DEFAULT") return;
     setEditingId(id);
     setEditValue(currentAlias);
@@ -273,7 +228,6 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
       showToast("별칭이 수정되었습니다.", "success");
     } catch (e: unknown) {
       const error = e as Error;
-      // 에러 메시지에서 '이미 ... 별칭을 가진' 문구가 있으면 경고 토스트
       showToast(error.message, "error");
     } finally {
       setEditingId(null);
@@ -292,7 +246,6 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
         ref={modalRef}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Shared Toast Notification */}
         <Toast
           message={toastMsg}
           visible={toastVisible}
@@ -300,7 +253,6 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
           variant={toastVariant}
         />
 
-        {/* Loading Overlay */}
         {isLoading && (
           <div className="font-loading-overlay">
             <div className="font-loading-content">
@@ -313,13 +265,12 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
         )}
 
         <div className="font-header">
-          <h2>커스텀 폰트 관리</h2>
+          <h2>커스텀 폰트 관리 (BETA)</h2>
           <button onClick={onClose} className="font-close-x">
             <span className="material-symbols-outlined">close</span>
           </button>
         </div>
 
-        {/* Selected/Hovered Font Preview (Top) */}
         <div className="font-top-preview-section">
           {displayFont?.previewDataUrl ? (
             <div className="font-preview-img-container">
@@ -372,7 +323,6 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
                   onClick={() => setSelectedFontId(f.id)}
                   onMouseEnter={() => setHoveredFontId(f.id)}
                 >
-                  {/* Alias Cell */}
                   <div
                     className={`font-alias-cell ${isDefaultRow ? "readonly" : ""}`}
                     onClick={(e) => startEdit(e, f.id, f.alias)}
@@ -396,12 +346,10 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
                     )}
                   </div>
 
-                  {/* Font Name Cell */}
                   <div className="font-original-name-cell">
                     <span className="font-original-name">{f.originalName}</span>
                   </div>
 
-                  {/* Kakao Radio Column */}
                   <div className="font-radio-cell">
                     {isDownloading ? (
                       <div
@@ -425,7 +373,6 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
                     )}
                   </div>
 
-                  {/* GGG Radio Column */}
                   <div className="font-radio-cell">
                     {isDownloading ? (
                       <div
@@ -447,7 +394,6 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
                     )}
                   </div>
 
-                  {/* Delete Cell */}
                   <div className="font-delete-cell">
                     {f.id === "DEFAULT" ? (
                       <button
@@ -476,6 +422,14 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
           </div>
         </div>
 
+        <div className="font-warning-banner">
+          <span className="material-symbols-outlined">info</span>
+          <p>
+            변경 사항 적용 후 게임에서 폰트가 정상적으로 표시되지 않을 경우{" "}
+            <strong>재부팅이 필요합니다.</strong>
+          </p>
+        </div>
+
         <div className="font-footer">
           <div className="font-library-actions">
             <button
@@ -489,7 +443,7 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
             <button
               className="font-btn secondary"
               onClick={() => window.electronAPI.font.openCustomFontsFolder()}
-              title="폴더 열기"
+              title="폰트 저장 폴더 열기"
             >
               <span className="material-symbols-outlined">folder_open</span>
             </button>
@@ -507,7 +461,6 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
           </div>
         </div>
 
-        {/* Custom Confirm Modal for Deletion */}
         {showDeleteConfirm && (
           <div
             className="confirm-overlay"
@@ -518,6 +471,21 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
               <div className="confirm-body">
                 '<strong>{pendingDeleteAlias}</strong>' 항목을 정말
                 삭제하시겠습니까?
+                {fonts.find((f) => f.id === pendingDeleteId)?.appliedServices &&
+                  fonts.find((f) => f.id === pendingDeleteId)!
+                    .appliedServices.length > 0 && (
+                    <div className="delete-usage-warning">
+                      <span className="material-symbols-outlined">warning</span>
+                      <p>
+                        현재 [
+                        {fonts
+                          .find((f) => f.id === pendingDeleteId)!
+                          .appliedServices.join(", ")}
+                        ] 서비스에서 사용 중입니다. 삭제 시 해당 서비스는{" "}
+                        <strong>'기본값'으로 자동 롤백</strong>됩니다.
+                      </p>
+                    </div>
+                  )}
                 <br />
                 <small
                   style={{

@@ -18,6 +18,13 @@ import { setConfigWithEvent } from "../utils/config-utils";
 import { Logger } from "../utils/logger";
 import { PowerShellManager } from "../utils/powershell";
 
+export interface AddFontOptions {
+  filePath: string;
+  customAlias?: string;
+  previewDataUrl?: string;
+  remoteSourceId?: string | null;
+}
+
 const logger = new Logger({ type: "font-manager", typeColor: "#f39c12" });
 
 export class FontManager {
@@ -69,76 +76,121 @@ export class FontManager {
   }
 
   /**
-   * 폰트 로드 (내부 전용)
+   * 폰트 로드 및 메타데이터 추출 (로컬 썸네일 생성 포함)
    */
-  private async addFontInternal(
-    sourceFilePath: string,
-    customAlias?: string,
-    previewDataUrl: string = "",
-  ): Promise<CustomFontData> {
-    if (!sourceFilePath) throw new Error("유효하지 않은 파일 경로입니다.");
+  public async extractMetadata(filePath: string): Promise<{
+    originalName: string;
+    previewDataUrl: string;
+  }> {
+    return new Promise((resolve, reject) => {
+      opentype.load(filePath, (err, font) => {
+        if (err || !font) {
+          logger.error(`Failed to load font file for metadata: ${filePath}`, err);
+          return reject(new Error("유효하지 않은 폰트 파일입니다."));
+        }
+
+        const originalName =
+          font.names.fontFamily?.en ||
+          font.names.fullName?.en ||
+          path.basename(filePath, path.extname(filePath));
+
+        // [v14] 즉석에서 로컬 SVG 썸네일 생성
+        const previewDataUrl = this.generateFontThumbnail(font);
+
+        resolve({
+          originalName,
+          previewDataUrl,
+        });
+      });
+    });
+  }
+
+  /**
+   * opentype.js를 활용하여 폰트 실물에서 SVG 썸네일 생성
+   */
+  private generateFontThumbnail(font: opentype.Font): string {
+    try {
+      // [v14.1] 사용자 요청 텍스트로 변경
+      const text = "Path Of Exile - 패스 오브 액자일";
+      const fontSize = 28; // 문구가 길어졌으므로 폰트 크기 살짝 조정
+      const x = 10;
+      const y = 40;
+      
+      const pathData = font.getPath(text, x, y, fontSize);
+      const svgPath = pathData.toSVG();
+
+      // 뷰박스 확장 (문구가 길어짐에 따라 너비 확보)
+      const width = 500;
+      const height = 60;
+
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+        <rect width="100%" height="100%" fill="transparent" />
+        ${svgPath.replace('fill="black"', 'fill="white"')}
+      </svg>`;
+
+      return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
+    } catch (err) {
+      logger.warn("Failed to generate font thumbnail from binary", err);
+      return "";
+    }
+  }
+
+  private async addFontInternal(options: AddFontOptions): Promise<CustomFontData> {
+    const { filePath, customAlias, previewDataUrl, remoteSourceId } = options;
+    await this.initPromise;
+    if (!filePath) throw new Error("유효하지 않은 파일 경로입니다.");
 
     try {
-      await fs.access(sourceFilePath);
+      await fs.access(filePath);
     } catch {
-      throw new Error(`파일에 접근할 수 없습니다: ${sourceFilePath}`);
+      throw new Error(`파일에 접근할 수 없습니다: ${filePath}`);
     }
 
     return new Promise((resolve, reject) => {
       try {
         opentype.load(
-          sourceFilePath,
+          filePath,
           async (err: Error | null, font: opentype.Font | undefined) => {
             if (err || !font)
-              return reject(
-                err || new Error("폰트 데이터를 파싱할 수 없습니다."),
-              );
+              return reject(err || new Error("폰트 데이터를 파싱할 수 없습니다."));
 
             // 한글 지원 체크
-            if (
-              !font.charToGlyph("가")?.unicode &&
-              font.charToGlyph("가")?.index === 0
-            ) {
-              return reject(
-                new Error("한글(KR) 글리프를 지원하지 않는 폰트입니다."),
-              );
+            if (!font.charToGlyph("가")?.unicode && font.charToGlyph("가")?.index === 0) {
+              return reject(new Error("한글(KR) 글리프를 지원하지 않는 폰트입니다."));
             }
 
-            const originalName =
-              font.names.fontFamily?.en ||
-              font.names.fullName?.en ||
-              "Unknown Font";
+            const originalName = font.names.fontFamily?.en || font.names.fullName?.en || "Unknown Font";
 
-            // 별칭 중복 검증
-            const aliasToUse = customAlias || originalName;
-            const isDuplicate = Array.from(this.fontsMap.values()).some(
-              (f) => f.alias === aliasToUse,
-            );
-            if (isDuplicate) {
-              return reject(
-                new Error(
-                  `이미 '${aliasToUse}' 별칭을 가진 폰트가 존재합니다.`,
-                ),
-              );
+            // [v11] 중복 체크 (로컬 이름 기준)
+            const existing = Array.from(this.fontsMap.values()).find((f) => f.originalName === originalName);
+
+            if (existing) {
+              logger.info(`Font '${originalName}' already exists. Refusing duplicate.`);
+              return reject(new Error(`동일한 폰트('${originalName}')가 이미 라이브러리에 등록되어 있습니다.`));
             }
 
             const id = randomUUID();
-            const extension = path.extname(sourceFilePath).toLowerCase();
+            const extension = path.extname(filePath).toLowerCase();
             const newFileName = `${id}${extension}`;
             const destPath = path.join(this.customFontsDir, newFileName);
 
             try {
-              await fs.copyFile(sourceFilePath, destPath);
+              await fs.copyFile(filePath, destPath);
+              
+              // [v14] 서버 프리뷰가 있더라도 로컬에서 직접 추출한 썸네일을 우선 사용
+              const localPreview = this.generateFontThumbnail(font);
+              
               const now = Date.now();
               const data: CustomFontData = {
                 id,
-                alias: aliasToUse,
+                alias: customAlias || originalName,
                 fileName: newFileName,
                 originalName,
-                previewDataUrl: previewDataUrl,
+                previewDataUrl: localPreview || previewDataUrl || "",
                 previewVersion: 2,
                 createdAt: now,
                 updatedAt: now,
+                remoteSourceId: remoteSourceId || undefined,
               };
               await this.saveFontMetadata(data);
               resolve(data);
@@ -156,9 +208,8 @@ export class FontManager {
   /**
    * 새 폰트 등록 (Public)
    */
-  public async addFont(filePath: string, previewDataUrl: string = "") {
-    await this.initPromise;
-    return await this.addFontInternal(filePath, undefined, previewDataUrl);
+  public async addFont(filePath: string, previewDataUrl?: string, customAlias?: string, remoteSourceId?: string | null) {
+    return await this.addFontInternal({ filePath, previewDataUrl, customAlias, remoteSourceId });
   }
 
   private async loadFontsFromDisk() {
@@ -292,14 +343,7 @@ export class FontManager {
     const data = this.fontsMap.get(id);
     if (!data) return;
 
-    // 중복 별칭 검증 (자기 자신 제외)
-    const isDuplicate = Array.from(this.fontsMap.values()).some(
-      (f) => f.alias === newAlias && f.id !== id && !f.isDefault,
-    );
-    if (isDuplicate) {
-      throw new Error(`이미 '${newAlias}' 별칭을 가진 폰트가 존재합니다.`);
-    }
-
+    // [고도화] 별칭 중복 고유성 제한 해제
     data.alias = newAlias;
     data.updatedAt = Date.now();
     await this.saveFontMetadata(data);
@@ -357,22 +401,18 @@ export class FontManager {
             },
           );
           if (success) {
-            // 다운로드 성공 시 메타데이터 생성 및 맵 갱신
-            const now = new Date(remoteItem.createdAt).getTime();
-            const newData: CustomFontData = {
-              id: remoteItem.id,
-              alias: remoteItem.alias,
-              fileName: remoteItem.fileName,
-              originalName: remoteItem.alias,
-              previewDataUrl: this.syncEngine.getPreviewUrl(
-                remoteItem.previewPath,
-              ),
-              previewVersion: 2,
-              createdAt: now,
-              updatedAt: Date.now(),
-              isDefault: false,
-            };
-            await this.saveFontMetadata(newData);
+            // [v11] 서버 ID를 remoteSourceId로 전달하여 등록
+            const downloadedPath = path.join(this.customFontsDir, remoteItem.fileName);
+            try {
+              await this.addFontInternal(
+                downloadedPath,
+                this.syncEngine.getPreviewUrl(remoteItem.previewPath),
+                remoteItem.alias,
+                remoteItem.id,
+              );
+            } catch (err) {
+              logger.error(`Failed to integrate downloaded font: ${err}`);
+            }
           } else {
             logger.error(
               `Automatic download failed for ${remoteItem.alias}. Skipping assignment.`,
@@ -422,6 +462,61 @@ export class FontManager {
     logger.info("Batch Font Apply completed.");
   }
 
+  /**
+   * 원격 폰트 다운로드 후 로컬 라이브러리에 설치 (통합 워크플로우 전용)
+   */
+  public async downloadAndInstallRemoteFont(item: RemoteFontItem, customAlias?: string): Promise<CustomFontData> {
+    await this.initPromise;
+
+    try {
+      logger.info(`Starting intentional download for '${item.alias}' (Target Alias: ${customAlias || item.alias})...`);
+
+      // 1. 파일 다운로드
+      const success = await this.syncEngine.downloadFont(item, (progress) => {
+        this.notifyDownloadProgress(item.id, progress);
+      });
+
+      if (!success) {
+        throw new Error(`폰트 다운로드에 실패했습니다: ${item.alias}`);
+      }
+
+      const downloadedPath = path.join(this.customFontsDir, item.fileName);
+
+      // [v14] 객체 기반 파라미터 전달로 순서 오인 사태 방지
+      const result = await this.addFontInternal({
+        filePath: downloadedPath,
+        customAlias: customAlias || item.alias, // 사용자가 입력한 별칭 우선, 없으면 서버 별칭
+        remoteSourceId: item.id,
+      });
+
+      // addFontInternal이 새로운 UUID 파일명으로 복사본을 만들었으므로 원본 삭제 가능
+      if (downloadedPath !== path.join(this.customFontsDir, result.fileName)) {
+        await fs.unlink(downloadedPath).catch(() => {});
+      }
+
+      logger.info(`Remote font '${result.alias}' successfully integrated into library.`);
+      return result;
+    } catch (err) {
+      logger.error(`Failed to download and install remote font: ${err}`);
+      throw err;
+    }
+  }
+
+  /**
+   * 다운로드 진행률 알림 헬퍼
+   */
+  private notifyDownloadProgress(id: string, progress: number) {
+    import("electron").then(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows().forEach((win) => {
+        if (!win.isDestroyed())
+          win.webContents.send("font:download-progress", { id, progress });
+      });
+    });
+  }
+
+  /**
+   * 전체 폰트 목록 조회
+   */
   public async getFonts(): Promise<CustomFontData[]> {
     await this.initPromise;
     return Array.from(this.fontsMap.values()).sort(
@@ -433,12 +528,36 @@ export class FontManager {
     await this.initPromise;
     const data = this.fontsMap.get(id);
     if (!data) return;
+
     try {
+      // 1. [시스템 언인스톨] 해당 폰트가 현재 서비스에 할당되어 있는지 확인
+      const currentApplied =
+        (getConfig("appliedFonts") as Record<string, string>) || {};
+      const rollbackAssignments: Record<string, string | null> = {};
+
+      for (const [service, fontId] of Object.entries(currentApplied)) {
+        if (fontId === id) {
+          rollbackAssignments[service] = "DEFAULT";
+          logger.info(
+            `Font '${id}' is in use by '${service}'. Triggering automatic rollback to DEFAULT via applyBatch.`,
+          );
+        }
+      }
+
+      // 2. [로직 재사용] 할당된 서비스가 있다면 applyBatch를 호출하여 물리적 제거 및 레지스트리 롤백 수행
+      if (Object.keys(rollbackAssignments).length > 0) {
+        await this.applyBatch(rollbackAssignments);
+      }
+
+      // 3. [최종 물리 삭제] 런처 내부의 물리 파일 및 메타데이터 삭제
       await fs.unlink(path.join(this.customFontsDir, data.fileName));
       await fs.unlink(path.join(this.customFontsDir, `${data.id}.json`));
     } catch (err) {
-      logger.error(`Failed to delete font files: ${err}`);
+      logger.error(
+        `Failed to fully remove font or cleanup system assignments: ${err}`,
+      );
     }
+
     this.fontsMap.delete(id);
     this.notifyRenderer();
   }

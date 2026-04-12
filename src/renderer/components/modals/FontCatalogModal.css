@@ -6,7 +6,7 @@
   bottom: 0;
   background: rgba(0, 0, 0, 0.85);
   backdrop-filter: blur(8px);
-  z-index: 2100; /* FontManagerModal(2000)보다 높게 설정 */
+  z-index: 13000; /* FontManagerModal(12000)보다 높게 설정 */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -51,9 +51,9 @@
 .catalog-header-info h2 {
   margin: 0;
   font-size: 24px;
-  color: var(--theme-primary, #f39c12);
+  color: var(--theme-accent);
   font-weight: 700;
-  text-shadow: 0 0 10px rgba(243, 156, 18, 0.3);
+  text-shadow: 0 0 10px rgba(var(--theme-accent-rgb, 223, 207, 153), 0.3);
 }
 
 .catalog-header-info p {
@@ -87,12 +87,12 @@
 }
 
 .catalog-refresh-btn:hover {
-  color: var(--theme-primary, #f39c12);
+  color: var(--theme-accent);
 }
 
 .catalog-refresh-btn.spinning {
   animation: spin 1s linear infinite;
-  color: var(--theme-primary, #f39c12);
+  color: var(--theme-accent);
 }
 
 @keyframes spin {
@@ -128,8 +128,9 @@
 
 .font-card:hover {
   background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.15);
+  border-color: rgba(var(--theme-accent-rgb, 223, 207, 153), 0.3);
   transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
 }
 
 .font-card-preview {
@@ -184,6 +185,13 @@
   color: #eee;
 }
 
+.font-card-id-sub {
+  font-size: 13px;
+  color: #666;
+  font-weight: 400;
+  margin-left: 4px;
+}
+
 .font-card-meta {
   font-size: 11px;
   color: #666;
@@ -212,18 +220,21 @@
 
 .font-card-btn:hover:not(:disabled) {
   background: #444;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
 }
 
 .font-card-btn.download-ready {
-  background: #27ae60;
+  background: var(--theme-accent);
+  color: #000;
 }
 
 .font-card-btn.download-ready:hover {
-  background: #2ecc71;
+  filter: brightness(1.1);
+  transform: translateY(-1px);
 }
 
 .font-card-btn.installed {
-  background: #1a1a1a;
+  background: rgba(255, 255, 255, 0.05);
   color: #666;
   cursor: default;
 }
@@ -234,7 +245,7 @@
   left: 0;
   top: 0;
   height: 100%;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.2);
   transition: width 0.2s ease;
 }
 
@@ -244,6 +255,7 @@
   border-top: 1px solid rgba(255, 255, 255, 0.05);
   display: flex;
   justify-content: space-between;
+  background: rgba(0, 0, 0, 0.2);
 }
 
 .footer-left {
@@ -253,7 +265,7 @@
 
 .manual-add-btn {
   background: transparent;
-  border: 1px solid #444;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   color: #aaa;
   padding: 0 16px;
   height: 40px;
@@ -267,25 +279,27 @@
 }
 
 .manual-add-btn:hover {
-  border-color: #666;
-  color: #eee;
-  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--theme-accent);
+  color: var(--theme-accent);
+  background: rgba(var(--theme-accent-rgb, 223, 207, 153), 0.05);
 }
 
 .catalog-close-main {
-  background: #333;
-  color: #fff;
-  border: none;
+  background: #2a2a2a;
+  color: #ccc;
+  border: 1px solid rgba(255, 255, 255, 0.05);
   padding: 0 24px;
   height: 40px;
   border-radius: 6px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: all 0.2s;
 }
 
 .catalog-close-main:hover {
-  background: #444;
+  background: #333;
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
 /* Scrollbar Customization */
@@ -296,9 +310,57 @@
   background: rgba(255, 255, 255, 0.02);
 }
 .catalog-content::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(var(--theme-accent-rgb, 223, 207, 153), 0.1);
   border-radius: 3px;
 }
 .catalog-content::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(var(--theme-accent-rgb, 223, 207, 153), 0.3);
+}
+
+/* 설치 처리 중 오버레이 (Advanced Blur) */
+.font-loading-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(6px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 15000;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.font-loading-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  color: #fff;
+}
+
+.font-spinner {
+  width: 48px;
+  height: 48px;
+  border: 3px solid rgba(var(--theme-accent-rgb, 223, 207, 153), 0.1);
+  border-top-color: var(--theme-accent);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.font-loading-content p {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--theme-accent);
+  letter-spacing: -0.5px;
+}
+
+.font-loading-content small {
+  font-size: 12px;
+  color: #888;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }

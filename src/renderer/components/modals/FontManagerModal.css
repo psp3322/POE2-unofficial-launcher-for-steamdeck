@@ -327,6 +327,37 @@
     opacity: 0.25;
 }
 
+/* Warning Banner */
+.font-warning-banner {
+    margin: 0 24px 16px;
+    padding: 12px 20px;
+    background: rgba(223, 207, 153, 0.04);
+    border: 1px solid rgba(223, 207, 153, 0.1);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    animation: fadeIn 0.3s ease-out;
+}
+
+.font-warning-banner .material-symbols-outlined {
+    color: var(--theme-accent);
+    font-size: 20px;
+    flex-shrink: 0;
+}
+
+.font-warning-banner p {
+    margin: 0;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    color: #999;
+}
+
+.font-warning-banner p strong {
+    color: var(--theme-accent);
+    font-weight: 600;
+}
+
 /* Footer & Main Buttons */
 .font-footer {
     padding: 24px;
@@ -407,7 +438,7 @@
     display: flex;
     justify-content: center;
     align-items: center;
-    z-index: 10000; /* Higher than preview and confirm if necessary */
+    z-index: 10000;
     backdrop-filter: blur(2px);
 }
 
@@ -449,7 +480,7 @@
 }
 
 .confirm-modal {
-    width: 360px;
+    width: 400px;
     background: #1a1a1a;
     border: 1px solid #333;
     border-radius: 8px;
@@ -517,6 +548,37 @@
 .confirm-btn.primary:hover {
     filter: brightness(1.1);
     box-shadow: 0 0 15px rgba(223, 207, 153, 0.2);
+}
+
+/* 사용 중 폰트 삭제 경고 스타일 */
+.delete-usage-warning {
+    margin: 16px 0;
+    padding: 12px 16px;
+    background: rgba(243, 156, 18, 0.08);
+    border: 1px solid rgba(243, 156, 18, 0.2);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    text-align: left;
+}
+
+.delete-usage-warning .material-symbols-outlined {
+    color: #f39c12;
+    font-size: 22px;
+    flex-shrink: 0;
+}
+
+.delete-usage-warning p {
+    margin: 0;
+    font-size: 0.85rem;
+    color: #f39c12;
+    line-height: 1.5;
+}
+
+.delete-usage-warning p strong {
+    color: #fff;
+    text-decoration: underline;
 }
 
 /* 인라인 진행률 바 (Phase 5) */

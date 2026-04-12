@@ -180,9 +180,17 @@ export interface AccountUpdateData {
   loginRequired?: boolean;
 }
 
-export interface RevalidateThemeColorsEventDetail {
-  game: "POE1" | "POE2";
-  assetPath: string;
+export interface RemoteFontItem {
+  id: string;
+  alias: string;
+  fileName: string;
+  hash: string;
+  previewPath: string;
+  fileSize: number;
+  license: string;
+  licenseUrl: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface CustomFontData {
@@ -194,12 +202,13 @@ export interface CustomFontData {
   previewVersion?: number; // 미리보기 스타일 버전
   createdAt: number;
   updatedAt: number;
+  remoteSourceId?: string | null; // 원격 서버(Catalog) 출처 식별자 (중복 방지용)
 }
 
 export interface UnifiedFontData extends CustomFontData {
   appliedServices: string[];
   isUnknown?: boolean;
-  isDefault?: boolean; // UI 리스트에서의 식별용으로만 유지
+  isDefault?: boolean; // UI 리스트에서의 식별용: 시스템 기본값(가상 항목)인 경우 true
 }
 
 export interface FontAPI {

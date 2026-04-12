@@ -36,12 +36,23 @@ export class FontIpcHandler {
       }
     });
 
-    ipcMain.handle("font:get-catalog", () => {
+    ipcMain.handle("font:get-catalog", async () => {
       try {
         const fm = FontManager.getInstance();
-        return fm.getCatalog();
+        return await fm.getCatalog();
       } catch (err) {
-        logger.error("Failed to get catalog", err);
+        logger.error("Failed to get font catalog", err);
+        throw err;
+      }
+    });
+
+    // [v11] 파일 선분석 - 별칭 입력 전 중복 체크용
+    ipcMain.handle("font:analyze-file", async (_event, filePath: string) => {
+      try {
+        const fm = FontManager.getInstance();
+        return await fm.extractMetadata(filePath);
+      } catch (err) {
+        logger.error(`Failed to analyze font file: ${filePath}`, err);
         throw err;
       }
     });
@@ -57,6 +68,20 @@ export class FontIpcHandler {
       }
     });
 
+    ipcMain.handle(
+      "font:download-remote",
+      async (_, item: RemoteFontItem, customAlias?: string) => {
+        try {
+          const fm = FontManager.getInstance();
+          // [v14] 객체 및 별칭 전달 보장
+          return await fm.downloadAndInstallRemoteFont(item, customAlias);
+        } catch (err) {
+          logger.error(`Failed to download remote font ${customAlias || item.alias}`, err);
+          throw err;
+        }
+      },
+    );
+
     ipcMain.handle("font:read-file", async (_, filePath: string) => {
       try {
         const buffer = await fs.readFile(filePath);
@@ -69,11 +94,12 @@ export class FontIpcHandler {
 
     ipcMain.handle(
       "font:add-font",
-      async (_, filePath: string, previewDataUrl?: string) => {
+      async (_, filePath: string, previewDataUrl?: string, customAlias?: string) => {
         try {
           if (!filePath) throw new Error("파일 경로가 유효하지 않습니다.");
           const fm = FontManager.getInstance();
-          return await fm.addFont(filePath, previewDataUrl);
+          // [v14] 객체 기반 파라미터로 명확하게 전달
+          return await fm.addFont(filePath, previewDataUrl, customAlias);
         } catch (err) {
           logger.error("Failed to add font", err);
           throw err;

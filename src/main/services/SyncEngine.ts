@@ -5,22 +5,11 @@ import path from "node:path";
 import axios from "axios";
 import { app } from "electron";
 
+import { RemoteFontItem } from "../../shared/types";
 import { Logger } from "../utils/logger";
 
 const logger = new Logger({ type: "sync-engine", typeColor: "#3498db" });
 
-export interface RemoteFontItem {
-  id: string;
-  alias: string;
-  fileName: string;
-  hash: string;
-  previewPath: string;
-  fileSize: number;
-  license: string;
-  licenseUrl: string;
-  createdAt: string;
-  updatedAt: string;
-}
 
 export class SyncEngine {
   private static instance: SyncEngine;
