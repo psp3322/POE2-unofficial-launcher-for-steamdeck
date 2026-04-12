@@ -347,6 +347,12 @@ const FontCard: React.FC<FontCardProps> = ({
   const [imgLoaded, setImgLoaded] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
 
+  const fullName = getLabel(item.fullNames, currentLang);
+  const familyName = getLabel(item.familyNames, currentLang);
+  const previewUrl = `https://nerdhead-lab.github.io/POE2-unofficial-launcher/fonts/${item.previewPath}`;
+  const fileSizeMB = (item.fileSize / (1024 * 1024)).toFixed(1);
+  const licenseText = getLabel(item.license, currentLang);
+
   useEffect(() => {
     const obs = new IntersectionObserver(
       ([entry]) => {
@@ -362,20 +368,20 @@ const FontCard: React.FC<FontCardProps> = ({
     return () => obs.disconnect();
   }, []);
 
-  const fileSizeMB = (item.fileSize / (1024 * 1024)).toFixed(1);
-  const previewUrl = `https://nerdhead-lab.github.io/POE2-unofficial-launcher/fonts/${item.previewPath}`;
-  const displayName = getLabel(item.displayNames, currentLang);
-  const licenseText = getLabel(item.license, currentLang);
-
   return (
     <div className="font-card" ref={cardRef}>
       <div className={`font-card-preview ${imgLoaded ? "has-image" : ""}`}>
         {isVisible ? (
           <img
             src={previewUrl}
-            alt={displayName}
+            alt={fullName}
             className={imgLoaded ? "loaded" : ""}
             onLoad={() => setImgLoaded(true)}
+            onError={(e) => {
+              const target = e.target as HTMLImageElement;
+              target.src = "";
+              target.className = "error-img";
+            }}
           />
         ) : (
           <div className="placeholder">썸네일 로딩 중...</div>
@@ -383,11 +389,11 @@ const FontCard: React.FC<FontCardProps> = ({
       </div>
       <div className="font-card-info">
         <div>
-          <div className="font-card-name">
-            {displayName}{" "}
-            <span className="font-card-id-sub">
-              - {item.id.substring(0, 8)}
-            </span>
+          <div className="font-card-name" title={fullName}>
+            {fullName}
+            {fullName !== familyName && (
+              <span className="font-card-id-sub"> - {familyName}</span>
+            )}
           </div>
           <div className="font-card-meta">
             <span>{fileSizeMB} MB</span>
@@ -399,36 +405,36 @@ const FontCard: React.FC<FontCardProps> = ({
             </span>
           </div>
         </div>
-      </div>
-      <button
-        className={`font-card-btn ${isInstalled ? "installed" : "download-ready"}`}
-        disabled={isInstalled || isDownloading}
-        onClick={onDownload}
-      >
-        {isDownloading && (
-          <div
-            className="card-progress-bar"
-            style={{ width: `${progress}%` }}
-          ></div>
-        )}
-        <span
-          className="material-symbols-outlined"
-          style={{ fontSize: "18px" }}
+        <button
+          className={`font-card-btn ${isInstalled ? "installed" : "download-ready"}`}
+          disabled={isInstalled || isDownloading}
+          onClick={onDownload}
         >
-          {isInstalled
-            ? "check_circle"
-            : isDownloading
-              ? "downloading"
-              : "download"}
-        </span>
-        <span>
-          {isInstalled
-            ? "이미 설치됨"
-            : isDownloading
-              ? "다운로드 중..."
-              : "추가"}
-        </span>
-      </button>
+          {isDownloading && (
+            <div
+              className="card-progress-bar"
+              style={{ width: `${progress}%` }}
+            ></div>
+          )}
+          <span
+            className="material-symbols-outlined"
+            style={{ fontSize: "18px" }}
+          >
+            {isInstalled
+              ? "check_circle"
+              : isDownloading
+                ? "downloading"
+                : "download"}
+          </span>
+          <span>
+            {isInstalled
+              ? "이미 설치됨"
+              : isDownloading
+                ? "다운로드 중..."
+                : "추가"}
+          </span>
+        </button>
+      </div>
     </div>
   );
 };

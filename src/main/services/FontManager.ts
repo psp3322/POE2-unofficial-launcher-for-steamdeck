@@ -174,31 +174,34 @@ export class FontManager {
               );
             }
 
-            // [v13] 한국어 이름 우선 추출
+            // [v15] 이름 추출 로직 고도화: 스타일 정보가 포함된 fullName 우선
             const originalName =
-              font.names.fontFamily?.ko ||
-              font.names.fontFamily?.en ||
               font.names.fullName?.ko ||
               font.names.fullName?.en ||
+              font.names.fontFamily?.ko ||
+              font.names.fontFamily?.en ||
               "Unknown Font";
 
-            // [v11] 중복 체크 (로컬 이름 기준)
-            const existing = Array.from(this.fontsMap.values()).find(
-              (f) => f.originalName === originalName,
-            );
+            // [v15] 중복 체크 기준을 '해시(ID)'로 변경
+            // 이름(originalName)이 같더라도 해시가 다르면 다른 폰트(Bold 등)로 허용
+            const fileBuffer = await fs.readFile(filePath);
+            const id = crypto
+              .createHash("sha256")
+              .update(fileBuffer)
+              .digest("hex");
 
+            const existing = this.fontsMap.get(id);
             if (existing) {
               logger.info(
-                `Font '${originalName}' already exists. Refusing duplicate.`,
+                `Font with hash '${id.substring(0, 8)}' already exists.`,
               );
               return reject(
                 new Error(
-                  `동일한 폰트('${originalName}')가 이미 라이브러리에 등록되어 있습니다.`,
+                  `동일한 내용의 폰트('${originalName}')가 이미 라이브러리에 등록되어 있습니다.`,
                 ),
               );
             }
 
-            const id = randomUUID();
             const extension = path.extname(filePath).toLowerCase();
             const newFileName = `${id}${extension}`;
             const destPath = path.join(this.customFontsDir, newFileName);
@@ -212,7 +215,7 @@ export class FontManager {
               const now = Date.now();
               const data: CustomFontData = {
                 id,
-                alias: customAlias || originalName,
+                alias: customAlias || originalName, // 카탈로그에서 온 경우 이미 fullName이 alias로 주입됨
                 fileName: newFileName,
                 originalName,
                 previewDataUrl: localPreview || previewDataUrl || "",
@@ -520,14 +523,19 @@ export class FontManager {
     customAlias?: string,
   ): Promise<CustomFontData> {
     await this.initPromise;
+
+    // [v15] 카탈로그의 상세 이름을 별칭으로 주입 (스타일 정보 보존)
     const currentLang = (getConfig("language") as string) || "ko";
-    const remoteName =
-      item.displayNames[currentLang] || item.displayNames.en || item.id;
+    const resolvedAlias =
+      customAlias ||
+      item.fullNames[currentLang] ||
+      item.fullNames["en"] ||
+      item.familyNames[currentLang] ||
+      item.familyNames["en"] ||
+      item.id;
 
     try {
-      logger.info(
-        `Starting intentional download for '${remoteName}' (Target Alias: ${customAlias || remoteName})...`,
-      );
+      logger.info(`Starting intentional download for '${resolvedAlias}'...`);
 
       // 1. 파일 다운로드
       const success = await this.syncEngine.downloadFont(item, (progress) => {
