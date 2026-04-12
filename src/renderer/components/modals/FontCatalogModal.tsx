@@ -453,7 +453,7 @@ const FontCard: React.FC<FontCardProps> = ({
         )}
       </div>
       <div className="font-card-info">
-        <div>
+        <div className="font-card-details">
           <div className="font-card-name" title={fullName}>
             {fullName}
             <span className="font-card-id-sub"> - {familyName}</span>
@@ -486,6 +486,7 @@ const FontCard: React.FC<FontCardProps> = ({
             </span>
           </div>
         </div>
+
         <button
           className={`font-card-btn ${isInstalled ? "installed" : "download-ready"}`}
           disabled={isInstalled || isDownloading}
