@@ -18,7 +18,18 @@
   win: {
     icon: "build/icon.ico",
     target: "nsis",
+    asarUnpack: [
+      "dist-electron/workers/**/*",
+      "node_modules/canvas/**/*"
+    ]
   },
+  extraResources: [
+    {
+      from: "src/main/assets",
+      to: "assets",
+      filter: ["**/*"],
+    },
+  ],
   publish: {
     provider: "github",
     owner: "NERDHEAD-lab",

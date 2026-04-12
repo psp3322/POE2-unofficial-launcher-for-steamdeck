@@ -55,10 +55,12 @@ import {
 } from "./events/handlers/ConfigSyncHandler";
 import { DebugLogHandler } from "./events/handlers/DebugLogHandler";
 import { DevToolsVisibilityHandler } from "./events/handlers/DevToolsVisibilityHandler";
+import { FontIpcHandler } from "./events/handlers/FontIpcHandler";
 import { GameInstallCheckHandler } from "./events/handlers/GameInstallCheckHandler";
 import {
   GameProcessStartHandler,
   GameProcessStopHandler,
+  getGlobalGameStatus,
 } from "./events/handlers/GameProcessStatusHandler";
 import { GameStatusSyncHandler } from "./events/handlers/GameStatusSyncHandler";
 import { InactiveWindowVisibilityHandler } from "./events/handlers/InactiveWindowVisibilityHandler";
@@ -522,6 +524,10 @@ ipcMain.on("app:fatal-error-ready", () => {
 
 ipcMain.handle("debug:get-history", () => {
   return getLogHistory();
+});
+
+ipcMain.handle("game:get-status", (_event, gameId: string, serviceId: string) => {
+  return getGlobalGameStatus(gameId, serviceId);
 });
 
 // [Removed] Old session:logout handler (duplicates new partitioned one)
@@ -1755,8 +1761,8 @@ async function createWindow() {
     eventBus.emit(event.type, appContext, event.payload);
   });
 
-  // Register Tool Handlers
-  eventBus.register(ToolForceRepairHandler);
+  // Register Handlers
+  eventBus.register(ToolForceRepairHandler); // EventBus based
 
   printBanner();
   logger.log("[Main] Main Logger initialized.");
@@ -2697,6 +2703,9 @@ ipcMain.handle("theme:sync-force", async () => {
 });
 
 app.whenReady().then(async () => {
+  // Register Font IPC Handlers early to avoid race conditions
+  FontIpcHandler.register();
+
   // Register custom protocol to load assets from %appdata%
   protocol.handle("asset", (request) => {
     try {

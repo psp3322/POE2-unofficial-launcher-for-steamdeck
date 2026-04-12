@@ -171,6 +171,14 @@ async function main() {
     }
   }
 
+  // [정렬] 1순위: 등록일(createdAt) 오름차순 -> 최신 항목이 끝에 위치함
+  //        2순위: 파일명(fileName) 오름차순  -> 동시 추가 시 순서 고정 (셔플 방지)
+  newList.sort((a, b) => {
+    if (a.createdAt !== b.createdAt)
+      return a.createdAt.localeCompare(b.createdAt);
+    return a.fileName.localeCompare(b.fileName);
+  });
+
   fs.writeFileSync(LIST_JSON_PATH, JSON.stringify(newList, null, 2), "utf-8");
   console.log("\n--- Sync Completed successfully ---");
   console.log(`Updated list.json at: ${LIST_JSON_PATH}`);

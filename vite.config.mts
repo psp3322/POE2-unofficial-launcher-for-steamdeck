@@ -52,6 +52,25 @@ export default defineConfig({
         entry: "src/main/main.ts",
         vite: {
           define: defines,
+          build: {
+            rollupOptions: {
+              external: ["canvas"],
+            },
+          },
+        },
+      },
+      {
+        entry: "src/main/workers/FontMutatorWorker.ts",
+        vite: {
+          define: defines,
+          build: {
+            outDir: "dist-electron/workers",
+            lib: {
+              entry: "src/main/workers/FontMutatorWorker.ts",
+              formats: ["cjs"],
+              fileName: () => "[name].js",
+            },
+          },
         },
       },
       {

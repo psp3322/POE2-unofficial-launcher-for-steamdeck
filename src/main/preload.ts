@@ -12,6 +12,7 @@ import {
   PatchProgress,
   AccountUpdateData,
   PatchReservation,
+  RemoteFontItem,
 } from "../shared/types";
 
 const logger = new PreloadLogger({ type: "PRELOAD", typeColor: "#8BE9FD" });
@@ -47,6 +48,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   onGameStatusUpdate: (callback: (status: GameStatusState) => void) => {
     ipcRenderer.on("game-status-update", (_event, status) => callback(status));
   },
+  getGameStatus: (gameId: string, serviceId: string) =>
+    ipcRenderer.invoke("game:get-status", gameId, serviceId),
   onDebugLog: (callback: (log: DebugLogEvent["payload"]) => void) => {
     const handler = (_event: IpcRendererEvent, log: DebugLogEvent["payload"]) =>
       callback(log);
@@ -271,4 +274,54 @@ contextBridge.exposeInMainWorld("electronAPI", {
     return () => ipcRenderer.off("app:fatal-error", handler);
   },
   reportFatalReady: () => ipcRenderer.send("app:fatal-error-ready"),
+
+  // [Font Management]
+  font: {
+    getFonts: () => ipcRenderer.invoke("font:get-fonts"),
+    getUnifiedFonts: () => ipcRenderer.invoke("font:get-unified-fonts"),
+    pickFontFile: () => ipcRenderer.invoke("font:pick-file"),
+    readFile: (filePath: string) =>
+      ipcRenderer.invoke("font:read-file", filePath),
+    analyzeFile: (filePath: string) =>
+      ipcRenderer.invoke("font:analyze-file", filePath),
+    addFont: (
+      filePath: string,
+      previewDataUrl?: string,
+      customAlias?: string,
+      remoteSourceId?: string | null,
+    ) =>
+      ipcRenderer.invoke(
+        "font:add-font",
+        filePath,
+        previewDataUrl,
+        customAlias,
+        remoteSourceId,
+      ),
+    removeFont: (id: string) => ipcRenderer.invoke("font:remove-font", id),
+    updateAlias: (id: string, newAlias: string) =>
+      ipcRenderer.invoke("font:update-alias", id, newAlias),
+    applyBatch: (assignments: Record<string, string | null>) =>
+      ipcRenderer.invoke("font:apply-batch", assignments),
+    downloadRemote: (item: RemoteFontItem, customAlias?: string) =>
+      ipcRenderer.invoke("font:download-remote", item, customAlias),
+    openCustomFontsFolder: () => ipcRenderer.invoke("font:open-folder"),
+    getCatalog: () => ipcRenderer.invoke("font:get-catalog"),
+    syncCatalog: (force: boolean = false) =>
+      ipcRenderer.invoke("font:sync-catalog", force),
+    onFontUpdated: (callback: () => void) => {
+      const handler = () => callback();
+      ipcRenderer.on("font:updated", handler);
+      return () => ipcRenderer.off("font:updated", handler);
+    },
+    onDownloadProgress: (
+      callback: (data: { id: string; progress: number }) => void,
+    ) => {
+      const handler = (
+        _event: IpcRendererEvent,
+        data: { id: string; progress: number },
+      ) => callback(data);
+      ipcRenderer.on("font:download-progress", handler);
+      return () => ipcRenderer.off("font:download-progress", handler);
+    },
+  },
 });

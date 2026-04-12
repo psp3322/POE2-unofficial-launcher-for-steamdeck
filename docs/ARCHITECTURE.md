@@ -76,7 +76,7 @@
     - 메인 프로세스의 `store.onDidChange` 이벤트를 구독하여 설정 변경 시 `mainWindow`, `debugWindow`, `gameWindow` 등 모든 활성 창으로 즉시 알림(`config-changed`)을 브로드캐스트함.
     - 렌더러는 설정 데이터를 로컬 React State로 동기화하여 관리함.
   - **Asset-Specific Indexing**: 이미지 경로 대신 `gameId`('POE1', 'POE2')를 키로 사용하여 각 게임당 최적의 테마 데이터를 유지하고 관리 복잡도를 낮춤.
-  - **Zero-Flicker Startup Sequence**: (NEW) 런처 시동 시 캐시된 `assetPath`를 즉시 배경으로 로드하고, 원격 테마 동기화(`isThemesSynced`)가 완료될 때까지 Splash 화면을 유지하여 시각적 정합성을 100% 보장함.
+  - **Zero-Flicker Startup Sequence**: 런처 시동 시 캐시된 `assetPath`를 즉시 배경으로 로드하고, 원격 테마 동기화(`isThemesSynced`)가 완료될 때까지 Splash 화면을 유지하여 시각적 정합성을 100% 보장함.
 - **결과**: 앱 설정이 영구 저장되며, 리소스 낭비(불필요한 이미지 디코딩)나 시동 시 배경 깜빡임이 없는 프리미엄한 사용자 경험을 제공함.
 
 #### ADR-004: Type-Safe Event Bus (Pub-Sub Pattern)
@@ -91,7 +91,7 @@
   - **타입 안전성**: 잘못된 페이로드를 emit하거나 처리할 수 없게 되어 컴파일 단계에서 오류를 방지함.
   - **확장성**: 새로운 기능 추가 시 기존 코드를 수정하지 않고 새로운 핸들러를 등록(`register`)하는 것만으로 기능 확장이 가능함.
 
-  > **참고**: 구현 예제 및 상세 가이드는 [EVENT_SYSTEM_GUIDE.md](./EVENT_SYSTEM_GUIDE.md)를 참고하세요.
+  > **참고**: 구현 예제 및 상세 가이드는 AI 에이전트 전용 스킬인 [.agents/skills/event-ipc-integration/SKILL.md](../.agents/skills/event-ipc-integration/SKILL.md)를 참고하여 개발을 지시하세요.
 
 #### ADR-005: Unified PowerShell & Registry Management (Standardization)
 
@@ -134,192 +134,155 @@
 
 - **상황**: 초기 앱 로드 중 예외가 발생하거나 React 렌더링에 치명적인 문제가 있을 경우 백화현상(White Screen)과 함께 런처가 응답 불능 상태에 빠지는 현상 제거 필요.
 - **결정**:
-  - **Main Process 포착**: `process.on('uncaughtException', ...)` 및 `unhandledRejection` 핸들러를 추가하여 메인 프로세스의 치명적 오류를 글로벌하게 포착. 발생한 오류는 Renderer가 준비(`app:fatal-error-ready`)되기 전까지 버퍼링함.
-  - **Renderer ErrorBoundary**: React 렌더 트리 내부에서 발생하는 JS 오류는 최상단 `ErrorBoundary` 컴포넌트가 `componentDidCatch`로 포착함.
-  - **FatalErrorModal**: 어떠한 오류든 포착되면, 안전한 CSS/스타일(인라인 적용 포함)만을 사용한 `FatalErrorModal`을 노출하여 사용자가 에러 내역을 복사하거나 런처를 강제 재시작할 수 있도록 안내.
-- **결과**:
-  - **안정성 (Graceful Degradation)**: 앱 크래시 대신 명확한 안내 화면을 띄워 사용자 거부감을 최소화하고 디버깅 가능한 보고 체계를 갖춤.
-  - **백화현상 근절**: 어떠한 타이밍에 오류가 발생하든 최소한의 방어 레이어가 정상 렌더링을 보장.
+  - **Main Process 포착**: `process.on('uncaughtException', ...)` 및 `unhandledRejection` 핸들러를 추가하여 메인 프로세스의 치명적 오류를 글로벌하게 포착함.
+  - **Renderer ErrorBoundary**: React 렌더 트리 내부에서 발생하는 JS 오류는 최상단 `ErrorBoundary` 컴포넌트가 포착함.
+  - **FatalErrorModal**: 어떠한 오류든 포착되면, 안전한 CSS 스타일만을 사용한 `FatalErrorModal`을 노출하여 사용자가 에러 내역을 복사하거나 런처를 강제 재시작할 수 있도록 안내함.
+- **결과**: 앱 크래시 대신 명확한 안내 화면을 띄워 사용자 거부감을 최소화하고 디버깅 가능한 보고 체계를 갖춤.
 
 #### ADR-010: Robust UAC Bypass via Proxy VBS & Task Scheduler
 
 - **상황**: 게임 실행 파일을 직접 호출 시 관리자 권한 요청(UAC)이 매번 발생하여 자동화 흐름이 끊김. 이를 해결하기 위해 시스템 레지스트리를 수정하여 런처가 제어권을 가져와야 함.
 - **결정**:
-  - **Task Scheduler 활용**: `schtasks`를 이용해 관리자 권한으로 실행되는 작업을 등록하고, 일반 사용자 권한에서 이 작업을 호출하는 방식으로 UAC를 우회함.
-  - **Proxy VBS & Runner 구조**:
-    - `proxy.vbs`: 레지스트리 프로토콜 핸들러에 등록되어 `schtasks /run`을 호출하는 트리거 역할.
-    - `runner.vbs`: 실제 관리자 권한으로 실행되어 원본 게임 실행 파일을 실행하고 결과를 로그로 남기는 역할.
-  - **PowerShell 인자 최적화**: 경로 내 공백 및 인용 부호 문제를 해결하기 위해 PowerShell의 배열 인자 처리 방식(`$schArgs = @(...)`)과 이중 따옴표(`""`) 이스케이프 관례를 적용함.
-  - **Encoding Standardization (UTF-16 LE)**: Windows Script Host(WSH)가 한글 사용자 계정 경로(`NON-ASCII`)를 인식하지 못하고 오류(`800A0408`)를 발생하는 문제를 해결하기 위해, 모든 `.vbs` 스크립트를 **UTF-16 LE (with BOM)** 형식으로 생성하도록 표준화함. (UTF-8 BOM은 일부 WSH 환경에서 컴파일 오류 유발)
-- **결과**: 사용자는 최초 한 번의 UAC 승인만으로 이후 모든 게임 실행 과정에서 한글 사용자 환경을 포함한 모든 OS 환경에서 추가 팝업 없이 자동 로그인 및 실행 기능을 누릴 수 있음.
-
-#### ADR-009: Single Instance Lock & Active Window Focus
-
-- **상황**: 사용자가 런처를 여러 번 실행할 경우 중복 프로세스가 생성되어 시스템 리소스를 낭비하고 설정 파일 충돌을 일으킬 수 있음.
-- **결정**:
-  - **Single Instance Lock**: 일렉트론의 `app.requestSingleInstanceLock()`을 사용하여 앱 시작 시 락을 체크하고, 획득 실패 시 즉시 종료함.
-  - **Second Instance Handling**: 두 번째 실행 시도가 감지되면 기존 인스턴스로 이벤트를 전달하고, 기존 창이 트레이에 있거나 최소화된 경우 복구(`restore`) 및 포커스(`focus`) 처리함.
-- **결과**: 앱의 유일성을 보장하고, 사용자가 앱을 다시 찾기 위해 트레이 아이콘을 뒤지는 수고를 덜어줌.
-
-#### ADR-010: Persistent PowerShell Session & Socket Monitoring
-
-- **상황**: 관리자 권한 작업마다 매번 새로운 PowerShell 프로세스를 띄우면 UAC 프롬프트가 반복되고 실행 지연이 발생함.
-- **결정**:
-  - **Persistent Session**: `PowerShellManager`를 통해 한 번 승인된 관리자 권한 PowerShell 세션을 백그라운드에서 유지함.
-  - **Socket-based Liveness**: 관리자 세션을 띄운 "런처" 프로세스가 실행 직후 종료되더라도, 실제 세션과 연결된 **IPC 소켓이 살아있다면 세션을 유지**하도록 `ensureSession` 로직을 개선함.
-- **결과**: 앱 실행 중 단 한 번의 UAC 승인으로 모든 관리자 권한 작업을 지연 없이 즉시 수행할 수 있게 됨.
+  - **Task Scheduler 활용**: `schtasks`를 이용해 관리자 권한으로 실행되는 작업을 등록하고 이를 호출하여 UAC를 우회함.
+  - **Proxy VBS & Runner 구조**: `proxy.vbs` 및 `runner.vbs`를 활용하여 경로 내 공백 및 인용 부호 문제를 해결함.
+  - **Encoding Standardization (UTF-16 LE)**: Windows Script Host(WSH) 한글 사용자 환경 지원을 위해 모든 스크립트를 **UTF-16 LE (with BOM)** 형식으로 생성함.
+- **결과**: 사용자는 최초 한 번의 UAC 승인만으로 이후 모든 게임 실행 과정에서 추가 팝업 없는 자동 실행 기능을 누릴 수 있음.
 
 #### ADR-011: Initial Onboarding Wizard & First-Run Logic
 
-- **상황**: 앱 최초 실행 시 사용자가 MAU 수집 고지, 광고 안내, 인증서 부재로 인한 자동 업데이트 제한 등 주요 정책을 인지하고 필수 설정(UAC 우회 등)을 진행할 수 있는 안내 장치가 필요함.
+- **상황**: 앱 최초 실행 시 사용자가 주요 정책을 인지하고 필수 설정(UAC 우회 등)을 진행할 수 있는 안내 장치가 필요함.
 - **결정**:
-  - **Multi-step Onboarding Modal**: React 기반의 3단계 위저드를 구현하여 고지 사항 확인, UAC 우회 설정, 자동화 안내를 순차적으로 진행함.
-  - **`showOnboarding` State**: 런처 설정(`AppConfig`)에 플래그를 추가하여 온보딩 완료 시 이를 저장하고 이후 실행부터는 노출되지 않도록 제어함.
-  - **Dynamic Theme Integration**: 온보딩 모달 내에서도 현재 선택된 게임 프로젝트의 테마 색상을 실시간으로 반영하여 시각적 일관성을 유지함.
-- **결과**: 서비스 정책에 대한 투명성을 확보하고, 사용자가 앱의 주요 기능을 즉시 활용할 수 있도록 초기 진입 장벽을 낮춤.
+  - **Multi-step Onboarding Modal**: React 기반의 단계별 위저드를 구현하여 고지 사항 및 필수 설정을 순차적으로 진행함.
+  - **`showOnboarding` State**: 완료 시 플래그를 저장하여 이후 실행부터는 노출되지 않도록 제어함.
+- **결과**: 서비스 정책의 투명성을 확보하고 사용자가 앱의 주요 기능을 즉시 활용할 수 있도록 유도함.
 
 #### ADR-012: Uninstaller Cleanup & Standalone Script Strategy
 
-- **상황**: 앱 제거 시 사용자의 시스템에 남은 UAC 우회 관련 작업 스케줄러 항목과 레지스트리 설정이 그대로 방치되어 시스템의 무결성을 해칠 수 있음. 기존의 앱 실행(`--uninstall`) 방식은 파일 잠금(Lock) 문제 및 프로세스 종료 타이밍 이슈로 인해 불안정함.
+- **상황**: 앱 제거 시 시스템에 남은 UAC 우회 관련 스케줄러 항목과 레지스트리 설정이 방치될 수 있음.
 - **결정**:
-  - **Standalone Batch Script**: UAC 우회 설정(`enableUACBypass`) 시, 나중에 정리를 수행할 수 있는 독립적인 배치 파일(`uninstall_uac.bat`)을 미리 생성해둠.
-  - **Uninstaller Integration**: NSIS 언인스톨러(`installer.nsh`)는 앱을 실행하지 않고, 이 배치 파일을 직접 호출하여 정리 작업을 수행함.
-  - **No Dependencies**: 앱 런타임에 의존하지 않고 OS 기본 명령어(`schtasks`, `powershell`)만 사용하는 스크립트로 동작하여 제거 과정의 안정성을 보장함.
-- **결과**: 앱 파일이 완전히 제거되기 전에 시스템 설정을 깔끔하게 원복(Revert)하며, 제거 중 발생할 수 있는 프로세스 충돌 문제를 원천 차단함.
+  - **Standalone Batch Script**: 앱 제거 시 호출될 독립적인 배치 파일(`uninstall_uac.bat`)을 미리 생성해둠.
+  - **Uninstaller Integration**: NSIS 언인스톨러는 앱을 실행하지 않고 이 배치 파일을 직접 호출하여 정리 작업을 수행함.
+- **결과**: 앱 파일이 완전히 제거되기 전에 시스템 설정을 깔끔하게 원복하며 제거 과정의 안정성을 보장함.
 
 #### ADR-013: Service Channel Architecture (Kakao vs GGG)
 
-- **상황**: Kakao Games(Korea)와 GGG(Global) 서비스 채널의 실행 방식과 권한 레벨이 상이하여, 단일한 프로세스 감시 및 로그 분석 로직으로는 오작동(이중 감시, 미감지 등)이 발생함.
+- **상황**: Kakao Games와 GGG 채널의 실행 방식과 권한 레벨이 상이하여 단일한 감사 로직으로는 오작동이 발생함.
 - **결정**:
-  - **Kakao Games (Admin Privileged)**:
-    - 런처(`POE2_Launcher`)가 관리자 권한으로 실행되어 클라이언트(`PathOfExile_KG.exe`)를 호출함.
-    - 일반 권한의 런처에서는 클라이언트의 경로(Path)를 직접 확인할 수 없으므로, **런처 프로세스 유무** 및 **활성 게임 컨텍스트(`activeGame`)**를 기준으로 식별함.
-    - 클라이언트 종료 시 감시를 즉시 중단함.
-  - **GGG (User Privileged)**:
-    - 런처 없이 클라이언트(`PathOfExile.exe`)가 직접 실행됨.
-    - **파일 경로(Folder Name)**를 통해 POE1과 POE2를 명확히 구분하여 로그 감시를 수행함.
-  - **Robust Monitoring**:
-    - 패치 오류 등으로 프로세스가 **시작 직후 종료(Immediate Crash)**되는 경우를 대비하여, `PROCESS_STOP` 이벤트 수신 시 **마지막 로그 체크(`checkLog`)**를 강제 수행하도록 개선함.
+  - **Kakao Games (Admin Privileged)**: 런처 프로세스 유무 및 활성 컨텍스트를 기준으로 식별하고 감시함.
+  - **GGG (User Privileged)**: 파일 경로를 통해 POE1과 POE2를 명확히 구분하여 로그 감시를 수행함.
 - **결과**: 서비스 채널별 특성에 맞춘 최적화된 감시 전략을 통해 로그 누락 및 오작동을 방지함.
 
 #### ADR-014: Continuous Process Monitoring Strategy (Optimization Toggle)
 
-- **상황**: 런처 외부(웹 브라우저, 직접 실행 등)에서 게임이 실행되거나, 사용자가 런처를 백그라운드로 두고 다른 작업을 할 때도 패치 오류 등을 감지해야 한다는 요구사항이 존재함. 기존 로직은 리소스 절약을 위해 런처가 포커스를 잃으면 감시를 일시 중단(Suspend)했음.
+- **상황**: 사용자가 런처를 백그라운드로 두고 다른 작업을 할 때도 패치 오류 등을 감지해야 한다는 요구사항이 존재함.
 - **결정**:
-  - **Optimization Setting**: `processWatcherEnabled` 설정을 도입하여 프로세스 감시 최적화 모드(기본값: 활성)를 제어함.
-  - **Always-On Monitoring**: 최적화 모드를 끄면(`false`), 런처가 백그라운드 상태이거나 포커스가 없어도 감시 루프를 중단하지 않고 **항상 유지**함.
-  - **Smart Warning**: 설정을 끌 때, '부팅 시 자동 실행' 및 '트레이 최소화'가 설정되어 있지 않다면 감지 효과가 제한적일 수 있음을 경고 메시지로 안내함.
-- **결과**: 리소스 사용량(CPU/Polling)은 소폭 증가하지만, 런처의 실행 상태와 무관하게(런처가 켜져만 있다면) 게임 실행 및 오류를 놓치지 않고 포착할 수 있음.
+  - **Optimization Setting**: `processWatcherEnabled` 설정을 도입하여 프로세스 감시 최적화 모드를 제어함.
+  - **Always-On Monitoring**: 최적으로 모드를 끄면 런처가 백그라운드 상태여도 감시 루프를 중단하지 않고 항상 유지함.
+- **결과**: 런처의 실행 상태와 무관하게 게임 실행 및 오류를 놓치지 않고 포착할 수 있음.
 
 #### ADR-015: Standardized Logging System (Main, Preload, Renderer)
 
-- **상황**: 프로젝트 전반(`Main`, `Preload`, `Renderer`)에서 `console.log`, `console.warn`, `console.error`를 직접 사용함으로 인해 로그 형식이 파편화되고, 런처 내부의 '디버그 콘솔' 탭에서 로그를 통합적으로 모니터링하기 어려움. 특히 프리로드 환경의 로그는 브라우저 도구를 열지 않으면 확인이 불가능함.
+- **상황**: 프로젝트 전반에서 로그 형식이 파편화되어 런처 내부 '디버그 콘솔' 탭에서 통합 모니터링이 어려움.
 - **결정**:
-  - **Unified Logger System**: 모든 레이어에서 `LoggerBase`를 확장한 커스텀 로거(`Logger`, `PreloadLogger`, `RendererLogger`)를 사용하도록 강제함.
-  - **Implicit Console Ban**: 코드 내에서 원시 `console.*` 호출을 엄격히 지양함. 모든 로그는 반드시 관련 로거 인스턴스를 통해 생성해야 함.
-  - **Process-Specific Categorization**: 로그 타입을 나누어(`MAIN`, `PRELOAD`, `DEVTOOLS`, `RENDERER` 등) 디버그 콘솔에서 프로세스별 필터링이 가능하도록 설계함.
-  - **Inter-process Streaming**: IPC(`debug-log:send`)를 통해 프리로드 및 렌더러의 로그를 메인 프로세스로 집약하여 하나의 타임라인으로 시각화함.
-- **결과**:
-  - **통합 가시성**: 개발자 도구를 열지 않고도 런처 UI 내에서 모든 시스템 흐름과 자동화 과정을 실시간으로 모니터링할 수 있음.
-  - **디버깅 편의성**: 로그 발생 시점의 정확한 타임스탬프와 프로세스 문맥을 보존하여 복합적인 오류 원인을 빠르게 식별함.
+  - **Unified Logger System**: 모든 레이어에서 `LoggerBase`를 확장한 커스텀 로거를 사용하도록 강제함.
+  - **Inter-process Streaming**: IPC를 통해 모든 로그를 메인 프로세스로 집약하여 하나의 타임라인으로 시각화함.
+- **결과**: 개발자 도구를 열지 않고도 런처 UI 내에서 모든 시스템 흐름을 실시간으로 모니터링할 수 있음.
 
 #### ADR-016: Intelligent Window Scaling & Real-time Resolution Adaptation
 
-- **상황**: 1440x960 고정 해상도 런처가 FHD 노트북이나 UMPC(Steam Deck, Legion Go 등)와 같은 저해상도/고배율 환경에서 UI가 잘리거나 조작이 불가능해지는 현상이 발생함.
+- **상황**: 저해상도 노트북이나 UMPC 환경에서 UI가 잘리거나 조작이 불가능해지는 현상이 발생함.
 - **결정**:
-  - **Dynamic Scaling Mode**: 화면 해상도를 실시간으로 감지하여, 공간이 부족할 경우 `resizable: true` 모드로 자동 전환하고 렌더러에서 `transform: scale()`을 이용한 Scale-to-fit을 적용함.
-  - **Fixed UX Priority**: QHD/4K 등 충분한 해상도 환경에서는 기존의 고정형 창(Fixed size) UX를 우선하여 디자인 정체성을 유지함.
-  - **Real-time Metrics Observation**: `display-metrics-changed` 및 `move` 이벤트를 구독하여 창이 다른 모니터로 이동하거나 해상도 설정이 변경되는 즉시 모드를 전환함.
-  - **Letterbox Implementation**: 배경 이미지를 스케일러 내부로 가두어, 화면 비율이 다를 경우 상하단/좌우에 블랙 바를 형성함으로써 시각적 일관성을 확보함.
-  - **State Indication**: 저해상도 지원 모드 활성화 시 타이틀바 제목에 상태 문구를 추가하여 사용자에게 가변 모드임을 인지시킴.
-- **결과**: 다양한 폼팩터(UMPC, 구형 노트북 등)에서 런처가 잘림 없이 항상 최적의 크기로 노출되며, 고성능 환경에서는 원래의 프리미엄 고정 디자인을 유지함.
+  - **Dynamic Scaling Mode**: 화면 해상도를 실시간 감지하여 공간이 부족할 경우 Scale-to-fit을 적용함.
+  - **Letterbox Implementation**: 배경 이미지를 스케일러 내부로 가두어 시각적 일관성을 확보함.
+- **결과**: 다양한 폼팩터에서 런처가 잘림 없이 항상 최적의 크기로 노출됨.
 
 #### ADR-017: Advanced Scheduler Configuration (XML Import Strategy)
 
-- **상황**: `schtasks /create`의 기본 명령어로는 전원 조건(AC 전원 필수)과 중복 실행 방지(IgnoreNew) 정책을 제어할 수 없어, 노트북 사용자가 자동 실행에 실패하거나 백그라운드 프로세스 잔존 시 수동 실행이 차단되는 문제가 발생함.
+- **상황**: 기본 `schtasks` 명령으로는 배터리 모드 실행이나 중복 실행 방지 정책을 정밀하게 제어할 수 없음.
 - **결정**:
-  - **XML-Based Definition**: 작업 스케줄러의 모든 속성을 제어하기 위해, CLI 플래그 대신 완전한 명세가 포함된 **XML 파일**을 동적으로 생성하여 `schtasks /create /xml`로 등록하는 방식을 채택함.
-  - **Power Condition Bypass**: `DisallowStartIfOnBatteries` 및 `StopIfGoingOnBatteries`를 `false`로 설정하여 배터리 모드에서도 안정적인 자동 실행을 보장함.
-  - **Parallel Execution Policy**: `MultipleInstancesPolicy`를 `Parallel`로 설정하여, 스케줄러가 '이미 실행 중'인 상태를 무시하고 런처를 실행하도록 허용함. (중복 방지는 런처 내부의 `SingleInstanceLock`이 담당)
-  - **Explicit Working Directory**: 실행 경로 오류를 방지하기 위해 XML 내 `<WorkingDirectory>` 태그에 앱 설치 경로를 명시적으로 주입함.
-- **결과**: 전원 상태나 이전 실행 상태와 무관하게 런처가 항상 신뢰성 있게 실행되며, 수동/자동 실행 간의 충돌 문제가 해결됨.
+  - **XML-Based Definition**: XML 명세 파일을 동적으로 생성하여 완전한 제어권을 확보함.
+  - **Power Condition Bypass**: 배터리 모드에서도 안정적인 자동 실행을 보장함.
+- **결과**: 시스템 전원 상태와 무관하게 런처가 항상 신뢰성 있게 자동 실행됨.
 
 #### ADR-018: Background-Driven Dynamic Theme System (Mandatory)
 
-- **상황**: 각 게임(POE1, POE2)의 배경화면이 다르고, 이에 어울리는 테마 색상(포인트 컬러)이 필요함. 하드코딩된 색상을 사용할 경우 특정 배경에서 가독성이 떨어지거나 미관을 해칠 수 있음.
+- **상황**: 각 게임별 배경화면에 어울리는 테마 색쌍이 필요하며 하드코딩된 색상은 가독성을 저해할 수 있음.
 - **결정**:
-  - **Auto-Extraction**: 런처가 배경 이미지를 로드할 때, `extractThemeColors` 유틸리티를 통해 이미지에서 평균색 및 액센트 색상을 자동으로 추출함.
-  - **CSS Variables Standard**: 추출된 색상은 반드시 다음 CSS 변수를 통해 UI 전반에 적용되어야 함.
-    - `--theme-accent`: 버튼, 테두리, 하이라이트 등 포인트 컬러 전용.
-    - `--theme-text`: 배경색에 최적화된 메인 텍스트 색상.
-    - `--theme-footer-bg`: 하단 푸터 및 오버레이용 어두운 배경색.
-  - **Golden Rule (Anti-Hardcoding)**: **상호작용 요소나 강조색에 하드코딩된 특정 색상(예: #dfcf99)을 절대 사용하지 않음.** 모든 포인트 컬러는 `var(--theme-accent)`를 참조해야 함.
-- **결과**: 배경화면이 바뀌어도 전체 UI가 즉시 해당 톤에 맞춰 조화롭게 조정되어, 항상 프리미엄하고 일관된 디자인 퀄리티를 유지함.
+  - **Auto-Extraction**: 이미지에서 액센트 색상을 자동 추출함.
+  - **CSS Variables Standard**: 추출된 색상은 반드시 `--theme-accent` 등의 변수를 통해서만 적용되어야 함.
+- **결과**: 배경화면이 바뀌어도 전체 UI 조화롭고 일관된 디자인 퀄리티를 유지함.
 
 #### ADR-019: Background Account Validation & UI Transformation
 
-- **상황**: 사용자가 설정 페이지에 진입했을 때, 현재 로그인된 계정 ID를 즉시 보여주어야 함. 또한 로그인 여부에 따라 단일 버튼이 '로그인' 또는 '연동 해제(로그아웃)'으로 동적으로 변해야 하며, 검증 과정 중에는 사용자 조작을 방지해야 함.
+- **상황**: 설정 페이지 집입 시 계정 ID를 즉시 보여주어야 하며 로그인 여부에 따라 버튼 성격이 동적으로 변해야 함.
 - **결정**:
-  - **Silent Background Validation**: 설정 페이지 진입 시, 메인 프로세스는 보이지 않는 배경 윈도우(Hidden Window)를 통해 카카오 게임즈 홈페이지를 로드하고 계정 정보를 추출함.
-  - **Visibility Suppression Logic**: 백그라운드 검증 모드(`validationModeActive`)인 경우, 프리로드 스크립트에서 자동 사이즈 조정 및 창 노출(`requestWindowVisibility`)을 강제로 억제함.
-  - **Reactive UI Proxy**: `SettingsContent`의 `onInit` 및 `onClickListener` 컨텍스트를 확장하여 버튼의 텍스트(`setButtonText`)와 스타일(`setVariant`)을 실시간으로 변경할 수 있도록 설계함.
-  - **Account ID Caching**: 추출된 계정 ID는 `AppConfig`에 캐싱되어 다음 진입 시 배경 검증이 완료되기 전에도 즉시 표시됨 (낙관적 UI).
-- **결과**: 사용자는 별도의 창 팝업 없이 설정 페이지에서 자신의 로그인 상태와 계정 ID를 즉시 확인할 수 있으며, 필요 시 원클릭으로 로그인 또는 로그아웃이 가능함.
+  - **Silent Background Validation**: 보이지 않는 배경 윈도우를 통해 정보를 실시간 추출함.
+  - **Account ID Caching**: 추출된 정보는 캐싱하여 다음 진입 시 즉시 표시(낙관적 UI)함.
+- **결과**: 별도의 팝업 없이 설정 페이지 내에서 로그인 상태를 즉시 확인 및 전이할 수 있음.
 
 #### ADR-020: Markdown Notice System (gh-pages Source & Automation)
 
-- **상황**: 런처 자체의 공지사항이나 개발자 노트를 포럼 외부(GitHub 등)에서 Markdown 형식으로 가져와 보여줄 때, 기존의 인라인 아코디언 방식은 레이아웃이 깨지거나 가독성이 떨어지는 이슈가 있음. 또한 `list.json` 인덱스 파일을 수동으로 관리하는 것은 번거롭고 오류 발생 가능성이 높음.
+- **상황**: 프로젝트 공지사항을 Markdown 형식으로 외부에서 가져올 때 목록 관리 및 레이아웃 유지의 어려움이 있음.
 - **결정**:
-  - **Popup Modal Structure**: Markdown 콘텐츠 전용 대형 모달(`NoticeModal`)을 도입하여 포커스된 읽기 환경을 제공함.
-  - **Marked & DOMPurify**: `marked`를 사용하여 Markdown을 HTML로 변환하고, `DOMPurify`를 통해 보안 계층을 적용함.
-  - **gh-pages Branch as Source**: 개발자가 공지사항(`.md`)을 `gh-pages` 브랜치의 `notice/` 폴더에 직접 업로드하는 모델을 채택함.
-  - **Hybrid GitHub Actions**: `.github/workflows/automate-notice-list.yml`이 `gh-pages` 브랜치에 푸시될 때 트리거되도록 설정함. 액션은 `master` 브랜치에서 최신 생성 스크립트를 가져와 `gh-pages` 브랜치 상의 `list.json`을 자동 갱신함.
-- **결과**: 개발자는 배포 브랜치(`gh-pages`)에 파일만 올리면 자동으로 인덱싱되어 런처에 반영되는 완전 자동화된 공지사항 파이프라인을 확보함.
-281: 
-282: #### ADR-021: FSM-Based State Management (Patch Reservation)
-283: 
-284: - **상황**: 패치 예약 및 자동 실행 로직이 복잡한 비동기 작업(인증, 패치 검사, 프로세스 대기 등)으로 얽혀 있어, 상태 전환 시점의 모호함과 레이스 컨디션 발생 가능성이 존재함.
-285: - **결정**:
-286:   - **FSM (Finite State Machine) 도입**: `PatchReservationService.ts`에 명확한 상태 정의(`IDLE`, `PREPARING`, `AUTHENTICATING` 등)와 전이 규칙을 적용함.
-287:   - **State Transition Logging**: 상태가 바뀔 때마다 각 상태에서의 체류 시간을 측정하여 로깅함으로써 문제 발생 시 병목 지점을 빠르게 파악할 수 있도록 함.
-288:   - **Type-Safe Handler Registry**: `any` 타입을 배제하고 상태별 전용 핸들러를 등록(`registerHandler`)하여 로직의 응집도를 높이고 부수 효과를 제어함.
-289: - **결과**: 복잡한 서비스 로직의 흐름을 한눈에 파악할 수 있게 되었으며, 예외 상황에서도 안전하게 `IDLE` 상태로 복구되는 높은 서비스 신뢰성을 확보함.
+  - **gh-pages Branch as Source**: 개발자가 `gh-pages` 브랜치에 MD 파일을 올리는 모델 채택.
+  - **Hybrid GitHub Actions**: 푸시 시 자동으로 `list.json` 인덱스를 갱신하는 자동화 파이프라인 구축.
+- **결과**: 파일 업로드만으로 런처 공지사항이 자동 동기화되는 효율적인 파이프라인 확보.
+
+#### ADR-021: FSM-Based State Management (Patch Reservation)
+
+- **상황**: 패치 예약 및 자동 실행 로직이 복잡한 비동기 작업으로 얽혀 있어 상태 전환 시점의 모호함과 레이스 컨디션 우려가 있음.
+- **결정**:
+  - **FSM (Finite State Machine) 도입**: 명확한 상태 정의(`IDLE`, `PREPARING` 등)와 전이 규칙을 적용함.
+  - **Type-Safe Handler Registry**: `any` 타입을 배제하고 상태별 전용 핸들러를 등록하여 로직 응집도를 높임.
+- **결과**: 서비스 로직의 흐름 파악이 용이해지고 예외 상황에서도 안전하게 복구되는 신뢰성을 확보함.
+
+#### ADR-022: Single Instance Lock & Active Window Focus
+
+- **상황**: 사용자가 런처를 중복 실행할 경우 리소스 낭비 및 설정 충돌 가능성이 있음.
+- **결정**:
+  - **Single Instance Lock**: `app.requestSingleInstanceLock()`을 사용하여 중복 실행을 즉시 차단함.
+  - **Second Instance Handling**: 중복 실행 시도 발생 시 기존 창에 포커스를 주거나 트레이에서 복구함.
+- **결과**: 앱의 유일성을 보장하고 사용자 편의성을 증대시킴.
+
+#### ADR-023: Persistent PowerShell Session & Socket Monitoring
+
+- **상황**: 관리자 권한 작업마다 새로운 프로세스를 띄우면 지연이 발생하고 UAC가 반복됨.
+- **결정**:
+  - **Persistent Session**: 한 번 승인된 관리자 세션을 백그라운드에서 유지함.
+  - **Socket-based Liveness**: IPC 소켓이 살아있는 한 세션을 유지하여 재승인 절차를 최소화함.
+- **결과**: 앱 실행 중 한 번의 UAC 승인으로 모든 작업을 즉시 수행할 수 있게 됨.
+
+#### ADR-024: Font Resource Externalization & Remote Sync (New)
+
+- **상황**: 폰트 바이너리는 용량이 크고 라이선스 이슈가 민감하여 실행 파일과 분리 배포할 필요가 있음.
+- **결정**:
+  - **External Hosting**: 모든 폰트를 `gh-pages` 브랜치에 저장하고 메타데이터(`list.json`)로 관리함.
+  - **Atomic Hash Sync**: 폰트 변경 시 해시값을 비교하여 필요한 폰트만 점진적으로 다운로드(Lazy Load)함.
+  - **Server-side Rendering**: 미리보기 썸네일을 GitHub Actions에서 선제적으로 생성하여 런처의 런타임 부하를 제거함.
+- **결과**: 라이선스 법적 리스크를 제거하고 런처 패키지 크기를 획기적으로 경량화함.
 
 ## 5. Settings System
 
 런처의 설정 화면은 `src/renderer/settings/types.ts` 인터페이스를 기반으로 선언적으로 구축됩니다.
 
-- **설정 구성**: [settings-config.ts](../src/renderer/settings/settings-config.ts)에서 실제 노출될 아이템들을 정의합니다.
-  - **카테고리 구조**: `General`, `Account`, `Automation`, `Advanced`, `About`
+- **설정 구성**: [settings-config.ts](./src/renderer/settings/settings-config.ts)에서 실제 노출될 아이템들을 정의합니다.
 - **핵심 메커니즘**:
   - **Type-Safe Binding**: `shared/config.ts`의 `DEFAULT_CONFIG`와 `id`로 매핑되어 영속성을 보장받습니다.
-  - **Dynamic Context**: `onInit`, `onChangeListener`를 통해 실시간 시스템 상태 반영 및 항목 레이블/비활성화 제어가 가능합니다.
-  - **Semantic Feedback**: `addDescription`을 통한 `info`, `warning`, `error` 시각적 피드백 시스템을 갖추고 있습니다.
-  - **Option Richness**: `radio`, `select` 타입의 개별 옵션에 상세 설명을 추가하여 직관적인 UI를 제공합니다.
-- **무결성 검증**: 빌드 시 `config-integrity.test.ts`를 통해 기본값과 설정 UI의 정합성(ID 일치 여부 등)을 검증합니다.
-- **계정 검증 메커니즘**: `Account` 카테고리에서는 백그라운드 로그인을 통해 계정 ID를 실시간 추출하며, 결과에 따라 버튼의 성격(Login/Logout)을 동적으로 변경합니다 (ADR-019 참고).
-- **상세 가이드**: 영속성 모델(Persistence Model) 및 타입별 구현 예제는 **[SETTINGS_GUIDE.md](./SETTINGS_GUIDE.md)**를 참고하세요.
+  - **Dynamic Context**: `onInit`, `onChangeListener`를 통해 실시간 상태 반영이 가능합니다.
+- **상세 가이드**: AI 전용 스킬 문서 **[Skill: Settings Management](../.agents/skills/settings-management/SKILL.md)**를 참고하세요.
 
 > [!IMPORTANT]
-> **개발 원칙 (UI Separation)**: `SettingsContent.tsx` 및 하위 아이템(Renderer)에는 특정 설정의 비즈니스 로직을 하드코딩하지 않습니다. 모든 로직은 `settings-config.ts`의 `onInit`, `onChangeListener` 훅을 통해 구현하여 렌더러의 순수성과 확장성을 유지해야 합니다.
->
-> **설정 분류 원칙 (Categorization Rule)**:
->
-> - **일반 (General)**: 런처 자체의 동작(실행, 표시, 닫기 등)과 관련된 설정.
-> - **자동화 (Automation)**: 게임 프로세스에 직접 개입하거나 제어하는(UAC 우회, 패치, 백업 등) 설정.
->   _이 원칙에 따라 UAC 우회 및 레거시 모드는 '자동화' 탭에 위치해야 합니다._
+> **개발 원칙 (UI Separation)**: `SettingsContent.tsx`(Renderer)에는 비즈니스 로직을 하드코딩하지 않습니다. 모든 로직은 `settings-config.ts`의 훅을 통해 구현해야 합니다.
 
 ## 6. Documentation Map
 
-이 프로젝트의 주요 기능 및 가이드는 다음 문서와 연결되어 있습니다.
-
-| 기능 영역 (Area)        | 관련 문서 (Document)                                                                                         | 비고 (Note)                             |
-| :---------------------- | :----------------------------------------------------------------------------------------------------------- | :-------------------------------------- |
-| **설정 구성**           | [Settings Config](file:///d:/project_poe2/POE2-unofficial-launcher/src/renderer/settings/settings-config.ts) | 실제 노출 항목 정의 및 상호작용 로직    |
-| **설정 사용 가이드**    | [SETTINGS_GUIDE.md](./SETTINGS_GUIDE.md)                                                                     | 각 설정 타입별 코드 예제 및 가이드      |
-| **설정 인터페이스**     | [Settings Logic](file:///d:/project_poe2/POE2-unofficial-launcher/src/renderer/settings/types.ts)            | `SettingItem` 등 핵심 타입 정의         |
-| **이벤트 시스템**       | [EVENT_SYSTEM_GUIDE.md](./EVENT_SYSTEM_GUIDE.md)                                                             | ADR-004 관련 상세 가이드                |
-| **빌드 및 릴리즈 (EN)** | [README.md](../README.md)                                                                                    | 설치 및 빌드 환경 변수 설명             |
-| **빌드 및 릴리즈 (KR)** | [README_KR.md](./README_KR.md)                                                                               | 설치 및 빌드 (한국어 버전)              |
-| **UAC 우회**            | [uac.ts](../src/main/utils/uac.ts)                                                                           | 시스템 레지스트리 및 작업 스케줄러 로직 |
-| **후원하기 (EN/KR)**    | [SUPPORT.md](./SUPPORT.md) / [SUPPORT_KR.md](./SUPPORT_KR.md)                                                | 개발자 후원 방법 및 커뮤니티 안내       |
+| 기능 영역 (Area)        | 관련 문서 (Document)                                                              | 비고 (Note)                             |
+| :---------------------- | :-------------------------------------------------------------------------------- | :-------------------------------------- |
+| **설정 구성**           | [settings-config.ts](../src/renderer/settings/settings-config.ts)                 | 실제 노출 항목 정의 및 상호작용 로직    |
+| **설정 사용 가이드**    | [Skill: Settings Management](../.agents/skills/settings-management/SKILL.md)      | 설정 추가 로직 및 패턴 (AI 구동 스킬)   |
+| **설정 인터페이스**     | [types.ts](../src/renderer/settings/types.ts)                                     | `SettingItem` 등 핵심 타입 정의         |
+| **이벤트 시스템**       | [Skill: Event & IPC](../.agents/skills/event-ipc-integration/SKILL.md)            | ADR-004 관련 상세 가이드 (AI 구동 스킬) |
+| **빌드 및 릴리즈 (EN)** | [README.md](../README.md)                                                         | 설치 및 빌드 환경 변수 설명             |
+| **빌드 및 릴리즈 (KR)** | [README_KR.md](./README_KR.md)                                                    | 설치 및 빌드 (한국어 버전)              |
+| **UAC 우회**            | [uac.ts](../src/main/utils/uac.ts)                                                | 시스템 레지스트리 및 작업 스케줄러 로직 |
+| **후원하기 (EN/KR)**    | [SUPPORT.md](./SUPPORT.md) / [SUPPORT_KR.md](./SUPPORT_KR.md)                     | 개발자 후원 방법 및 커뮤니티 안내       |

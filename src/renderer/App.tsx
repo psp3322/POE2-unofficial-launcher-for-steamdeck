@@ -12,7 +12,6 @@ import {
   AppConfig,
   RunStatus,
   NewsItem,
-  GameStatusState,
   ChangelogItem,
   UpdateStatus,
   PatchProgress,
@@ -40,10 +39,13 @@ import NoticeModal from "./components/modals/NoticeModal";
 import { OnboardingModal } from "./components/modals/OnboardingModal";
 import { PatchFixModal } from "./components/modals/PatchFixModal";
 import { PatchReservationModal } from "./components/modals/PatchReservationModal";
+import FontManagerModal from "./components/modals/FontManagerModal";
+import FontCatalogModal from "./components/modals/FontCatalogModal";
 import NewsDashboard from "./components/news/NewsDashboard";
 import NewsSection from "./components/news/NewsSection";
 import SettingsModal from "./components/settings/SettingsModal";
 import ThemeRevalidator from "./components/ThemeRevalidator";
+import { useGameState } from "./contexts/GameStateContext";
 
 import { VersionService, RemoteVersions } from "./services/VersionService";
 import { logger } from "./utils/logger";
@@ -141,6 +143,8 @@ function App() {
 
   // UI States (Local only)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isFontModalOpen, setIsFontModalOpen] = useState(false);
+  const [isFontCatalogOpen, setIsFontCatalogOpen] = useState(false);
   const [settingsFocusId, setSettingsFocusId] = useState<string | undefined>(
     undefined,
   );
@@ -151,24 +155,18 @@ function App() {
   // [New] Theme Settings Version to trigger Effects
   const [themeVersion, setThemeVersion] = useState(0);
 
-  // Refactor: Use globalGameState instead of simple text string
-  // [Refactor] Multi-Context Game Status Map
-  // Key: `${gameId}_${serviceId}`
-  const [gameStatusMap, setGameStatusMap] = useState<
-    Record<string, GameStatusState>
-  >({});
+  // --- Global Game State ---
+  const { getActiveGameState, syncGameState } = useGameState();
 
   // Computed: Current Active Status based on selection
   const activeGameStatus = useMemo(() => {
-    const key = `${config.activeGame}_${config.serviceChannel}`;
-    return (
-      gameStatusMap[key] || {
-        gameId: config.activeGame,
-        serviceId: config.serviceChannel,
-        status: "idle",
-      }
-    );
-  }, [gameStatusMap, config.activeGame, config.serviceChannel]);
+    return getActiveGameState(config.activeGame, config.serviceChannel);
+  }, [config.activeGame, config.serviceChannel, getActiveGameState]);
+
+  // Sync initial and switched state
+  useEffect(() => {
+    syncGameState(config.activeGame, config.serviceChannel);
+  }, [config.activeGame, config.serviceChannel, syncGameState]);
 
   // Active Status Message State
   const [activeMessage, setActiveMessage] = useState<string>("");
@@ -208,7 +206,7 @@ function App() {
   // Changelog Listener
   useEffect(() => {
     if (window.electronAPI?.onShowChangelog) {
-      return window.electronAPI.onShowChangelog((data) => {
+      window.electronAPI.onShowChangelog((data) => {
         // Handle both old (array only) and new (object) payload for safety
         if (Array.isArray(data)) {
           setChangelogs(data);
@@ -220,6 +218,17 @@ function App() {
         setIsChangelogOpen(true);
       });
     }
+
+    // [New] Event Listener for Font Manager
+    const handleOpenFontModal = () => setIsFontModalOpen(true);
+    window.addEventListener("open-font-manager-modal", handleOpenFontModal);
+
+    return () => {
+      window.removeEventListener(
+        "open-font-manager-modal",
+        handleOpenFontModal,
+      );
+    };
   }, []);
 
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
@@ -623,16 +632,6 @@ function App() {
           setThemeVersion((prev) => prev + 1);
         }
       });
-
-      // 3. Game Status Updates (New Architecture)
-      if (window.electronAPI.onGameStatusUpdate) {
-        window.electronAPI.onGameStatusUpdate((statusState) => {
-          setGameStatusMap((prev) => ({
-            ...prev,
-            [`${statusState.gameId}_${statusState.serviceId}`]: statusState,
-          }));
-        });
-      }
     }
   }, []);
 
@@ -989,6 +988,21 @@ function App() {
           autoFixPatchError: config.autoFixPatchError,
           skipDaumGameStarterUac: config.skipDaumGameStarterUac,
           serviceChannel: config.serviceChannel,
+        }}
+      />
+
+      <FontManagerModal
+        isVisible={isFontModalOpen}
+        onClose={() => setIsFontModalOpen(false)}
+        gameId={config.activeGame}
+        onOpenCatalog={() => setIsFontCatalogOpen(true)}
+      />
+
+      <FontCatalogModal
+        isVisible={isFontCatalogOpen}
+        onClose={() => setIsFontCatalogOpen(false)}
+        onFontInstalled={() => {
+          // 폰트 설치 시 UI 갱신 유도
         }}
       />
 

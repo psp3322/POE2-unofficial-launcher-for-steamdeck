@@ -75,6 +75,12 @@ export interface AppConfig {
   patchReservations: PatchReservation[];
   silentPatchNotification: boolean;
   terminateAfterPatch: boolean;
+  /**
+   * Service specific applied font IDs.
+   * Key: ServiceChannel ("Kakao Games", "GGG")
+   * Value: Font ID (UUID)
+   */
+  appliedFonts?: Record<string, string>;
 }
 
 export interface PatchReservation {
@@ -174,6 +180,77 @@ export interface AccountUpdateData {
   loginRequired?: boolean;
 }
 
+export interface RemoteFontItem {
+  id: string; // 폰트 바이너리 해시 (SHA-256)
+  fullNames: { [lang: string]: string };
+  familyNames: { [lang: string]: string };
+  fileName: string;
+  previewPath: string; // preview/${id}.png
+  fileSize: number;
+  license: { [lang: string]: string };
+  licenseUrl: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CustomFontData {
+  id: string; // UUID
+  alias: string; // 폰트 표시명 (예: "내 커스텀 폰트")
+  fileName: string; // "fake_spoqa.ttf"
+  originalName: string; // 메타데이터 원본 이름
+  previewDataUrl?: string; // 미리보기 이미지 Data URI (base64)
+  previewVersion?: number; // 미리보기 스타일 버전
+  createdAt: number;
+  updatedAt: number;
+  remoteSourceId?: string | null; // 원격 서버(Catalog) 출처 식별자 (중복 방지용)
+}
+
+export interface UnifiedFontData extends CustomFontData {
+  appliedServices: string[];
+  isUnknown?: boolean;
+  isDefault: boolean;
+}
+
+/**
+ * 폰트 파일 분석 결과 메타데이터
+ */
+export interface FontMetadata {
+  id: string;
+  originalName: string;
+  fullNames: { [lang: string]: string };
+  familyNames: { [lang: string]: string };
+  previewDataUrl?: string;
+  isKrSupported: boolean;
+}
+
+export interface FontAPI {
+  getFonts: () => Promise<CustomFontData[]>;
+  getUnifiedFonts: () => Promise<UnifiedFontData[]>;
+  pickFontFile: () => Promise<string | null>;
+  readFile: (filePath: string) => Promise<string | null>;
+  analyzeFile: (filePath: string) => Promise<FontMetadata>;
+  addFont: (
+    filePath: string,
+    previewDataUrl?: string,
+    customAlias?: string,
+    remoteSourceId?: string | null,
+  ) => Promise<CustomFontData>;
+  removeFont: (id: string) => Promise<void>;
+  updateAlias: (id: string, newAlias: string) => Promise<void>;
+  applyBatch: (assignments: Record<string, string | null>) => Promise<void>;
+  downloadRemote: (
+    item: RemoteFontItem,
+    customAlias?: string,
+  ) => Promise<boolean>;
+  openCustomFontsFolder: () => Promise<void>;
+  getCatalog: () => Promise<RemoteFontItem[]>;
+  syncCatalog: (force?: boolean) => Promise<void>;
+  onFontUpdated: (callback: () => void) => () => void;
+  onDownloadProgress: (
+    callback: (data: { id: string; progress: number }) => void,
+  ) => () => void;
+}
+
 export interface RevalidateThemeColorsEventDetail {
   game: "POE1" | "POE2";
   assetPath: string;
@@ -211,6 +288,10 @@ export interface ElectronAPI {
   onGameStatusUpdate?: (callback: (status: GameStatusState) => void) => void;
   onDebugLog?: (callback: (log: DebugLogPayload) => void) => () => void;
   onPatchProgress?: (callback: (progress: PatchProgress) => void) => () => void; // New
+  getGameStatus: (
+    gameId: string,
+    serviceId: string,
+  ) => Promise<GameStatusState>;
   onShowPatchFixModal?: (
     callback: (data: {
       autoStart: boolean;
@@ -312,6 +393,9 @@ export interface ElectronAPI {
   // [Fatal Error Handling]
   onFatalError: (callback: (errorDetails: string) => void) => () => void;
   reportFatalReady: () => void;
+
+  // [Font Management]
+  font: FontAPI;
 }
 
 export type UpdateStatus =

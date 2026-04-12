@@ -5,6 +5,13 @@ import net from "node:net";
 import { Logger } from "./logger";
 import { AppContext } from "../events/types";
 
+export class UACDeniedException extends Error {
+  constructor(message = "관리자 권한 요청이 사용자에 의해 취소되었습니다.") {
+    super(message);
+    this.name = "UACDeniedException";
+  }
+}
+
 interface PSResult {
   stdout: string;
   stderr: string;
@@ -30,6 +37,7 @@ interface SessionState {
   pendingRequests: Map<string, (res: PSResult) => void>;
   pipePath: string | null;
   initializing: Promise<void> | null;
+  rejectInit?: (reason: unknown) => void;
 }
 
 export class PowerShellManager {
@@ -73,6 +81,7 @@ export class PowerShellManager {
       pendingRequests: new Map(),
       pipePath: null,
       initializing: null,
+      rejectInit: undefined,
     };
   }
 
@@ -112,7 +121,17 @@ export class PowerShellManager {
     }
 
     // 1. Ensure Session
-    await this.ensureSession(session, isAdmin);
+    try {
+      await this.ensureSession(session, isAdmin);
+    } catch (err) {
+      if (err instanceof UACDeniedException) {
+        // 이미 child exit handler에서 warn을 남겼지만 호출부에서도 명확히 에러로 처리
+        throw err;
+      }
+      const msg = `Failed to establish connection to PowerShell session: ${err instanceof Error ? err.message : String(err)}`;
+      logger.error(msg);
+      return { stdout: "", stderr: msg, code: 1 };
+    }
 
     if (!session.socket) {
       const msg = "Failed to establish connection to PowerShell session";
@@ -210,6 +229,7 @@ export class PowerShellManager {
 
     // 3. Start new initialization
     session.initializing = new Promise((resolve, reject) => {
+      session.rejectInit = reject;
       try {
         const pipeId = randomUUID();
         const pipeName = `poe2-launcher-${isAdmin ? "admin" : "normal"}-${pipeId}`;
@@ -268,17 +288,20 @@ export class PowerShellManager {
             this.cleanupSession(session);
             // Ensure promise rejects and clears initializing
             session.initializing = null;
-            reject(err);
+            if (session.rejectInit) session.rejectInit(err);
+            else reject(err);
           });
         });
 
         session.server.on("error", (err) => {
           session.initializing = null;
-          reject(err);
+          if (session.rejectInit) session.rejectInit(err);
+          else reject(err);
         });
       } catch (e) {
         session.initializing = null;
-        reject(e);
+        if (session.rejectInit) session.rejectInit(e);
+        else reject(e);
       }
     });
 
@@ -376,7 +399,7 @@ try {
       spawnArgs = [
         "-NoProfile",
         "-Command",
-        `Start-Process powershell ${startProcessArgs}`,
+        `try { Start-Process powershell ${startProcessArgs} -ErrorAction Stop } catch { exit 1223 }`,
       ];
     } else {
       commandToSpawn = "powershell";
@@ -421,12 +444,110 @@ try {
         return;
       }
 
-      this.failAllPendingRequests(
-        session,
-        isAdmin,
-        `Process exited with code ${code}`,
-      );
+      if (isAdmin && code === 1223) {
+        logger.warn("UAC prompt was canceled by the user.");
+        const uacErr = new UACDeniedException();
+        if (session.rejectInit) {
+          session.rejectInit(uacErr);
+        }
+        this.failAllPendingRequests(session, isAdmin, uacErr.message);
+        return;
+      }
+
+      const errMsg = `Process exited with code ${code}`;
+      if (session.rejectInit) {
+        session.rejectInit(new Error(errMsg));
+      }
+      this.failAllPendingRequests(session, isAdmin, errMsg);
     });
+  }
+
+  public async installSystemFont(
+    ttfFilePath: string,
+    targetFontName: string,
+    ttfFileName: string,
+  ): Promise<boolean> {
+    const script = `
+try {
+  $sourcePath = "${ttfFilePath}"
+  $destPath = "$env:windir\\Fonts\\${ttfFileName}"
+  
+  # 1. 이전 유력 파일 제거 (충돌 방지)
+  if (Test-Path $destPath) { Remove-Item $destPath -Force }
+
+  # 2. 보안 차단 해제 및 Fonts 경로로 복사
+  Unblock-File -Path $sourcePath
+  Copy-Item -Path $sourcePath -Destination $destPath -Force
+
+  # 3. 레지스트리 등록
+  $regPath = "HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts"
+  $regName = "${targetFontName} (TrueType)"
+  Set-ItemProperty -Path $regPath -Name $regName -Value "${ttfFileName}"
+
+  # 4. GDI/User32 API를 통한 실시간 전파
+  $Signature = @'
+    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
+    public static extern int AddFontResource(string lpszFilename);
+    
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+'@
+  $Win32API = Add-Type -MemberDefinition $Signature -Name "Win32FontAPI_Install" -Namespace "Win32Functions" -PassThru
+  
+  [void]$Win32API::AddFontResource($destPath)
+  [void]$Win32API::PostMessage(0xffff, 0x001D, [IntPtr]::Zero, [IntPtr]::Zero) # HWND_BROADCAST, WM_FONTCHANGE
+  
+  Write-Output "Successfully installed: ${targetFontName}"
+} catch {
+  Write-Error $_.Exception.Message
+  exit 1
+}
+    `;
+    const result = await this.execute(script, true);
+    return result.code === 0;
+  }
+
+  public async removeSystemFont(
+    targetFontName: string,
+    ttfFileName: string,
+  ): Promise<boolean> {
+    const script = `
+try {
+  $destPath = "$env:windir\\Fonts\\${ttfFileName}"
+  $regPath = "HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts"
+  $regName = "${targetFontName} (TrueType)"
+  
+  # 1. 레지스트리 제거
+  if (Get-ItemProperty -Path $regPath -Name $regName -ErrorAction SilentlyContinue) {
+      Remove-ItemProperty -Path $regPath -Name $regName -Force
+  }
+
+  # 2. 리소스 해제 통지
+  $Signature = @'
+    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
+    public static extern bool RemoveFontResource(string lpFileName);
+    
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+'@
+  $Win32API = Add-Type -MemberDefinition $Signature -Name "Win32FontAPI_Remove" -Namespace "Win32Functions" -PassThru
+  
+  [void]$Win32API::RemoveFontResource($destPath)
+  [void]$Win32API::PostMessage(0xffff, 0x001D, [IntPtr]::Zero, [IntPtr]::Zero) # HWND_BROADCAST, WM_FONTCHANGE
+
+  # 3. 폰트 파일 제거
+  if (Test-Path $destPath) {
+      Remove-Item -Path $destPath -Force
+  }
+
+  Write-Output "Successfully removed: ${targetFontName}"
+} catch {
+  Write-Error $_.Exception.Message
+  exit 1
+}
+    `;
+    const result = await this.execute(script, true);
+    return result.code === 0;
   }
 
   public cleanup() {
