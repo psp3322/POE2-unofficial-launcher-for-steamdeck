@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/compare/1.2.0...1.2.1) (2026-04-13)
+
+
+### Bug Fixes
+
+* 게임이 실행 중 일 떄 폰트 설정이 불가능한 상황이 직관적이지 않은 문제 개선 ([d818e59](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/d818e5937c33f1183a5bcde9b3ad04026b46d985))
+
 ## [1.2.0](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/compare/1.1.0...1.2.0) (2026-04-12)
 
 
