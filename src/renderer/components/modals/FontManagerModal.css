@@ -248,8 +248,14 @@
     border: 1px solid transparent;
 }
 
-.font-radio-wrapper:hover {
-    background: rgba(255, 255, 255, 0.05);
+.font-radio-wrapper.disabled {
+    opacity: 0.35;
+    filter: grayscale(0.8);
+    cursor: not-allowed !important;
+}
+
+.font-radio-wrapper.disabled:hover {
+    background: transparent;
 }
 
 .font-radio-wrapper.active {
@@ -356,6 +362,23 @@
 .font-warning-banner p strong {
     color: var(--theme-accent);
     font-weight: 600;
+}
+
+.font-warning-banner.running {
+    background: rgba(255, 87, 34, 0.08);
+    border-color: rgba(255, 87, 34, 0.2);
+}
+
+.font-warning-banner.running .material-symbols-outlined {
+    color: #ff5722;
+}
+
+.font-warning-banner.running p {
+    color: #ffab91;
+}
+
+.font-warning-banner.running p strong {
+    color: #ff5722;
 }
 
 /* Footer & Main Buttons */

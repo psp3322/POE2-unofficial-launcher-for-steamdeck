@@ -363,7 +363,12 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
                       </div>
                     ) : (
                       <div
-                        className={`font-radio-wrapper ${isActiveKakao ? "active" : ""}`}
+                        className={`font-radio-wrapper ${isActiveKakao ? "active" : ""} ${isKakaoRunning ? "disabled" : ""}`}
+                        title={
+                          isKakaoRunning
+                            ? "게임 실행 중에는 폰트를 변경할 수 없습니다."
+                            : ""
+                        }
                         onClick={(e) =>
                           handleToggleAssignment(e, "Kakao Games", f.id)
                         }
@@ -386,7 +391,12 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
                       </div>
                     ) : (
                       <div
-                        className={`font-radio-wrapper ${isActiveGGG ? "active" : ""}`}
+                        className={`font-radio-wrapper ${isActiveGGG ? "active" : ""} ${isGGGRunning ? "disabled" : ""}`}
+                        title={
+                          isGGGRunning
+                            ? "게임 실행 중에는 폰트를 변경할 수 없습니다."
+                            : ""
+                        }
                         onClick={(e) => handleToggleAssignment(e, "GGG", f.id)}
                       >
                         <div className="font-radio-indicator"></div>
@@ -421,6 +431,18 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
             })}
           </div>
         </div>
+
+        {(isKakaoRunning || isGGGRunning) && (
+          <div className="font-warning-banner running">
+            <span className="material-symbols-outlined">
+              running_with_errors
+            </span>
+            <p>
+              현재 게임이 <strong>실행 중</strong>입니다. 폰트 설정을 변경하려면{" "}
+              <strong>게임을 먼저 종료해 주세요.</strong>
+            </p>
+          </div>
+        )}
 
         <div className="font-warning-banner">
           <span className="material-symbols-outlined">info</span>
@@ -472,8 +494,8 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
                 '<strong>{pendingDeleteAlias}</strong>' 항목을 정말
                 삭제하시겠습니까?
                 {fonts.find((f) => f.id === pendingDeleteId)?.appliedServices &&
-                  fonts.find((f) => f.id === pendingDeleteId)!
-                    .appliedServices.length > 0 && (
+                  fonts.find((f) => f.id === pendingDeleteId)!.appliedServices
+                    .length > 0 && (
                     <div className="delete-usage-warning">
                       <span className="material-symbols-outlined">warning</span>
                       <p>
