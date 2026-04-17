@@ -176,6 +176,26 @@ export class FontIpcHandler {
       fm.openCustomFontsFolder();
     });
 
+    ipcMain.handle("font:import-external", async (_, service: string) => {
+      try {
+        const fm = FontManager.getInstance();
+        return await fm.importExternalFont(service);
+      } catch (err) {
+        logger.error(`Failed to import external font for ${service}`, err);
+        throw err;
+      }
+    });
+
+    ipcMain.handle("font:cleanup-external", async (_, service: string) => {
+      try {
+        const fm = FontManager.getInstance();
+        await fm.cleanupExternalFont(service);
+      } catch (err) {
+        logger.error(`Failed to cleanup external font for ${service}`, err);
+        throw err;
+      }
+    });
+
     logger.log("Font IPC Handlers registered");
     this.registered = true;
   }

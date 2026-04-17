@@ -249,6 +249,8 @@ export interface FontAPI {
   onDownloadProgress: (
     callback: (data: { id: string; progress: number }) => void,
   ) => () => void;
+  importExternalFont: (service: string) => Promise<boolean>;
+  cleanupExternalFont: (service: string) => Promise<void>;
 }
 
 export interface RevalidateThemeColorsEventDetail {

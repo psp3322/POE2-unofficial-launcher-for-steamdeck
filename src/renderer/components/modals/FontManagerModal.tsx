@@ -47,6 +47,9 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [pendingDeleteAlias, setPendingDeleteAlias] = useState("");
 
+  const [flashCount, setFlashCount] = useState(0);
+  const flashTimerRef = React.useRef<NodeJS.Timeout | null>(null);
+
   const modalRef = React.useRef<HTMLDivElement>(null);
   const { getActiveGameState, syncGameState } = useGameState();
 
@@ -55,12 +58,20 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
   const isGGGRunning = getActiveGameState(gameId, "GGG").status === "running";
 
   const sortedFonts = useMemo(() => {
-    return [...fonts].sort((a, b) => {
-      if (a.isDefault) return -1;
-      if (b.isDefault) return 1;
-      return b.createdAt - a.createdAt;
-    });
+    return [...fonts]
+      .filter((f) => !f.isUnknown)
+      .sort((a, b) => {
+        if (a.isDefault) return -1;
+        if (b.isDefault) return 1;
+        return b.createdAt - a.createdAt;
+      });
   }, [fonts]);
+
+  const unknownFonts = useMemo(() => {
+    return fonts.filter((f) => f.isUnknown);
+  }, [fonts]);
+
+  const hasConflicts = unknownFonts.length > 0;
 
   const displayFont = useMemo(() => {
     const targetId = hoveredFontId || selectedFontId;
@@ -164,12 +175,24 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
     };
   }, [fetchFonts]);
 
+  const triggerConflictFlash = useCallback(() => {
+    setFlashCount((prev) => prev + 1);
+    if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+    flashTimerRef.current = setTimeout(() => {
+      setFlashCount(0);
+    }, 600);
+  }, []);
+
   const handleToggleAssignment = (
     e: React.MouseEvent,
     service: ServiceKey,
     fontId: string,
   ) => {
     e.stopPropagation();
+    if (hasConflicts) {
+      triggerConflictFlash();
+      return;
+    }
     if (service === "Kakao Games" && isKakaoRunning) return;
     if (service === "GGG" && isGGGRunning) return;
 
@@ -177,6 +200,48 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
       ...prev,
       [service]: fontId,
     }));
+  };
+
+  const handleImportExternal = async () => {
+    setIsLoading(true);
+    setLoadingMessage("시스템 폰트를 라이브러리로 가져오고 있습니다...");
+    try {
+      // 감지된 모든 서비스에 대해 수행
+      const services = Array.from(
+        new Set(unknownFonts.flatMap((f) => f.appliedServices || [])),
+      );
+      for (const serviceId of services) {
+        await window.electronAPI.font.importExternalFont(serviceId);
+      }
+      await fetchFonts();
+      showToast("폰트를 성공적으로 가져왔습니다.", "success");
+    } catch (err: any) {
+      showToast(`가져오기 실패: ${err.message}`, "error");
+    } finally {
+      setIsLoading(false);
+      setLoadingMessage("");
+    }
+  };
+
+  const handleCleanupExternal = async () => {
+    setIsLoading(true);
+    setLoadingMessage("기존 설치된 폰트를 정리하고 있습니다...");
+    try {
+      // 감지된 모든 서비스에 대해 수행
+      const services = Array.from(
+        new Set(unknownFonts.flatMap((f) => f.appliedServices || [])),
+      );
+      for (const serviceId of services) {
+        await window.electronAPI.font.cleanupExternalFont(serviceId);
+      }
+      await fetchFonts();
+      showToast("기본값으로 복구되었습니다.", "success");
+    } catch (err: any) {
+      showToast(`복구 실패: ${err.message}`, "error");
+    } finally {
+      setIsLoading(false);
+      setLoadingMessage("");
+    }
   };
 
   const handleDeleteFont = (e: React.MouseEvent, id: string) => {
@@ -363,11 +428,13 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
                       </div>
                     ) : (
                       <div
-                        className={`font-radio-wrapper ${isActiveKakao ? "active" : ""} ${isKakaoRunning ? "disabled" : ""}`}
+                        className={`font-radio-wrapper ${isActiveKakao ? "active" : ""} ${isKakaoRunning || hasConflicts ? "disabled" : ""}`}
                         title={
                           isKakaoRunning
                             ? "게임 실행 중에는 폰트를 변경할 수 없습니다."
-                            : ""
+                            : hasConflicts
+                              ? "먼저 탐지된 외부 폰트 문제를 해결해야 합니다."
+                              : ""
                         }
                         onClick={(e) =>
                           handleToggleAssignment(e, "Kakao Games", f.id)
@@ -391,11 +458,13 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
                       </div>
                     ) : (
                       <div
-                        className={`font-radio-wrapper ${isActiveGGG ? "active" : ""} ${isGGGRunning ? "disabled" : ""}`}
+                        className={`font-radio-wrapper ${isActiveGGG ? "active" : ""} ${isGGGRunning || hasConflicts ? "disabled" : ""}`}
                         title={
                           isGGGRunning
                             ? "게임 실행 중에는 폰트를 변경할 수 없습니다."
-                            : ""
+                            : hasConflicts
+                              ? "먼저 탐지된 외부 폰트 문제를 해결해야 합니다."
+                              : ""
                         }
                         onClick={(e) => handleToggleAssignment(e, "GGG", f.id)}
                       >
@@ -444,13 +513,64 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
           </div>
         )}
 
-        <div className="font-warning-banner">
-          <span className="material-symbols-outlined">info</span>
-          <p>
-            변경 사항 적용 후 게임에서 폰트가 정상적으로 표시되지 않을 경우{" "}
-            <strong>재부팅이 필요합니다.</strong>
-          </p>
-        </div>
+        {hasConflicts ? (
+          <div className="font-conflict-group">
+            <div
+              key={`conflict-${flashCount}`}
+              className={`font-warning-banner conflict-error-card ${flashCount > 0 ? "flash" : ""}`}
+            >
+              <div className="banner-main-row">
+                <div className="conflict-text">
+                  <span className="material-symbols-outlined">warning</span>
+                  <p>
+                    <strong>외부 폰트 감지됨 :</strong>{" "}
+                    {unknownFonts
+                      .map((uf) => uf.originalName.split("\\").pop())
+                      .join(", ")}
+                  </p>
+                </div>
+                <div className="banner-actions">
+                  <button
+                    className="action-btn import"
+                    onClick={handleImportExternal}
+                  >
+                    가져오기
+                  </button>
+                  <button
+                    className="action-btn restore"
+                    onClick={handleCleanupExternal}
+                  >
+                    기본값 복원
+                  </button>
+                </div>
+              </div>
+              <div className="banner-sub-row">
+                <p>
+                  - 해당 폰트가 적용되어 있을 경우 런처에서 폰트 적용이
+                  불가능합니다.
+                </p>
+              </div>
+            </div>
+
+            <div className="font-warning-banner info-small">
+              <span className="material-symbols-outlined">info</span>
+              <p>
+                문제가 해결된 후에도 폰트가 정상적으로 표시되지 않을 경우{" "}
+                <strong>재부팅이 필요합니다.</strong>
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div
+            className={`font-warning-banner ${isKakaoRunning || isGGGRunning ? "running" : ""}`}
+          >
+            <span className="material-symbols-outlined">info</span>
+            <p>
+              변경 사항 적용 후 게임에서 폰트가 정상적으로 표시되지 않을 경우{" "}
+              <strong>재부팅이 필요합니다.</strong>
+            </p>
+          </div>
+        )}
 
         <div className="font-footer">
           <div className="font-library-actions">

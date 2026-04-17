@@ -305,6 +305,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
     downloadRemote: (item: RemoteFontItem, customAlias?: string) =>
       ipcRenderer.invoke("font:download-remote", item, customAlias),
     openCustomFontsFolder: () => ipcRenderer.invoke("font:open-folder"),
+    importExternalFont: (serviceId: string) =>
+      ipcRenderer.invoke("font:import-external", serviceId),
+    cleanupExternalFont: (serviceId: string) =>
+      ipcRenderer.invoke("font:cleanup-external", serviceId),
     getCatalog: () => ipcRenderer.invoke("font:get-catalog"),
     syncCatalog: (force: boolean = false) =>
       ipcRenderer.invoke("font:sync-catalog", force),

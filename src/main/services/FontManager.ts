@@ -303,7 +303,7 @@ export class FontManager {
     const appliedStore =
       (getConfig("appliedFonts") as Record<string, string>) || {};
     const pm = PowerShellManager.getInstance();
-    const unknownServices: string[] = [];
+    const unknownFontsInfo: { service: string; path: string }[] = [];
 
     const servicesToCheck = Object.entries(TARGET_SERVICES_CONFIG).filter(
       ([service]) => !appliedStore[service],
@@ -311,19 +311,42 @@ export class FontManager {
 
     if (servicesToCheck.length > 0) {
       const checkScript = servicesToCheck
-        .flatMap(([service, targets]) =>
-          targets.map(
-            (t) =>
-              `if (Get-ItemProperty -Path "HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts" -Name "${t} (TrueType)" -ErrorAction SilentlyContinue) { write-host "FOUND:${service}" }`,
-          ),
-        )
+        .flatMap(([service, targets]) => {
+          // [PATCH] Noto Sans CJK TC의 경우 'Book'이 붙거나 안 붙은 경우 모두 체크
+          const extendedTargets = [...targets];
+          if (targets.includes("Noto Sans CJK TC Book")) {
+            extendedTargets.push("Noto Sans CJK TC");
+          }
+
+          return extendedTargets.map((t) => {
+            const name = `${t} (TrueType)`;
+            return `
+$p1 = "HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts";
+$p2 = "HKCU:\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Fonts";
+if (Get-ItemProperty -Path $p1 -Name "${name}" -ErrorAction SilentlyContinue) {
+    $val = (Get-ItemProperty -Path $p1 -Name "${name}")."${name}"
+    Write-Output "FOUND:${service}:$val"
+} elseif (Get-ItemProperty -Path $p2 -Name "${name}" -ErrorAction SilentlyContinue) {
+    $val = (Get-ItemProperty -Path $p2 -Name "${name}")."${name}"
+    Write-Output "FOUND:${service}:$val"
+}
+`.trim();
+          });
+        })
         .join("; ");
 
       const res = await pm.execute(checkScript, false, true);
       const output = res.stdout;
-      servicesToCheck.forEach(([service]) => {
-        if (output.includes(`FOUND:${service}`)) {
-          unknownServices.push(service);
+
+      output.split("\n").forEach((rawLine) => {
+        const line = rawLine.trim();
+        if (line.startsWith("FOUND:")) {
+          const parts = line.split(":");
+          if (parts.length >= 3) {
+            const service = parts[1];
+            const path = parts.slice(2).join(":").trim();
+            unknownFontsInfo.push({ service, path });
+          }
         }
       });
     }
@@ -364,19 +387,22 @@ export class FontManager {
       appliedServices: defaultAppliedServices,
     } as UnifiedFontData);
 
-    if (unknownServices.length > 0) {
-      baseFonts.push({
-        id: "UNKNOWN_SYSTEM_FONT",
-        alias: "알 수 없는 폰트",
-        originalName: "System Assigned",
-        fileName: "",
-        previewDataUrl: "",
-        previewVersion: 1,
-        createdAt: 0,
-        updatedAt: 0,
-        isDefault: false,
-        appliedServices: unknownServices,
-      } as UnifiedFontData);
+    if (unknownFontsInfo.length > 0) {
+      unknownFontsInfo.forEach((info) => {
+        baseFonts.push({
+          id: `UNKNOWN_SYSTEM_FONT_${info.service}`,
+          alias: `외부 설치 폰트 (${info.service})`,
+          originalName: info.path,
+          fileName: "",
+          previewDataUrl: "",
+          previewVersion: 1,
+          createdAt: 0,
+          updatedAt: 0,
+          isDefault: false,
+          isUnknown: true,
+          appliedServices: [info.service],
+        } as UnifiedFontData);
+      });
     }
 
     return baseFonts.sort((a, b) => {
@@ -644,6 +670,96 @@ export class FontManager {
     import("electron").then((electron) =>
       electron.shell.openPath(this.customFontsDir),
     );
+  }
+
+  /**
+   * 외부 설치된 폰트를 라이브러리로 가져오기 (Import)
+   */
+  public async importExternalFont(service: string): Promise<boolean> {
+    await this.initPromise;
+    const targets =
+      TARGET_SERVICES_CONFIG[service as keyof typeof TARGET_SERVICES_CONFIG];
+    if (!targets) throw new Error(`지원하지 않는 서비스입니다: ${service}`);
+
+    const pm = PowerShellManager.getInstance();
+    let detectedPath: string | null = null;
+    let targetNameForCleanup: string | null = null;
+
+    // 1. 레지스트리 경로 재검사 및 획득
+    for (const t of targets) {
+      const name = `${t} (TrueType)`;
+      const script = `
+        $p1 = "HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts";
+        $p2 = "HKCU:\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Fonts";
+        if (Get-ItemProperty -Path $p1 -Name "${name}" -ErrorAction SilentlyContinue) {
+          (Get-ItemProperty -Path $p1 -Name "${name}")."${name}"
+        } elseif (Get-ItemProperty -Path $p2 -Name "${name}" -ErrorAction SilentlyContinue) {
+          (Get-ItemProperty -Path $p2 -Name "${name}")."${name}"
+        }
+      `.trim();
+      const res = await pm.execute(script, false, true);
+      const output = res.stdout.trim();
+      if (output) {
+        detectedPath = output;
+        targetNameForCleanup = t;
+        break;
+      }
+    }
+
+    if (!detectedPath || !targetNameForCleanup) {
+      throw new Error(`시스템에서 ${service}용 외부 폰트를 찾을 수 없습니다.`);
+    }
+
+    // 파일명이 아니라 전체 경로인 경우 처리
+    let fullPath = detectedPath;
+    if (!path.isAbsolute(detectedPath)) {
+      fullPath = path.join(
+        process.env.windir || "C:\\Windows",
+        "Fonts",
+        detectedPath,
+      );
+    }
+
+    try {
+      // 2. 라이브러리에 등록
+      const fontData = await this.addFont(fullPath);
+
+      // 3. 기존 외부 설치본 제거
+      const ttfFileName = targetNameForCleanup.replace(/\s+/g, "") + ".ttf";
+      await pm.removeSystemFont(targetNameForCleanup, ttfFileName);
+
+      // 4. 추출된 폰트로 정식 적용
+      await this.applyBatch({ [service]: fontData.id });
+
+      return true;
+    } catch (err) {
+      logger.error(`Failed to import external font for ${service}: ${err}`);
+      throw err;
+    }
+  }
+
+  /**
+   * 외부 설치된 폰트 정리 (Restore to Default)
+   */
+  public async cleanupExternalFont(service: string): Promise<void> {
+    await this.initPromise;
+    const targets =
+      TARGET_SERVICES_CONFIG[service as keyof typeof TARGET_SERVICES_CONFIG];
+    if (!targets) return;
+
+    const pm = PowerShellManager.getInstance();
+    for (const t of targets) {
+      const ttfFileName = t.replace(/\s+/g, "") + ".ttf";
+      await pm.removeSystemFont(t, ttfFileName);
+    }
+
+    // 설정 초기화
+    const currentApplied =
+      (getConfig("appliedFonts") as Record<string, string>) || {};
+    delete currentApplied[service];
+    setConfigWithEvent("appliedFonts", currentApplied);
+
+    this.notifyRenderer();
   }
 
   private async cleanupOrphanedFiles(): Promise<void> {
