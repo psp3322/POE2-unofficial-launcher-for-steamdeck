@@ -4,10 +4,13 @@ import { parentPort } from "node:worker_threads";
 import { Font } from "fonteditor-core";
 
 /**
- * [Phase 1] 폰트 메타데이터 변조 워커 (Precision Mutator)
+ * 폰트 메타데이터 + metrics 변조 워커 (Precision Mutator)
  *
- * - fonteditor-core를 사용하여 Name Table(ID 1, 2, 4, 6, 16, 17)을 정밀 주입합니다.
- * - 모든 타겟 메타데이터는 상단 MUTATION_RULES에 정의되어 관리가 용이합니다.
+ * - Name Table(ID 1,2,3,4,5,6): 본체 정답값 주입.
+ *   ID 16/17은 본체에 없으므로 주입하지 않는다(제거).
+ * - metrics: 게임 본체 폰트(slider 100% 기준)를 scale%로 비례 조정.
+ *   공식 근거: scratch/font-mutation-analysis.md 9.4.
+ *   글리프는 건드리지 않는다(수직 보정은 STEP 3 별도).
  */
 
 import { FontMutationRule } from "../../shared/font-targets";
@@ -15,40 +18,90 @@ import { FontMutationRule } from "../../shared/font-targets";
 interface MutatorMessage {
   filePath: string;
   rule: FontMutationRule;
+  /** 크기 보정 % (50~150). 미지정 시 100. */
+  scale?: number;
+}
+
+/** scale% 적용한 라인높이/ascent/descent 산출 (9.4 공식). */
+function scaledLine(
+  baseAscent: number,
+  baseDescent: number,
+  scale: number,
+): { ascent: number; descent: number } {
+  const baseLine = baseAscent - baseDescent; // descent는 음수
+  const ascRatio = baseAscent / baseLine;
+  // 글자 크기 ∝ 1/라인높이 → scale% 크게 보이려면 라인높이 (100/scale)배
+  const newLine = Math.round((baseLine * 100) / scale);
+  const ascent = Math.round(newLine * ascRatio);
+  const descent = ascent - newLine; // 음수
+  return { ascent, descent };
 }
 
 if (parentPort) {
   parentPort.on("message", (data: MutatorMessage) => {
     const { filePath, rule } = data;
+    const scale =
+      typeof data.scale === "number" && data.scale > 0 ? data.scale : 100;
 
     try {
       if (!rule) {
         throw new Error("변조 규칙(rule) 객체가 전달되지 않았습니다.");
       }
 
-      // 1. 폰트 로드
       const buffer = fs.readFileSync(filePath);
       const font = Font.create(buffer, { type: "ttf" });
       const fontData = font.get();
       const name = fontData.name;
+      const m = rule.metrics;
 
-      // 2. Name Table 주입 (ID 1, 2, 4, 6, 16, 17)
-      // 모든 언어 레코드(en, ko 등)를 동일하게 맞춰 윈도우 타이틀 중복/깨짐 방지
+      // 1. Name Table 주입
       name.fontFamily = rule.family; // ID 1
       name.fontSubFamily = rule.subfamily; // ID 2
       name.fullName = rule.fullName; // ID 4
       name.postScriptName = rule.postScript; // ID 6
-      name.preferredFamily = rule.family; // ID 16
-      name.preferredSubFamily = rule.subfamily; // ID 17
 
-      // Unique ID (ID 3) 생성
-      name.uniqueSubFamily = `${rule.postScript};${name.version || "1.000"}`;
+      if (m) {
+        // 본체 정답값: uniqueSubFamily(ID 3) / version(ID 5) 원문 주입
+        name.uniqueSubFamily = m.uniqueSubFamily;
+        name.version = m.version;
+      } else {
+        // 본체 미확보(GGG): 기존 동작 유지 (합성 ID 3)
+        name.uniqueSubFamily = `${rule.postScript};${name.version || "1.000"}`;
+      }
+      // ID 16/17(preferredFamily/SubFamily)는 본체에 없으므로 주입하지 않는다.
+      // fonteditor-core가 미설정 필드를 비우도록 명시적으로 삭제.
+      delete (name as Record<string, unknown>).preferredFamily;
+      delete (name as Record<string, unknown>).preferredSubFamily;
 
-      // 3. 변조된 버퍼 생성 및 반환
+      // 2. metrics 주입 (정답 폰트만)
+      if (m) {
+        const head = fontData.head;
+        const hhea = fontData.hhea;
+        const os2 = fontData["OS/2"];
+
+        // hhea.descent는 음수, baseWinDescent는 양수 표기 → 음수로 변환해 전달
+        const h = scaledLine(m.baseHheaAscent, m.baseHheaDescent, scale);
+        const w = scaledLine(m.baseWinAscent, -m.baseWinDescent, scale);
+
+        hhea.ascent = h.ascent;
+        hhea.descent = h.descent;
+        hhea.lineGap = 0;
+
+        os2.usWinAscent = w.ascent;
+        os2.usWinDescent = -w.descent; // scaledLine descent(음수) → 양수 표기
+
+        // scale 무관 고정 (본체 상수)
+        os2.sTypoAscender = m.typoAscender;
+        os2.sTypoDescender = m.typoDescender;
+        os2.sTypoLineGap = m.typoLineGap;
+        os2.fsSelection = m.fsSelection;
+        os2.usWeightClass = m.usWeightClass;
+        head.macStyle = m.macStyle;
+      }
+
+      // 3. 변조 버퍼 생성 및 반환
       const outputData = font.write({ type: "ttf" });
       const finalBuffer = Buffer.from(outputData as Uint8Array);
-
-      // Transferable로 넘기기 위해 ArrayBuffer 추출
       const arrayBuffer = finalBuffer.buffer.slice(
         finalBuffer.byteOffset,
         finalBuffer.byteOffset + finalBuffer.byteLength,

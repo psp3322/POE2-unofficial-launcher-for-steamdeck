@@ -1,5 +1,7 @@
 import React, { useEffect, useState, useMemo, useCallback } from "react";
 
+import { ExternalFontImportModal } from "./ExternalFontImportModal";
+import FontDetailSettingsModal from "./FontDetailSettingsModal";
 import { AppConfig, UnifiedFontData } from "../../../shared/types";
 import { useGameState } from "../../contexts/GameStateContext";
 import { Toast } from "../ui/Toast";
@@ -48,6 +50,8 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
   const [pendingDeleteAlias, setPendingDeleteAlias] = useState("");
 
   const [flashCount, setFlashCount] = useState(0);
+  const [showImportWizard, setShowImportWizard] = useState(false);
+  const [showDetailSettings, setShowDetailSettings] = useState(false);
   const flashTimerRef = React.useRef<NodeJS.Timeout | null>(null);
 
   const modalRef = React.useRef<HTMLDivElement>(null);
@@ -203,24 +207,8 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
   };
 
   const handleImportExternal = async () => {
-    setIsLoading(true);
-    setLoadingMessage("시스템 폰트를 라이브러리로 가져오고 있습니다...");
-    try {
-      // 감지된 모든 서비스에 대해 수행
-      const services = Array.from(
-        new Set(unknownFonts.flatMap((f) => f.appliedServices || [])),
-      );
-      for (const serviceId of services) {
-        await window.electronAPI.font.importExternalFont(serviceId);
-      }
-      await fetchFonts();
-      showToast("폰트를 성공적으로 가져왔습니다.", "success");
-    } catch (err: any) {
-      showToast(`가져오기 실패: ${err.message}`, "error");
-    } finally {
-      setIsLoading(false);
-      setLoadingMessage("");
-    }
+    // 이제 직접 백그라운드 처리를 하지 않고 대화형 마법사를 엽니다.
+    setShowImportWizard(true);
   };
 
   const handleCleanupExternal = async () => {
@@ -236,8 +224,9 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
       }
       await fetchFonts();
       showToast("기본값으로 복구되었습니다.", "success");
-    } catch (err: any) {
-      showToast(`복구 실패: ${err.message}`, "error");
+    } catch (err: unknown) {
+      const error = err as Error;
+      showToast(`복구 실패: ${error.message}`, "error");
     } finally {
       setIsLoading(false);
       setLoadingMessage("");
@@ -331,9 +320,18 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
 
         <div className="font-header">
           <h2>커스텀 폰트 관리 (BETA)</h2>
-          <button onClick={onClose} className="font-close-x">
-            <span className="material-symbols-outlined">close</span>
-          </button>
+          <div className="font-header-actions">
+            <button
+              onClick={() => setShowDetailSettings(true)}
+              className="font-close-x"
+              title="커스텀 폰트 상세 설정"
+            >
+              <span className="material-symbols-outlined">settings</span>
+            </button>
+            <button onClick={onClose} className="font-close-x">
+              <span className="material-symbols-outlined">close</span>
+            </button>
+          </div>
         </div>
 
         <div className="font-top-preview-section">
@@ -653,6 +651,25 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
             </div>
           </div>
         )}
+
+        {showImportWizard && (
+          <ExternalFontImportModal
+            onClose={() => setShowImportWizard(false)}
+            onComplete={async () => {
+              setShowImportWizard(false);
+              await fetchFonts();
+              showToast(
+                "외부 폰트를 성공적으로 가져오고 시스템을 리셋했습니다.",
+                "success",
+              );
+            }}
+          />
+        )}
+
+        <FontDetailSettingsModal
+          isVisible={showDetailSettings}
+          onClose={() => setShowDetailSettings(false)}
+        />
       </div>
     </div>
   );

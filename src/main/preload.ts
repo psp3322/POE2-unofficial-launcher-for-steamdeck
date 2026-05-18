@@ -13,6 +13,7 @@ import {
   AccountUpdateData,
   PatchReservation,
   RemoteFontItem,
+  ImportSelection,
 } from "../shared/types";
 
 const logger = new PreloadLogger({ type: "PRELOAD", typeColor: "#8BE9FD" });
@@ -302,6 +303,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
       ipcRenderer.invoke("font:update-alias", id, newAlias),
     applyBatch: (assignments: Record<string, string | null>) =>
       ipcRenderer.invoke("font:apply-batch", assignments),
+    reapply: () => ipcRenderer.invoke("font:reapply"),
+    checkMigration: () => ipcRenderer.invoke("font:check-migration"),
+    completeMigration: () => ipcRenderer.invoke("font:complete-migration"),
     downloadRemote: (item: RemoteFontItem, customAlias?: string) =>
       ipcRenderer.invoke("font:download-remote", item, customAlias),
     openCustomFontsFolder: () => ipcRenderer.invoke("font:open-folder"),
@@ -309,6 +313,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
       ipcRenderer.invoke("font:import-external", serviceId),
     cleanupExternalFont: (serviceId: string) =>
       ipcRenderer.invoke("font:cleanup-external", serviceId),
+    detectExternalFontsDetail: () =>
+      ipcRenderer.invoke("font:detect-external-detail"),
+    importSelectedExternalFonts: (selection: ImportSelection[]) =>
+      ipcRenderer.invoke("font:import-selected-external", selection),
     getCatalog: () => ipcRenderer.invoke("font:get-catalog"),
     syncCatalog: (force: boolean = false) =>
       ipcRenderer.invoke("font:sync-catalog", force),

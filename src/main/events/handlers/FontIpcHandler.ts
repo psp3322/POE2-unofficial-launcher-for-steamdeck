@@ -5,7 +5,7 @@ import { ipcMain } from "electron";
 import { FontManager } from "../../services/FontManager";
 import { Logger } from "../../utils/logger";
 
-import type { RemoteFontItem } from "../../../shared/types";
+import type { RemoteFontItem, ImportSelection } from "../../../shared/types";
 
 const logger = new Logger({ type: "ipc-font", typeColor: "#3498db" });
 
@@ -171,6 +171,39 @@ export class FontIpcHandler {
       },
     );
 
+    ipcMain.handle("font:reapply", async () => {
+      try {
+        const fm = FontManager.getInstance();
+        await fm.reapplyAppliedFonts();
+      } catch (err) {
+        logger.error("Failed to reapply fonts", err);
+        throw err;
+      }
+    });
+
+    // 부팅 시 렌더러가 호출. 변조 스키마 마이그레이션 안내 필요 여부 반환.
+    // 적용된 커스텀 폰트가 없으면 내부에서 스키마만 기록하고 prompt=false.
+    ipcMain.handle("font:check-migration", async () => {
+      try {
+        const fm = FontManager.getInstance();
+        return await fm.checkFontMigration();
+      } catch (err) {
+        logger.error("Failed to check font migration", err);
+        return { prompt: false };
+      }
+    });
+
+    // 사용자가 재적용을 확인했을 때. 성공 시에만 스키마 기록(멱등).
+    ipcMain.handle("font:complete-migration", async () => {
+      try {
+        const fm = FontManager.getInstance();
+        await fm.completeFontMigration();
+      } catch (err) {
+        logger.error("Failed to complete font migration", err);
+        throw err;
+      }
+    });
+
     ipcMain.handle("font:open-folder", () => {
       const fm = FontManager.getInstance();
       fm.openCustomFontsFolder();
@@ -195,6 +228,30 @@ export class FontIpcHandler {
         throw err;
       }
     });
+
+    // [Interactive Wizard APIs]
+    ipcMain.handle("font:detect-external-detail", async () => {
+      try {
+        const fm = FontManager.getInstance();
+        return await fm.detectExternalFontsDetail();
+      } catch (err) {
+        logger.error("Failed to detect external fonts detail", err);
+        throw err;
+      }
+    });
+
+    ipcMain.handle(
+      "font:import-selected-external",
+      async (_, selection: ImportSelection[]) => {
+        try {
+          const fm = FontManager.getInstance();
+          await fm.importSelectedExternalFonts(selection);
+        } catch (err) {
+          logger.error("Failed to import selected external fonts", err);
+          throw err;
+        }
+      },
+    );
 
     logger.log("Font IPC Handlers registered");
     this.registered = true;
