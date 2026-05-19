@@ -10,16 +10,89 @@ import { Font } from "fonteditor-core";
  *   ID 16/17은 본체에 없으므로 주입하지 않는다(제거).
  * - metrics: 게임 본체 폰트(slider 100% 기준)를 scale%로 비례 조정.
  *   공식 근거: scratch/font-mutation-analysis.md 9.4.
- *   글리프는 건드리지 않는다(수직 보정은 STEP 3 별도).
+ * - 수직 중앙 정렬(STEP 3): 글리프 세로 중심 cy를 게임 본체 cy로 맞춰
+ *   닉네임 등이 라인박스에서 치우치는 문제 해소. 전 글리프 contour.y +
+ *   bbox 를 dy 만큼 평행이동(양방향). PoC: scratch/poc_glyph_shift.mjs.
  */
 
 import { FontMutationRule } from "../../shared/font-targets";
+
+/**
+ * 게임 본체 Noto 폰트의 한글 글리프 세로 중심(upm1000 기준 실측, 9장).
+ * 모든 커스텀 폰트의 cy 를 이 값으로 맞추면 게임 라인박스 정렬이 일치.
+ */
+const TARGET_CENTER_Y = 378;
+
+/** cy 측정용 한글 대표 글자 (단일 글자 디자인 편차 회피, 평균 사용). */
+const CY_PROBE_CODEPOINTS = [0xd55c, 0xac00, 0xb098]; // 한 가 나
 
 interface MutatorMessage {
   filePath: string;
   rule: FontMutationRule;
   /** 크기 보정 % (50~150). 미지정 시 100. */
   scale?: number;
+  /** 수직 중앙 정렬 보정 사용 여부 (기본 true). */
+  verticalCenter?: boolean;
+  /** 미세조정 오프셋(upm1000 유닛). 목표 cy = TARGET_CENTER_Y + offset. */
+  centerOffset?: number;
+}
+
+type Glyph = {
+  contours?: { x: number; y: number; onCurve?: boolean }[][];
+  yMin?: number;
+  yMax?: number;
+  compound?: boolean;
+  glyf?: { y?: number }[];
+};
+
+/** unitsPerEm 정규화 계수 (모든 좌표를 upm1000 기준으로 환산). */
+function upmScale(unitsPerEm: number | undefined): number {
+  return 1000 / (unitsPerEm || 1000);
+}
+
+/**
+ * 대표 한글 글리프들의 세로 중심 평균(upm1000 기준). 측정 불가 시 null.
+ */
+function measureCenterY(
+  glyf: Glyph[],
+  cmap: Record<string, number>,
+  k: number,
+): number | null {
+  const centers: number[] = [];
+  for (const cp of CY_PROBE_CODEPOINTS) {
+    const gid = cmap[cp];
+    const g = gid != null ? glyf[gid] : undefined;
+    if (g && g.yMax != null && g.yMin != null) {
+      centers.push(((g.yMax + g.yMin) / 2) * k);
+    }
+  }
+  if (centers.length === 0) return null;
+  return centers.reduce((a, b) => a + b, 0) / centers.length;
+}
+
+/**
+ * 전 글리프를 dy(폰트 원좌표 단위) 만큼 세로 평행이동.
+ * contour 점 + bbox(yMin/yMax) 둘 다 가산해야 round-trip 반영됨
+ * (PoC 확인: bbox 누락 시 cy 측정이 옛값). composite/빈 글리프는 방어 스킵.
+ */
+function shiftGlyphsY(glyf: Glyph[], dy: number): void {
+  if (dy === 0) return;
+  for (const g of glyf) {
+    if (!g) continue;
+    if (g.compound && g.glyf) {
+      for (const comp of g.glyf) {
+        if (typeof comp.y === "number") comp.y += dy;
+      }
+      continue;
+    }
+    if (g.contours) {
+      for (const contour of g.contours) {
+        for (const pt of contour) pt.y += dy;
+      }
+    }
+    if (typeof g.yMin === "number") g.yMin += dy;
+    if (typeof g.yMax === "number") g.yMax += dy;
+  }
 }
 
 /** scale% 적용한 라인높이/ascent/descent 산출 (9.4 공식). */
@@ -97,6 +170,26 @@ if (parentPort) {
         os2.fsSelection = m.fsSelection;
         os2.usWeightClass = m.usWeightClass;
         head.macStyle = m.macStyle;
+      }
+
+      // 2-1. 수직 중앙 정렬 보정 (STEP 3, metrics 정답 폰트만)
+      // metrics 조정 후 좌표계에서 cy 측정 → 목표(본체 cy + offset)로
+      // 양방향 평행이동. 글리프 확대는 하지 않음(크기는 metrics가 담당).
+      const verticalCenter = data.verticalCenter !== false; // 기본 true
+      if (m && verticalCenter) {
+        const offset =
+          typeof data.centerOffset === "number" ? data.centerOffset : 0;
+        const glyf = fontData.glyf as Glyph[];
+        const cmap = (fontData.cmap || {}) as Record<string, number>;
+        const k = upmScale(fontData.head.unitsPerEm);
+        const cy = measureCenterY(glyf, cmap, k);
+        if (cy != null) {
+          // dy 는 폰트 원좌표 단위 (측정/목표는 upm1000 정규화값이므로 /k)
+          const targetCy = TARGET_CENTER_Y + offset;
+          const dy = Math.round((targetCy - cy) / k);
+          shiftGlyphsY(glyf, dy);
+        }
+        // cy 측정 불가(대표 글리프 없음)면 보정 생략 — 폴백
       }
 
       // 3. 변조 버퍼 생성 및 반환

@@ -11,11 +11,20 @@ const SCALE_MIN = 50;
 const SCALE_MAX = 150;
 const SCALE_DEFAULT = 100;
 
+// 수직 중앙 정렬 미세조정 (폰트 유닛, upm1000). 0 = 정중앙.
+const OFFSET_MAX = 200;
+const OFFSET_DEFAULT = 0;
+
 type Phase = "edit" | "discardConfirm" | "applyNotice" | "applying" | "error";
 
 const clampScale = (v: unknown): number => {
   const n = typeof v === "number" && Number.isFinite(v) ? v : SCALE_DEFAULT;
   return Math.min(SCALE_MAX, Math.max(SCALE_MIN, Math.round(n)));
+};
+
+const clampOffset = (v: unknown): number => {
+  const n = typeof v === "number" && Number.isFinite(v) ? v : OFFSET_DEFAULT;
+  return Math.min(OFFSET_MAX, Math.max(-OFFSET_MAX, Math.round(n)));
 };
 
 /**
@@ -35,6 +44,14 @@ const FontDetailSettingsModal: React.FC<FontDetailSettingsModalProps> = ({
   const [draftNoto, setDraftNoto] = useState(SCALE_DEFAULT);
   const [draftSpoqa, setDraftSpoqa] = useState(SCALE_DEFAULT);
 
+  // 수직 중앙 정렬: 전역 on/off + 폰트별 미세조정 오프셋
+  const [appliedVCenter, setAppliedVCenter] = useState(true);
+  const [appliedOffNoto, setAppliedOffNoto] = useState(OFFSET_DEFAULT);
+  const [appliedOffSpoqa, setAppliedOffSpoqa] = useState(OFFSET_DEFAULT);
+  const [draftVCenter, setDraftVCenter] = useState(true);
+  const [draftOffNoto, setDraftOffNoto] = useState(OFFSET_DEFAULT);
+  const [draftOffSpoqa, setDraftOffSpoqa] = useState(OFFSET_DEFAULT);
+
   const [phase, setPhase] = useState<Phase>("edit");
   const [errorMsg, setErrorMsg] = useState("");
 
@@ -43,17 +60,29 @@ const FontDetailSettingsModal: React.FC<FontDetailSettingsModalProps> = ({
     if (!isVisible) return;
     let cancelled = false;
     (async () => {
-      const [noto, spoqa] = await Promise.all([
+      const [noto, spoqa, vCenter, offNoto, offSpoqa] = await Promise.all([
         window.electronAPI.getConfig("fontScaleNoto"),
         window.electronAPI.getConfig("fontScaleSpoqa"),
+        window.electronAPI.getConfig("fontVerticalCenter"),
+        window.electronAPI.getConfig("fontCenterOffsetNoto"),
+        window.electronAPI.getConfig("fontCenterOffsetSpoqa"),
       ]);
       if (cancelled) return;
       const n = clampScale(noto);
       const s = clampScale(spoqa);
+      const vc = vCenter !== false; // 기본 true
+      const on = clampOffset(offNoto);
+      const os = clampOffset(offSpoqa);
       setAppliedNoto(n);
       setAppliedSpoqa(s);
       setDraftNoto(n);
       setDraftSpoqa(s);
+      setAppliedVCenter(vc);
+      setAppliedOffNoto(on);
+      setAppliedOffSpoqa(os);
+      setDraftVCenter(vc);
+      setDraftOffNoto(on);
+      setDraftOffSpoqa(os);
       setPhase("edit");
     })();
     return () => {
@@ -61,16 +90,22 @@ const FontDetailSettingsModal: React.FC<FontDetailSettingsModalProps> = ({
     };
   }, [isVisible]);
 
-  const notoDirty = draftNoto !== appliedNoto;
-  const spoqaDirty = draftSpoqa !== appliedSpoqa;
+  const notoDirty =
+    draftNoto !== appliedNoto || draftOffNoto !== appliedOffNoto;
+  const spoqaDirty =
+    draftSpoqa !== appliedSpoqa || draftOffSpoqa !== appliedOffSpoqa;
+  const vCenterDirty = draftVCenter !== appliedVCenter;
   const isDirty = useMemo(
-    () => notoDirty || spoqaDirty,
-    [notoDirty, spoqaDirty],
+    () => notoDirty || spoqaDirty || vCenterDirty,
+    [notoDirty, spoqaDirty, vCenterDirty],
   );
 
   const resetDefaults = () => {
     setDraftNoto(SCALE_DEFAULT);
     setDraftSpoqa(SCALE_DEFAULT);
+    setDraftVCenter(true);
+    setDraftOffNoto(OFFSET_DEFAULT);
+    setDraftOffSpoqa(OFFSET_DEFAULT);
   };
 
   const finishClose = () => {
@@ -93,9 +128,18 @@ const FontDetailSettingsModal: React.FC<FontDetailSettingsModalProps> = ({
     try {
       await window.electronAPI.setConfig("fontScaleNoto", draftNoto);
       await window.electronAPI.setConfig("fontScaleSpoqa", draftSpoqa);
+      await window.electronAPI.setConfig("fontVerticalCenter", draftVCenter);
+      await window.electronAPI.setConfig("fontCenterOffsetNoto", draftOffNoto);
+      await window.electronAPI.setConfig(
+        "fontCenterOffsetSpoqa",
+        draftOffSpoqa,
+      );
       await window.electronAPI.font.reapply();
       setAppliedNoto(draftNoto);
       setAppliedSpoqa(draftSpoqa);
+      setAppliedVCenter(draftVCenter);
+      setAppliedOffNoto(draftOffNoto);
+      setAppliedOffSpoqa(draftOffSpoqa);
       finishClose();
     } catch (e) {
       setErrorMsg(
@@ -117,6 +161,9 @@ const FontDetailSettingsModal: React.FC<FontDetailSettingsModalProps> = ({
   const confirmDiscard = () => {
     setDraftNoto(appliedNoto);
     setDraftSpoqa(appliedSpoqa);
+    setDraftVCenter(appliedVCenter);
+    setDraftOffNoto(appliedOffNoto);
+    setDraftOffSpoqa(appliedOffSpoqa);
     finishClose();
   };
 
@@ -187,6 +234,68 @@ const FontDetailSettingsModal: React.FC<FontDetailSettingsModalProps> = ({
             <div className="fds-desc-box">
               POE1 한글 전체 / POE2 아이템 툴팁·이름, HUD·버프·스킬 UI, 채팅창
             </div>
+          </section>
+
+          {/* 수직 중앙 정렬 보정 */}
+          <section className="fds-font-block">
+            <label className="fds-checkbox-row">
+              <input
+                type="checkbox"
+                checked={draftVCenter}
+                onChange={(e) => setDraftVCenter(e.target.checked)}
+              />
+              <span className={`fds-font-title ${vCenterDirty ? "dirty" : ""}`}>
+                수직 중앙 정렬 보정
+              </span>
+            </label>
+            <div className="fds-desc-box">
+              폰트마다 글자가 줄에서 위/아래로 치우치는 현상을 게임 기본 폰트
+              기준으로 중앙 정렬합니다. 아래 슬라이더로 폰트별 미세 조정(0 =
+              정중앙).
+            </div>
+
+            {draftVCenter && (
+              <>
+                <div className="fds-slider-row">
+                  <span className="fds-slider-label">Noto</span>
+                  <span className="fds-slider-min">↑{OFFSET_MAX}</span>
+                  <input
+                    type="range"
+                    min={-OFFSET_MAX}
+                    max={OFFSET_MAX}
+                    step={5}
+                    value={draftOffNoto}
+                    onChange={(e) => setDraftOffNoto(Number(e.target.value))}
+                    className="fds-slider"
+                  />
+                  <span className="fds-slider-max">↓{OFFSET_MAX}</span>
+                  <span
+                    className={`fds-slider-value ${notoDirty ? "dirty" : ""}`}
+                  >
+                    {draftOffNoto > 0 ? `+${draftOffNoto}` : draftOffNoto}
+                  </span>
+                </div>
+                <div className="fds-slider-row">
+                  <span className="fds-slider-label">Spoqa</span>
+                  <span className="fds-slider-min">↑{OFFSET_MAX}</span>
+                  <input
+                    type="range"
+                    min={-OFFSET_MAX}
+                    max={OFFSET_MAX}
+                    step={5}
+                    value={draftOffSpoqa}
+                    onChange={(e) => setDraftOffSpoqa(Number(e.target.value))}
+                    className="fds-slider"
+                  />
+                  <span className="fds-slider-max">↓{OFFSET_MAX}</span>
+                  <span
+                    className={`fds-slider-value ${spoqaDirty ? "dirty" : ""}`}
+                  >
+                    {draftOffSpoqa > 0 ? `+${draftOffSpoqa}` : draftOffSpoqa}
+                  </span>
+                </div>
+              </>
+            )}
           </section>
 
           <p className="fds-note">

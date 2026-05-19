@@ -220,6 +220,27 @@ export const CONFIG_METADATA: Record<string, ConfigDefinition> = {
     description:
       "마지막으로 폰트를 설치한 변조 스키마 버전입니다. 마이그레이션 판정에 사용됩니다. (자동 관리)",
   },
+  FONT_VERTICAL_CENTER: {
+    key: "fontVerticalCenter",
+    name: "Font Vertical Center",
+    category: "Appearance",
+    description:
+      "커스텀 폰트의 수직 중앙 정렬 보정 사용 여부. 기본 켜짐. (커스텀 폰트 상세 설정에서 관리)",
+  },
+  FONT_CENTER_OFFSET_NOTO: {
+    key: "fontCenterOffsetNoto",
+    name: "Noto Center Offset",
+    category: "Appearance",
+    description:
+      "Noto Sans CJK TC 수직 정렬 미세조정 오프셋. 기본 0(정중앙). (커스텀 폰트 상세 설정에서 관리)",
+  },
+  FONT_CENTER_OFFSET_SPOQA: {
+    key: "fontCenterOffsetSpoqa",
+    name: "Spoqa Center Offset",
+    category: "Appearance",
+    description:
+      "Spoqa Han Sans Neo 수직 정렬 미세조정 오프셋. 기본 0(정중앙). (커스텀 폰트 상세 설정에서 관리)",
+  },
 };
 
 // 기존 코드와의 호환성을 위한 키 매핑
@@ -292,6 +313,9 @@ export const DEFAULT_CONFIG: AppConfig = {
   fontScaleNoto: 100,
   fontScaleSpoqa: 100,
   fontMutationSchema: 1,
+  fontVerticalCenter: true,
+  fontCenterOffsetNoto: 0,
+  fontCenterOffsetSpoqa: 0,
 };
 
 export const DEBUG_APP_CONFIG = {

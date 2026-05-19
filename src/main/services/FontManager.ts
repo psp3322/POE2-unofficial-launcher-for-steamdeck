@@ -17,6 +17,9 @@ import {
   FONT_SCALE_MAX,
   FONT_MUTATION_SCHEMA,
   expandTargetNames,
+  FONT_CENTER_OFFSET_CONFIG_KEY,
+  FONT_CENTER_OFFSET_MAX,
+  FONT_CENTER_OFFSET_DEFAULT,
 } from "../../shared/font-targets";
 import {
   UnifiedFontData,
@@ -631,10 +634,14 @@ if (Get-ItemProperty -Path $p1 -Name "${name}" -ErrorAction SilentlyContinue) {
         }
 
         const scale = this.resolveFontScale(targetName);
+        const { verticalCenter, centerOffset } =
+          this.resolveVerticalCenter(targetName);
         const mutatedBuffer = await this.mutateFontName(
           sourcePath,
           rule,
           scale,
+          verticalCenter,
+          centerOffset,
         );
         const tempPath = path.join(
           app.getPath("temp"),
@@ -1031,10 +1038,37 @@ if (Get-ItemProperty -Path $p1 -Name "${name}" -ErrorAction SilentlyContinue) {
     return Math.min(FONT_SCALE_MAX, Math.max(FONT_SCALE_MIN, Math.round(raw)));
   }
 
+  /**
+   * 타겟 폰트의 수직 중앙 정렬 설정을 읽는다.
+   * - verticalCenter: 전역 on/off (기본 true)
+   * - centerOffset: 타겟별 미세조정, ±MAX 클램프 (기본 0)
+   * metrics 미적용 타겟(GGG)이면 보정 비활성.
+   */
+  private resolveVerticalCenter(targetName: string): {
+    verticalCenter: boolean;
+    centerOffset: number;
+  } {
+    const key = FONT_CENTER_OFFSET_CONFIG_KEY[targetName];
+    if (!key) return { verticalCenter: false, centerOffset: 0 };
+
+    const enabled = getConfig("fontVerticalCenter") !== false; // 기본 true
+    const rawOffset = getConfig(key) as number | undefined;
+    const offset =
+      typeof rawOffset === "number" && Number.isFinite(rawOffset)
+        ? Math.min(
+            FONT_CENTER_OFFSET_MAX,
+            Math.max(-FONT_CENTER_OFFSET_MAX, Math.round(rawOffset)),
+          )
+        : FONT_CENTER_OFFSET_DEFAULT;
+    return { verticalCenter: enabled, centerOffset: offset };
+  }
+
   private mutateFontName(
     filePath: string,
     rule: FontMutationRule,
     scale: number,
+    verticalCenter: boolean,
+    centerOffset: number,
   ): Promise<ArrayBuffer> {
     return new Promise((resolve, reject) => {
       // [Production] Base path for unpacked workers (Standard Case)
@@ -1053,7 +1087,13 @@ if (Get-ItemProperty -Path $p1 -Name "${name}" -ErrorAction SilentlyContinue) {
       }
 
       const worker = new Worker(workerPath);
-      worker.postMessage({ filePath, rule, scale });
+      worker.postMessage({
+        filePath,
+        rule,
+        scale,
+        verticalCenter,
+        centerOffset,
+      });
       worker.on(
         "message",
         (msg: { success: boolean; buffer: ArrayBuffer; error?: string }) => {

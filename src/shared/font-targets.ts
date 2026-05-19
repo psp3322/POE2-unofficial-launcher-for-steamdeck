@@ -150,6 +150,22 @@ export const FONT_SCALE_MAX = 150;
 export const FONT_SCALE_DEFAULT = 100;
 
 /**
+ * 타겟 폰트명 → 수직 정렬 미세조정 오프셋 설정 키.
+ * 목표 cy = 378 + offset. 기본 0(정중앙). 범위는 ±MAX.
+ */
+export const FONT_CENTER_OFFSET_CONFIG_KEY: Record<
+  string,
+  "fontCenterOffsetNoto" | "fontCenterOffsetSpoqa"
+> = {
+  "Noto Sans CJK TC Book": "fontCenterOffsetNoto",
+  "Spoqa Han Sans Neo Regular": "fontCenterOffsetSpoqa",
+};
+
+/** 미세조정 슬라이더 범위(폰트 유닛, upm1000). ±200 ≈ 라인높이의 상당폭. */
+export const FONT_CENTER_OFFSET_MAX = 200;
+export const FONT_CENTER_OFFSET_DEFAULT = 0;
+
+/**
  * 폰트 변조 스키마 버전. 변조 로직(name table/metrics 규칙)이 바뀔 때마다 올린다.
  * - 1: 구버전 (name table 6필드, metrics 미변조) — 명시 저장 안 됨, 미설정=1로 간주
  * - 2: 본체 metrics 주입 + name table 결함 정정 (STEP 2)

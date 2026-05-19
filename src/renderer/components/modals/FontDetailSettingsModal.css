@@ -92,6 +92,21 @@
   color: var(--theme-accent);
 }
 
+.fds-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.fds-checkbox-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--theme-accent);
+  cursor: pointer;
+}
+
 .fds-slider-row {
   display: flex;
   align-items: center;
