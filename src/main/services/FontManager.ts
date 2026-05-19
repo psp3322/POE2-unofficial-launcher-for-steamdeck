@@ -16,6 +16,7 @@ import {
   FONT_SCALE_MIN,
   FONT_SCALE_MAX,
   FONT_MUTATION_SCHEMA,
+  expandTargetNames,
 } from "../../shared/font-targets";
 import {
   UnifiedFontData,
@@ -348,18 +349,24 @@ export class FontManager {
     const pm = PowerShellManager.getInstance();
     const unknownFontsInfo: { service: string; path: string }[] = [];
 
+    // 실제 커스텀 폰트가 적용된 service만 외부 감지를 스킵한다.
+    // "DEFAULT"/null/미설정(=기본값 상태)은 오히려 외부 수동 설치를
+    // 감지해야 하는 상황이므로 스캔 대상에 포함해야 한다.
+    // (기존 `!appliedStore[service]`는 "DEFAULT"가 truthy라 감지를
+    //  통째로 스킵하던 버그)
     const servicesToCheck = Object.entries(TARGET_SERVICES_CONFIG).filter(
-      ([service]) => !appliedStore[service],
+      ([service]) => {
+        const applied = appliedStore[service];
+        return !applied || applied === "DEFAULT";
+      },
     );
 
     if (servicesToCheck.length > 0) {
       const checkScript = servicesToCheck
         .flatMap(([service, targets]) => {
-          // [PATCH] Noto Sans CJK TC의 경우 'Book'이 붙거나 안 붙은 경우 모두 체크
-          const extendedTargets = [...targets];
-          if (targets.includes("Noto Sans CJK TC Book")) {
-            extendedTargets.push("Noto Sans CJK TC");
-          }
+          // 감지·제거가 동일 확장 목록을 쓰도록 공유 헬퍼 사용
+          // (Book/non-Book 불일치 비대칭 버그 방지)
+          const extendedTargets = expandTargetNames(targets);
 
           return extendedTargets.map((t) => {
             const name = `${t} (TrueType)`;
@@ -543,7 +550,7 @@ if (Get-ItemProperty -Path $p1 -Name "${name}" -ErrorAction SilentlyContinue) {
         TARGET_SERVICES_CONFIG[service as keyof typeof TARGET_SERVICES_CONFIG];
 
       if (!fontId || fontId === "DEFAULT") {
-        for (const targetName of targetNames) {
+        for (const targetName of expandTargetNames(targetNames)) {
           const ttfFileName = targetName.replace(/\s+/g, "") + ".ttf";
           await pm.removeSystemFont(targetName, ttfFileName);
         }
@@ -818,9 +825,9 @@ if (Get-ItemProperty -Path $p1 -Name "${name}" -ErrorAction SilentlyContinue) {
       }
     }
 
-    // [Step 3] 시스템 완전 정화 (모든 타겟 소거)
+    // [Step 3] 시스템 완전 정화 (모든 타겟 소거, Book/non-Book 변형 포함)
     const allTargets = Array.from(
-      new Set(Object.values(TARGET_SERVICES_CONFIG).flat()),
+      new Set(expandTargetNames(Object.values(TARGET_SERVICES_CONFIG).flat())),
     );
     for (const targetName of allTargets) {
       const ttfFileName = targetName.replace(/\s+/g, "") + ".ttf";
@@ -913,8 +920,8 @@ if (Get-ItemProperty -Path $p1 -Name "${name}" -ErrorAction SilentlyContinue) {
     let detectedPath: string | null = null;
     let targetNameForCleanup: string | null = null;
 
-    // 1. 레지스트리 경로 재검사 및 획득
-    for (const t of targets) {
+    // 1. 레지스트리 경로 재검사 및 획득 (Book/non-Book 변형 포함)
+    for (const t of expandTargetNames(targets)) {
       const name = `${t} (TrueType)`;
       const script = `
         $p1 = "HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts";
@@ -976,7 +983,7 @@ if (Get-ItemProperty -Path $p1 -Name "${name}" -ErrorAction SilentlyContinue) {
 
     // 1. 모든 서비스 타겟 전수 소거
     const allTargets = Array.from(
-      new Set(Object.values(TARGET_SERVICES_CONFIG).flat()),
+      new Set(expandTargetNames(Object.values(TARGET_SERVICES_CONFIG).flat())),
     );
     for (const t of allTargets) {
       const ttfFileName = t.replace(/\s+/g, "") + ".ttf";

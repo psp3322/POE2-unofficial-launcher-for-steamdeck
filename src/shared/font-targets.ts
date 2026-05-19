@@ -119,6 +119,21 @@ export const TARGET_SERVICES_CONFIG: Record<string, string[]> = {
 };
 
 /**
+ * 타겟 폰트명을 시스템 등록 가능한 모든 변형으로 확장한다.
+ *
+ * `Noto Sans CJK TC Book` 은 환경에 따라 'Book' 이 붙은/안 붙은 두 이름으로
+ * 시스템에 등록될 수 있다. **감지와 제거가 반드시 동일한 확장 목록을 써야**
+ * Book/non-Book 불일치로 한쪽만 정리되는 비대칭 버그가 안 생긴다.
+ */
+export function expandTargetNames(targets: string[]): string[] {
+  const expanded = [...targets];
+  if (targets.includes("Noto Sans CJK TC Book")) {
+    expanded.push("Noto Sans CJK TC");
+  }
+  return expanded;
+}
+
+/**
  * 타겟 폰트명 → 크기 슬라이더 설정 키 매핑.
  * 슬라이더 범위 50~150(%), 기본 100.
  */
