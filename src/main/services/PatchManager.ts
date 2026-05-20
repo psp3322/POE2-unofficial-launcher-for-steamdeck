@@ -442,7 +442,10 @@ export class PatchManager {
       },
     });
 
-    const totalLength = parseInt(response.headers["content-length"] || "0", 10);
+    const totalLength = parseInt(
+      String(response.headers["content-length"] ?? "0"),
+      10,
+    );
     let transferred = 0;
 
     // Throttle progress updates (per file)
