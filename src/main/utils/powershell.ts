@@ -471,9 +471,30 @@ try {
 try {
   $sourcePath = "${ttfFilePath}"
   $destPath = "$env:windir\\Fonts\\${ttfFileName}"
-  
-  # 1. 이전 유력 파일 제거 (충돌 방지)
-  if (Test-Path $destPath) { Remove-Item $destPath -Force }
+
+  $Signature = @'
+    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
+    public static extern int AddFontResource(string lpszFilename);
+
+    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
+    public static extern bool RemoveFontResource(string lpFileName);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+'@
+  $Win32API = Add-Type -MemberDefinition $Signature -Name "Win32FontAPI_Install" -Namespace "Win32Functions" -PassThru
+
+  # 1. 같은 경로 폰트가 이미 GDI에 매핑돼 있으면 ref count 0까지 unregister.
+  #    같은 파일명 in-place 갱신 시 AddFontResource가 새 데이터를 reload하지
+  #    않는 문제(재부팅 전까지 stale metrics 사용) 회피. 최대 10회 반복.
+  if (Test-Path $destPath) {
+    for ($i = 0; $i -lt 10; $i++) {
+      if (-not $Win32API::RemoveFontResource($destPath)) { break }
+    }
+    [void]$Win32API::PostMessage(0xffff, 0x001D, [IntPtr]::Zero, [IntPtr]::Zero)
+    Start-Sleep -Milliseconds 200
+    Remove-Item $destPath -Force
+  }
 
   # 2. 보안 차단 해제 및 Fonts 경로로 복사
   Unblock-File -Path $sourcePath
@@ -484,19 +505,10 @@ try {
   $regName = "${targetFontName} (TrueType)"
   Set-ItemProperty -Path $regPath -Name $regName -Value "${ttfFileName}"
 
-  # 4. GDI/User32 API를 통한 실시간 전파
-  $Signature = @'
-    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
-    public static extern int AddFontResource(string lpszFilename);
-    
-    [DllImport("user32.dll", CharSet = CharSet.Auto)]
-    public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
-'@
-  $Win32API = Add-Type -MemberDefinition $Signature -Name "Win32FontAPI_Install" -Namespace "Win32Functions" -PassThru
-  
+  # 4. GDI 등록 + 변경 전파
   [void]$Win32API::AddFontResource($destPath)
   [void]$Win32API::PostMessage(0xffff, 0x001D, [IntPtr]::Zero, [IntPtr]::Zero) # HWND_BROADCAST, WM_FONTCHANGE
-  
+
   Write-Output "Successfully installed: ${targetFontName}"
 } catch {
   Write-Error $_.Exception.Message
