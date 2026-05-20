@@ -123,3 +123,7 @@ release
 # OS
 .DS_Store
 Thumbs.db
+
+# Claude Code per-user (absolute paths, machine-specific)
+.claude/settings.json
+.claude/settings.local.json
