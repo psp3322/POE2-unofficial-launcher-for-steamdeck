@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.2.2](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/compare/1.2.1...1.2.2) (2026-05-20)
+
+
+### Bug Fixes
+
+* 수동으로 추가된 커스텀 폰트를 감지 못하는 문제 수정 ([1c817a2](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/1c817a2a04b95fd888d5176f9396575edcb4be04))
+* 수동으로 추가된 커스텀 폰트를 감지 못하는 문제 수정 - 2 ([33d5a53](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/33d5a530062a78dfb7b2b4a5e65c40e80f2cca07))
+* 커스텀 폰트 설정 프로세스 개선 및 기능 안정화 ([e0c8ea8](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/e0c8ea898d53438cfa4fb980a418b925244a8752))
+* 커스텀 폰트 설정 프로세스 개선 및 기능 안정화 - 2 ([b8c7998](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/b8c799844cc7c5d5f55bc47eca0a479f41de6c37))
+* 커스텀 폰트 설정 프로세스 개선 및 기능 안정화 - 3 ([ae7ea7c](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/ae7ea7c14e8d81c0bebe78fc3d6c5467013b2986))
+* 커스텀 폰트 설정 프로세스 개선 및 기능 안정화 - 4 ([eee6288](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/eee6288e24f87697d68bf00742958d8393f28dec))
+* 커스텀 폰트 설정 프로세스 개선 및 기능 안정화 - 5 ([d68512c](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/d68512c2f9de0f84f45f4902b8738b2e67a6d991))
+* 커스텀 폰트를 변경 시 적용 되지 않는 상황에서는 항상 재부팅을 필요로 했던 문제 개선 ([bb83f51](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/bb83f51d7d94f322ad4df1353c2eb460cd83b8fe))
+
 ## [1.2.1](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/compare/1.2.0...1.2.1) (2026-04-13)
 
 
