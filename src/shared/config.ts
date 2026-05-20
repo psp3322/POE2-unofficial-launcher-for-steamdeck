@@ -199,6 +199,27 @@ export const CONFIG_METADATA: Record<string, ConfigDefinition> = {
     description:
       "각 게임 및 서비스별로 현재 적용된 커스텀 폰트 정보를 저장합니다. (자동 관리)",
   },
+  FONT_SCALE_NOTO: {
+    key: "fontScaleNoto",
+    name: "Noto Font Scale",
+    category: "Appearance",
+    description:
+      "Noto Sans CJK TC 커스텀 폰트의 크기 보정(%). 50~150, 기본 100. (커스텀 폰트 상세 설정에서 관리)",
+  },
+  FONT_SCALE_SPOQA: {
+    key: "fontScaleSpoqa",
+    name: "Spoqa Font Scale",
+    category: "Appearance",
+    description:
+      "Spoqa Han Sans Neo 커스텀 폰트의 크기 보정(%). 50~150, 기본 100. (커스텀 폰트 상세 설정에서 관리)",
+  },
+  FONT_MUTATION_SCHEMA: {
+    key: "fontMutationSchema",
+    name: "Font Mutation Schema",
+    category: "Appearance",
+    description:
+      "마지막으로 폰트를 설치한 변조 스키마 버전입니다. 마이그레이션 판정에 사용됩니다. (자동 관리)",
+  },
 };
 
 // 기존 코드와의 호환성을 위한 키 매핑
@@ -268,6 +289,9 @@ export const DEFAULT_CONFIG: AppConfig = {
   silentPatchNotification: false,
   terminateAfterPatch: true,
   appliedFonts: {},
+  fontScaleNoto: 100,
+  fontScaleSpoqa: 100,
+  fontMutationSchema: 1,
 };
 
 export const DEBUG_APP_CONFIG = {

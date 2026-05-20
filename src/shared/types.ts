@@ -81,6 +81,18 @@ export interface AppConfig {
    * Value: Font ID (UUID)
    */
   appliedFonts?: Record<string, string>;
+  /**
+   * 커스텀 폰트 크기 보정 (%). 범위 50~150, 기본 100.
+   * 게임 본체 폰트 metrics를 100% 기준으로 비례 조정한다.
+   * (scratch/font-mutation-analysis.md 9.4)
+   */
+  fontScaleNoto?: number;
+  fontScaleSpoqa?: number;
+  /**
+   * 마지막으로 폰트를 설치한 변조 스키마 버전 (FONT_MUTATION_SCHEMA).
+   * 미설정이면 구버전(1)으로 간주. 설치된 폰트가 없으면 의미 없음.
+   */
+  fontMutationSchema?: number;
 }
 
 export interface PatchReservation {
@@ -212,6 +224,26 @@ export interface UnifiedFontData extends CustomFontData {
 }
 
 /**
+ * 시스템 스캔을 통해 발견된 외부 변조 폰트 정보
+ */
+export interface DetectedExternalFont {
+  path: string;
+  hash: string;
+  sourceServices: string[]; // ["Kakao Games", "GGG"] 형태의 배열
+  originalName: string; // 시스템에서 추출한 (변조된) 이름
+  previewDataUrl: string; // 추출된 SVG 썸네일
+}
+
+/**
+ * 가져오기 마법사에서 확정된 개별 폰트 처리 정보
+ */
+export interface ImportSelection {
+  path: string;
+  alias: string;
+  originalName: string;
+}
+
+/**
  * 폰트 파일 분석 결과 메타데이터
  */
 export interface FontMetadata {
@@ -238,6 +270,9 @@ export interface FontAPI {
   removeFont: (id: string) => Promise<void>;
   updateAlias: (id: string, newAlias: string) => Promise<void>;
   applyBatch: (assignments: Record<string, string | null>) => Promise<void>;
+  reapply: () => Promise<void>;
+  checkMigration: () => Promise<{ prompt: boolean }>;
+  completeMigration: () => Promise<void>;
   downloadRemote: (
     item: RemoteFontItem,
     customAlias?: string,
@@ -249,6 +284,11 @@ export interface FontAPI {
   onDownloadProgress: (
     callback: (data: { id: string; progress: number }) => void,
   ) => () => void;
+  importExternalFont: (service: string) => Promise<boolean>; // Legacy (UI cleanup needed later)
+  cleanupExternalFont: (service: string) => Promise<void>;
+  // [Interactive Wizard APIs]
+  detectExternalFontsDetail: () => Promise<DetectedExternalFont[]>;
+  importSelectedExternalFonts: (selection: ImportSelection[]) => Promise<void>;
 }
 
 export interface RevalidateThemeColorsEventDetail {

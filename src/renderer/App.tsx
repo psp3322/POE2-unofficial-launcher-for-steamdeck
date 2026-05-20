@@ -35,6 +35,7 @@ import UpdateModal from "./components/UpdateModal";
 import ChangelogModal from "./components/modals/ChangelogModal";
 import { ForcedRepairModal } from "./components/modals/ForcedRepairModal";
 import MigrationModal from "./components/modals/MigrationModal";
+import FontMigrationModal from "./components/modals/FontMigrationModal";
 import NoticeModal from "./components/modals/NoticeModal";
 import { OnboardingModal } from "./components/modals/OnboardingModal";
 import { PatchFixModal } from "./components/modals/PatchFixModal";
@@ -233,6 +234,7 @@ function App() {
 
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
   const [isMigrationModalOpen, setIsMigrationModalOpen] = useState(false); // [UAC Migration]
+  const [isFontMigrationOpen, setIsFontMigrationOpen] = useState(false);
 
   // Forced Repair Modal State
   const [isForcedRepairOpen, setIsForcedRepairOpen] = useState(false);
@@ -302,6 +304,28 @@ function App() {
       return cleanup;
     }
   }, []);
+
+  // [Font Migration] 부팅 시 구버전 변조 폰트 감지 → 안내
+  // 적용된 커스텀 폰트가 없으면 main에서 prompt=false 반환(스키마만 기록).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { prompt } = await window.electronAPI.font.checkMigration();
+        if (!cancelled && prompt) setIsFontMigrationOpen(true);
+      } catch {
+        // 실패 시 안내 생략 (다음 부팅에 재시도)
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleFontMigrationConfirm = async () => {
+    await window.electronAPI.font.completeMigration();
+    setIsFontMigrationOpen(false);
+  };
 
   const handleMigrationConfirm = () => {
     window.electronAPI?.confirmUacMigration();
@@ -923,6 +947,12 @@ function App() {
         isOpen={isMigrationModalOpen}
         onConfirm={handleMigrationConfirm}
         onCancel={handleMigrationCancel}
+      />
+
+      <FontMigrationModal
+        isOpen={isFontMigrationOpen}
+        onConfirm={handleFontMigrationConfirm}
+        onCancel={() => setIsFontMigrationOpen(false)}
       />
 
       {isChangelogOpen && (

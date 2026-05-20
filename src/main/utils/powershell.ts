@@ -471,9 +471,30 @@ try {
 try {
   $sourcePath = "${ttfFilePath}"
   $destPath = "$env:windir\\Fonts\\${ttfFileName}"
-  
-  # 1. 이전 유력 파일 제거 (충돌 방지)
-  if (Test-Path $destPath) { Remove-Item $destPath -Force }
+
+  $Signature = @'
+    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
+    public static extern int AddFontResource(string lpszFilename);
+
+    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
+    public static extern bool RemoveFontResource(string lpFileName);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+'@
+  $Win32API = Add-Type -MemberDefinition $Signature -Name "Win32FontAPI_Install" -Namespace "Win32Functions" -PassThru
+
+  # 1. 같은 경로 폰트가 이미 GDI에 매핑돼 있으면 ref count 0까지 unregister.
+  #    같은 파일명 in-place 갱신 시 AddFontResource가 새 데이터를 reload하지
+  #    않는 문제(재부팅 전까지 stale metrics 사용) 회피. 최대 10회 반복.
+  if (Test-Path $destPath) {
+    for ($i = 0; $i -lt 10; $i++) {
+      if (-not $Win32API::RemoveFontResource($destPath)) { break }
+    }
+    [void]$Win32API::PostMessage(0xffff, 0x001D, [IntPtr]::Zero, [IntPtr]::Zero)
+    Start-Sleep -Milliseconds 200
+    Remove-Item $destPath -Force
+  }
 
   # 2. 보안 차단 해제 및 Fonts 경로로 복사
   Unblock-File -Path $sourcePath
@@ -484,19 +505,10 @@ try {
   $regName = "${targetFontName} (TrueType)"
   Set-ItemProperty -Path $regPath -Name $regName -Value "${ttfFileName}"
 
-  # 4. GDI/User32 API를 통한 실시간 전파
-  $Signature = @'
-    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
-    public static extern int AddFontResource(string lpszFilename);
-    
-    [DllImport("user32.dll", CharSet = CharSet.Auto)]
-    public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
-'@
-  $Win32API = Add-Type -MemberDefinition $Signature -Name "Win32FontAPI_Install" -Namespace "Win32Functions" -PassThru
-  
+  # 4. GDI 등록 + 변경 전파
   [void]$Win32API::AddFontResource($destPath)
   [void]$Win32API::PostMessage(0xffff, 0x001D, [IntPtr]::Zero, [IntPtr]::Zero) # HWND_BROADCAST, WM_FONTCHANGE
-  
+
   Write-Output "Successfully installed: ${targetFontName}"
 } catch {
   Write-Error $_.Exception.Message
@@ -507,46 +519,104 @@ try {
     return result.code === 0;
   }
 
+  /**
+   * 시스템에 설치된 커스텀 폰트를 제거한다.
+   *
+   * HKLM/HKCU 양쪽을 훑는다 (감지는 양쪽을 보는데 제거가 HKLM만 보던
+   * 비대칭 버그 수정). 권한 컨텍스트가 다르므로 세션을 분리한다:
+   *  - HKLM + %windir%\Fonts  → admin 세션
+   *  - HKCU + %LOCALAPPDATA%  → 일반 세션 (실행 사용자의 프로파일)
+   *
+   * 각 하이브에서 2단계 폴백:
+   *  1) 레지스트리 이름(`<name> (TrueType)`)으로 값을 읽어 그 경로 제거
+   *     — 임의 파일명으로 깐 수동/외부 잔재(예: 디아블로 Kodia)를 잡음
+   *  2) 런처 규칙 파일명을 폰트 디렉터리에서 직접 찾아 제거
+   *     — 레지스트리 키가 깨진 런처 설치 잔재를 잡음 (런처만 만드는
+   *       규칙명이라 타 폰트 오삭제 위험 없음)
+   */
   public async removeSystemFont(
     targetFontName: string,
     ttfFileName: string,
   ): Promise<boolean> {
-    const script = `
-try {
-  $destPath = "$env:windir\\Fonts\\${ttfFileName}"
-  $regPath = "HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts"
-  $regName = "${targetFontName} (TrueType)"
-  
-  # 1. 레지스트리 제거
-  if (Get-ItemProperty -Path $regPath -Name $regName -ErrorAction SilentlyContinue) {
-      Remove-ItemProperty -Path $regPath -Name $regName -Force
+    const hkcuOk = await this.runFontRemovalScript(
+      targetFontName,
+      ttfFileName,
+      "HKCU",
+      false,
+    );
+    const hklmOk = await this.runFontRemovalScript(
+      targetFontName,
+      ttfFileName,
+      "HKLM",
+      true,
+    );
+    // 한쪽이라도 정상 종료면 성공으로 본다 (해당 하이브에 없으면 no-op도 0).
+    return hkcuOk || hklmOk;
   }
 
-  # 2. 리소스 해제 통지
+  /** removeSystemFont 내부: 단일 하이브(HKLM|HKCU) 제거 스크립트 실행. */
+  private async runFontRemovalScript(
+    targetFontName: string,
+    ttfFileName: string,
+    hive: "HKLM" | "HKCU",
+    useAdmin: boolean,
+  ): Promise<boolean> {
+    const regPath =
+      hive === "HKLM"
+        ? "HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts"
+        : "HKCU:\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Fonts";
+    // 하이브별 기본 폰트 디렉터리 (레지스트리 값이 파일명만일 때 결합 + 폴백)
+    const fontDir =
+      hive === "HKLM"
+        ? "$env:windir\\Fonts"
+        : "$env:LOCALAPPDATA\\Microsoft\\Windows\\Fonts";
+    const className = `Win32FontAPI_Remove_${hive}`;
+
+    const script = `
+try {
+  $regPath = "${regPath}"
+  $regName = "${targetFontName} (TrueType)"
+  $fontDir = "${fontDir}"
+  $fallbackPath = Join-Path $fontDir "${ttfFileName}"
+
   $Signature = @'
     [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
     public static extern bool RemoveFontResource(string lpFileName);
-    
+
     [DllImport("user32.dll", CharSet = CharSet.Auto)]
     public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
 '@
-  $Win32API = Add-Type -MemberDefinition $Signature -Name "Win32FontAPI_Remove" -Namespace "Win32Functions" -PassThru
-  
-  [void]$Win32API::RemoveFontResource($destPath)
-  [void]$Win32API::PostMessage(0xffff, 0x001D, [IntPtr]::Zero, [IntPtr]::Zero) # HWND_BROADCAST, WM_FONTCHANGE
+  $Win32API = Add-Type -MemberDefinition $Signature -Name "${className}" -Namespace "Win32Functions" -PassThru
 
-  # 3. 폰트 파일 제거
-  if (Test-Path $destPath) {
-      Remove-Item -Path $destPath -Force
+  # --- 1차: 레지스트리 이름 기반 (임의 파일명 잔재) ---
+  $prop = Get-ItemProperty -Path $regPath -Name $regName -ErrorAction SilentlyContinue
+  if ($prop) {
+    $regVal = $prop."$regName"
+    # 값이 절대경로면 그대로, 파일명만이면 폰트 디렉터리와 결합
+    if ($regVal -match '[\\\\/:]') { $target = $regVal } else { $target = Join-Path $fontDir $regVal }
+    if (Test-Path $target) {
+      [void]$Win32API::RemoveFontResource($target)
+      Remove-Item -Path $target -Force -ErrorAction SilentlyContinue
+    }
+    Remove-ItemProperty -Path $regPath -Name $regName -Force -ErrorAction SilentlyContinue
   }
 
-  Write-Output "Successfully removed: ${targetFontName}"
+  # --- 2차: 런처 규칙 파일명 폴백 (레지스트리 깨진 런처 잔재) ---
+  if (Test-Path $fallbackPath) {
+    [void]$Win32API::RemoveFontResource($fallbackPath)
+    Remove-Item -Path $fallbackPath -Force -ErrorAction SilentlyContinue
+  }
+
+  # 변경 전파
+  [void]$Win32API::PostMessage(0xffff, 0x001D, [IntPtr]::Zero, [IntPtr]::Zero) # HWND_BROADCAST, WM_FONTCHANGE
+
+  Write-Output "Removed (${hive}): ${targetFontName}"
 } catch {
   Write-Error $_.Exception.Message
   exit 1
 }
     `;
-    const result = await this.execute(script, true);
+    const result = await this.execute(script, useAdmin, true);
     return result.code === 0;
   }
 
