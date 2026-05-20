@@ -486,7 +486,8 @@ if (Get-ItemProperty -Path $p1 -Name "${name}" -ErrorAction SilentlyContinue) {
     await this.initPromise;
     const assignments = this.getActiveCustomAssignments();
     if (Object.keys(assignments).length === 0) return;
-    await this.applyBatch(assignments);
+    // scale 변경 등으로 fontId는 같아도 변조 결과가 달라지므로 중복 가드 우회.
+    await this.applyBatch(assignments, { force: true });
   }
 
   /** appliedFonts 중 DEFAULT가 아닌 실제 커스텀 폰트 할당만 추린다. */
@@ -534,9 +535,13 @@ if (Get-ItemProperty -Path $p1 -Name "${name}" -ErrorAction SilentlyContinue) {
 
   /**
    * 일괄 적용 (Batch Apply)
+   *
+   * `options.force=true` 면 동일 fontId 중복 가드를 우회해 항상 재변조·재설치.
+   * scale 변경 후 재적용처럼 fontId는 같지만 변조 결과가 달라지는 케이스용.
    */
   public async applyBatch(
     assignments: Record<string, string | null>,
+    options?: { force?: boolean },
   ): Promise<void> {
     await this.initPromise;
     const pm = PowerShellManager.getInstance();
@@ -558,7 +563,7 @@ if (Get-ItemProperty -Path $p1 -Name "${name}" -ErrorAction SilentlyContinue) {
         continue;
       }
 
-      if (fontId === currentApplied[service]) continue;
+      if (!options?.force && fontId === currentApplied[service]) continue;
 
       const data = this.fontsMap.get(fontId);
       if (!data) {
