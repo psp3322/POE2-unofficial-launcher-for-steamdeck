@@ -93,19 +93,6 @@ export interface AppConfig {
    * 미설정이면 구버전(1)으로 간주. 설치된 폰트가 없으면 의미 없음.
    */
   fontMutationSchema?: number;
-  /**
-   * 수직 중앙 정렬 보정 사용 여부 (기본 true).
-   * 글리프 세로 중심을 게임 본체 폰트 cy(≈378)로 맞춰 닉네임 등이
-   * 라인박스에서 치우치는 문제를 해소한다.
-   * (scratch/font-mutation-analysis.md 7장 / font-implementation-plan STEP 3)
-   */
-  fontVerticalCenter?: boolean;
-  /**
-   * 수직 중앙 정렬 미세조정 오프셋(폰트 유닛, upm1000 기준). 기본 0(정중앙).
-   * 최종 목표 cy = 378 + offset. 양수면 위로, 음수면 아래로.
-   */
-  fontCenterOffsetNoto?: number;
-  fontCenterOffsetSpoqa?: number;
 }
 
 export interface PatchReservation {
