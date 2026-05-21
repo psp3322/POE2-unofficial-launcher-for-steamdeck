@@ -79,9 +79,15 @@ if (parentPort) {
         const hhea = fontData.hhea;
         const os2 = fontData["OS/2"];
 
+        // 본체 정답값은 unitsPerEm=1000 기준. 입력 폰트가 다른 upm이면 비율로 보정한다
+        // (예: Pretendard 2048, 일부 maplestory/binggrae 900). 안 그러면 게임이 본체와
+        // 다른 단위로 ascent/descent를 해석해 글자가 작게 또는 잘리게 나온다.
+        const upmRatio = head.unitsPerEm / m.unitsPerEm;
+        const u = (v: number) => Math.round(v * upmRatio);
+
         // hhea.descent는 음수, baseWinDescent는 양수 표기 → 음수로 변환해 전달
-        const h = scaledLine(m.baseHheaAscent, m.baseHheaDescent, scale);
-        const w = scaledLine(m.baseWinAscent, -m.baseWinDescent, scale);
+        const h = scaledLine(u(m.baseHheaAscent), u(m.baseHheaDescent), scale);
+        const w = scaledLine(u(m.baseWinAscent), u(-m.baseWinDescent), scale);
 
         hhea.ascent = h.ascent;
         hhea.descent = h.descent;
@@ -90,10 +96,10 @@ if (parentPort) {
         os2.usWinAscent = w.ascent;
         os2.usWinDescent = -w.descent; // scaledLine descent(음수) → 양수 표기
 
-        // scale 무관 고정 (본체 상수)
-        os2.sTypoAscender = m.typoAscender;
-        os2.sTypoDescender = m.typoDescender;
-        os2.sTypoLineGap = m.typoLineGap;
+        // scale 무관, upm만 보정
+        os2.sTypoAscender = u(m.typoAscender);
+        os2.sTypoDescender = u(m.typoDescender);
+        os2.sTypoLineGap = u(m.typoLineGap);
         os2.fsSelection = m.fsSelection;
         os2.usWeightClass = m.usWeightClass;
         head.macStyle = m.macStyle;
