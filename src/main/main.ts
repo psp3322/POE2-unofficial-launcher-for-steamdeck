@@ -526,9 +526,12 @@ ipcMain.handle("debug:get-history", () => {
   return getLogHistory();
 });
 
-ipcMain.handle("game:get-status", (_event, gameId: string, serviceId: string) => {
-  return getGlobalGameStatus(gameId, serviceId);
-});
+ipcMain.handle(
+  "game:get-status",
+  (_event, gameId: string, serviceId: string) => {
+    return getGlobalGameStatus(gameId, serviceId);
+  },
+);
 
 // [Removed] Old session:logout handler (duplicates new partitioned one)
 
