@@ -206,8 +206,6 @@ process.on("unhandledRejection", (reason) => {
 
 process.env["ELECTRON_DISABLE_SECURITY_WARNINGS"] = "true";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
 process.env.DIST = path.join(__dirname, "../dist");
 process.env.VITE_PUBLIC = app.isPackaged
   ? process.env.DIST
