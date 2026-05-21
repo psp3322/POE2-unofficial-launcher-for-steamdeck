@@ -32,8 +32,8 @@ If `uname -r` contains `microsoft`/`WSL`, this is WSL — WSL is the development
 
 Split commands by where they belong:
 
-- WSL bash, direct: `npm run lint`, `npm test` (pure Node, same result).
-- Windows PowerShell, never WSL: `npm install`, `npm ci`, `npm run build`, `npm run build:check`, `npm run dev`.
+- WSL bash, direct: 순수 Node 스크립트만 (예: `node -e ...`로 가설 검증). 같은 `node_modules`를 공유하지만 **eslint/vitest 모두 Linux 네이티브 바이너리(`unrs-resolver`, `@rolldown/binding-linux-x64-gnu`)를 요구해서 WSL에선 실패**한다 — 시도하지 말 것.
+- Windows PowerShell, never WSL: `npm install`, `npm ci`, `npm run build`, `npm run build:check`, `npm run dev`, `npm run lint`, `npm run lint:fix`, `npm test`.
   - Prefer `pwsh.exe` (PowerShell 7); fall back to `powershell.exe` (5.1) if absent.
   - Detect: `command -v pwsh.exe >/dev/null && PS=pwsh.exe || PS=powershell.exe`
   - Invoke: `"$PS" -NoProfile -Command "cd 'D:\project_poe2\POE2-unofficial-launcher'; npm run <script>"`

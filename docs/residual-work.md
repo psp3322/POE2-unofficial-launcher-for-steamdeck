@@ -88,7 +88,35 @@
 - UI 노출 시 추가로 `settings-management` 스킬.
 - 누락 시 ORPHANED config 발생.
 
-### 2.5 RTK가 `npm run lint` 출력에 lint 대상 외 파일을 섞어 보여줌
+### 2.5 husky pre-commit이 WSL에서 native binding으로 실패 — pwsh 위임 필요
+
+- **현상**: WSL에서 `git commit` 하면 lint-staged → eslint 단계에서
+  `unrs-resolver` "Cannot find native binding" 으로 hook 실패. ESLint 10 +
+  `eslint-plugin-import-x`가 끌고 들어온 `unrs-resolver`는 Linux 네이티브
+  바이너리(`@unrs/resolver-binding-linux-x64-gnu`)를 요구하는데, 같은
+  `node_modules`를 Windows pwsh에서 `npm ci`로 채워 둔 상태라 Linux용
+  바인딩이 없음.
+- **현재 회피**: 커밋만 Windows pwsh에서 수행. WSL에서는 작성/스테이지
+  까지만 하고 `pwsh.exe -NoProfile -Command "cd 'D:\\project_poe2\\POE2-unofficial-launcher'; git commit -m '...'"`.
+- **근본 해결안 (제안)**: `.husky/pre-commit` 가 WSL을 감지하면
+  (`grep -qi 'microsoft\\|WSL' /proc/version`) lint-staged 실행을
+  Windows pwsh에 위임. 의사코드:
+  ```sh
+  if grep -qi 'microsoft\|WSL' /proc/version 2>/dev/null; then
+    PS=$(command -v pwsh.exe || command -v powershell.exe)
+    "$PS" -NoProfile -Command "cd 'D:\\project_poe2\\POE2-unofficial-launcher'; npx lint-staged"
+  else
+    npx lint-staged
+  fi
+  ```
+- **선결 검증**: pwsh가 WSL 인터랙티브 stdin을 가로채는 husky 케이스에서
+  prettier/eslint의 in-place 수정이 WSL git index에 정상 반영되는지
+  (CRLF/LF 문제 포함 — `.gitattributes`는 이미 LF 강제). 안 되면 `git add`
+  재호출이 hook 안에서 한 번 더 필요할 수 있음.
+- **WSL 전용 Linux 바인딩 분리 설치 우회(§2.2 패턴)**: `npm install --no-save @unrs/resolver-binding-linux-x64-gnu` 추가도 후보. 단 lint-staged가
+  eslint를 spawn할 때 같은 node_modules tree를 보므로 효과 확인 필요.
+
+### 2.6 RTK가 `npm run lint` 출력에 lint 대상 외 파일을 섞어 보여줌
 
 - `package.json`의 lint 스크립트는 `eslint src`라 **`src/` 만 검사 대상**.
 - 그러나 `npm run lint`(RTK 후킹 경유)의 요약 출력에는 `scripts/` 등
