@@ -628,6 +628,7 @@ if (Get-ItemProperty -Path $p1 -Name "${name}" -ErrorAction SilentlyContinue) {
       if (!fontData) continue;
 
       const sourcePath = path.join(this.customFontsDir, fontData.fileName);
+
       for (const targetName of targetNames) {
         const rule = FONT_MUTATION_DEFINITIONS[targetName];
         if (!rule) {
@@ -635,15 +636,16 @@ if (Get-ItemProperty -Path $p1 -Name "${name}" -ErrorAction SilentlyContinue) {
           continue;
         }
 
+        const tempPath = path.join(
+          app.getPath("temp"),
+          `poe2_${targetName.replace(/\s+/g, "_")}_${randomUUID().slice(0, 8)}.ttf`,
+        );
+
         const scale = this.resolveFontScale(targetName);
         const mutatedBuffer = await this.mutateFontName(
           sourcePath,
           rule,
           scale,
-        );
-        const tempPath = path.join(
-          app.getPath("temp"),
-          `poe2_${targetName.replace(/\s+/g, "_")}_${randomUUID().slice(0, 8)}.ttf`,
         );
         await fs.writeFile(tempPath, Buffer.from(mutatedBuffer));
 
@@ -1036,11 +1038,25 @@ if (Get-ItemProperty -Path $p1 -Name "${name}" -ErrorAction SilentlyContinue) {
     return Math.min(FONT_SCALE_MAX, Math.max(FONT_SCALE_MIN, Math.round(raw)));
   }
 
-  private mutateFontName(
+  private async mutateFontName(
     filePath: string,
     rule: FontMutationRule,
     scale: number,
   ): Promise<ArrayBuffer> {
+    // sfnt scaler가 OTTO이면 CFF 컨테이너 → OtfMutatorWorker(SFNT 바이트 패치).
+    // 그 외(0x00010000 등)는 TrueType → FontMutatorWorker(fonteditor-core).
+    // fonteditor-core는 CFF→glyf 변환에서 한글 글리프를 손실시키므로 OTF는 따로 다룬다.
+    const headHandle = await fs.open(filePath, "r");
+    let isOTF: boolean;
+    try {
+      const head = Buffer.alloc(4);
+      await headHandle.read(head, 0, 4, 0);
+      isOTF = head.toString("ascii") === "OTTO";
+    } finally {
+      await headHandle.close();
+    }
+    const workerName = isOTF ? "OtfMutatorWorker.js" : "FontMutatorWorker.js";
+
     return new Promise((resolve, reject) => {
       // [Production] Base path for unpacked workers (Standard Case)
       let workerPath = path.join(
@@ -1049,12 +1065,12 @@ if (Get-ItemProperty -Path $p1 -Name "${name}" -ErrorAction SilentlyContinue) {
         "app.asar.unpacked",
         "dist-electron",
         "workers",
-        "FontMutatorWorker.js",
+        workerName,
       );
 
       if (!app.isPackaged) {
         // [Development] Adjacent to main bundle in dist-electron
-        workerPath = path.join(__dirname, "workers", "FontMutatorWorker.js");
+        workerPath = path.join(__dirname, "workers", workerName);
       }
 
       const worker = new Worker(workerPath);
