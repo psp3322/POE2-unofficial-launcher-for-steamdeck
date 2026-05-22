@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.4](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/compare/1.2.3...1.2.4) (2026-05-22)
+
+
+### Bug Fixes
+
+* 일부 상황에서 게시글이 표시되지 않는 현상 개선 (내 탓 아님) ([79e4eeb](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/79e4eeb927318dcab2028d3db5c25e0cf261858b))
+
 ## [1.2.3](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/compare/1.2.2...1.2.3) (2026-05-22)
 
 
