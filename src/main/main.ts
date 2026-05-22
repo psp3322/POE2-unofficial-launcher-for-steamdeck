@@ -206,8 +206,6 @@ process.on("unhandledRejection", (reason) => {
 
 process.env["ELECTRON_DISABLE_SECURITY_WARNINGS"] = "true";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
 process.env.DIST = path.join(__dirname, "../dist");
 process.env.VITE_PUBLIC = app.isPackaged
   ? process.env.DIST
@@ -526,9 +524,12 @@ ipcMain.handle("debug:get-history", () => {
   return getLogHistory();
 });
 
-ipcMain.handle("game:get-status", (_event, gameId: string, serviceId: string) => {
-  return getGlobalGameStatus(gameId, serviceId);
-});
+ipcMain.handle(
+  "game:get-status",
+  (_event, gameId: string, serviceId: string) => {
+    return getGlobalGameStatus(gameId, serviceId);
+  },
+);
 
 // [Removed] Old session:logout handler (duplicates new partitioned one)
 

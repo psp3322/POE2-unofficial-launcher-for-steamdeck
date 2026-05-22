@@ -127,3 +127,6 @@ Thumbs.db
 # Claude Code per-user (absolute paths, machine-specific)
 .claude/settings.json
 .claude/settings.local.json
+
+# Antigravity (Gemini) per-user config — symlinks to ~/.gemini
+.antigravitycli/

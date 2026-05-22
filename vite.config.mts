@@ -74,6 +74,21 @@ export default defineConfig({
         },
       },
       {
+        entry: "src/main/workers/OtfMutatorWorker.ts",
+        vite: {
+          define: defines,
+          build: {
+            outDir: "dist-electron/workers",
+            emptyOutDir: false,
+            lib: {
+              entry: "src/main/workers/OtfMutatorWorker.ts",
+              formats: ["cjs"],
+              fileName: () => "[name].js",
+            },
+          },
+        },
+      },
+      {
         entry: "src/main/preload.ts",
         onstart(options) {
           options.reload();

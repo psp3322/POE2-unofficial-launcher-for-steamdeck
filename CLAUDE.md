@@ -1,7 +1,9 @@
 # CLAUDE.md — POE2 Unofficial Launcher
 
-Electron + React 19 + Vite 7 + TypeScript launcher for Path of Exile / PoE 2.
+Electron + React 19 + Vite 8 + TypeScript launcher for Path of Exile / PoE 2.
 Layout: `src/main/` (Electron main), `src/renderer/` (React UI), `src/shared/` (shared types).
+
+This file is the single source of project rules for **all coding agents** (Claude, Gemini, etc.). Other agent entry points (`GEMINI.md`, `.cursorrules`, …) should just point here, not fork the rules.
 
 ## ⚠️ Documentation status
 
@@ -26,27 +28,22 @@ To work with the wiki visible as read context: `claude --add-dir ~/project_llm_w
 
 ### WSL execution rules (detect at session start)
 
-If `uname -r` contains `microsoft`/`WSL`, this is WSL — apply the following split:
+If `uname -r` contains `microsoft`/`WSL`, this is WSL — WSL is the development primary (edit/git/lint/rtk) and Windows is the build/run primary (Electron + actual POE / POE2 game test, which Linux cannot run). Both OSes share the same `node_modules` under `D:\project_poe2\POE2-unofficial-launcher\`.
 
-- `npm run lint` / `npm test`: run directly in WSL bash (pure Node, same result).
-- `npm run build:check`: invoke via Windows PowerShell, not WSL bash.
+Split commands by where they belong:
+
+- WSL bash, direct: 순수 Node 스크립트만 (예: `node -e ...`로 가설 검증). 같은 `node_modules`를 공유하지만 **eslint/vitest 모두 Linux 네이티브 바이너리(`unrs-resolver`, `@rolldown/binding-linux-x64-gnu`)를 요구해서 WSL에선 실패**한다 — 시도하지 말 것.
+- Windows PowerShell, never WSL: `npm install`, `npm ci`, `npm run build`, `npm run build:check`, `npm run dev`, `npm run lint`, `npm run lint:fix`, `npm test`.
   - Prefer `pwsh.exe` (PowerShell 7); fall back to `powershell.exe` (5.1) if absent.
   - Detect: `command -v pwsh.exe >/dev/null && PS=pwsh.exe || PS=powershell.exe`
-  - Invoke: `"$PS" -NoProfile -Command "cd 'D:\project_poe2\POE2-unofficial-launcher'; npm run build:check"`
+  - Invoke: `"$PS" -NoProfile -Command "cd 'D:\project_poe2\POE2-unofficial-launcher'; npm run <script>"`
   - On failure (e.g. native module mismatch), fall back to asking the user to run it on Windows.
-- Tasks requiring in-game verification (e.g. font work): a passing build is not sufficient — always request the user's live check.
 
-### WSL execution rules (detect at session start)
+Why `npm install`/`npm ci` must not run in WSL: WSL's npm writes only POSIX symlinks under `node_modules/.bin/` and does not create the Windows wrappers (`.cmd`, `.ps1`). The next `npm run build` / `npm run dev` from Windows then fails with `'tsc' is not recognized` / `'vite' is not recognized`. If dependencies need reinstalling (lock conflict, native binding error, pre-commit hook failing on unrs-resolver, etc.), ask the user to run `npm ci` from Windows pwsh — do not auto-repair from WSL.
 
-If `uname -r` contains `microsoft`/`WSL`, this is WSL — apply the following split:
+If a pre-commit hook fails in WSL due to native-binding mismatch, do not try to fix the environment. Either ask the user to commit from Windows, or get explicit approval for `--no-verify` for that single commit.
 
-- `npm run lint` / `npm test`: run directly in WSL bash (pure Node, same result).
-- `npm run build:check`: invoke via Windows PowerShell, not WSL bash.
-  - Prefer `pwsh.exe` (PowerShell 7); fall back to `powershell.exe` (5.1) if absent.
-  - Detect: `command -v pwsh.exe >/dev/null && PS=pwsh.exe || PS=powershell.exe`
-  - Invoke: `"$PS" -NoProfile -Command "cd 'D:\project_poe2\POE2-unofficial-launcher'; npm run build:check"`
-  - On failure (e.g. native module mismatch), fall back to asking the user to run it on Windows.
-- Tasks requiring in-game verification (e.g. font work): a passing build is not sufficient — always request the user's live check.
+Tasks requiring in-game verification (e.g. font work, launcher boot): a passing build is not sufficient — always request the user's live check on Windows.
 
 ## Code style
 
