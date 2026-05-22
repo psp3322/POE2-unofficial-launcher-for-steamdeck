@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.2.3](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/compare/1.2.2...1.2.3) (2026-05-22)
+
+
+### Bug Fixes
+
+* axios 1.16의 엄격해진 헤더 타입에 맞춰 content-length를 문자열로 강제 변환 ([a3d7389](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/a3d7389714b6df532b8aba279b2d3868df0fac44))
+* **font:** OTF 폰트 적용 시 "ttf file damaged" 에러로 실패하던 문제 ([f665835](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/f66583505b37c0dc3d3b67887461307e39501362))
+* **font:** 커스텀 폰트 간 글자 크기·잘림 균질화 (unitsPerEm 보정) ([4a6c9b5](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/4a6c9b5c08e2e0eb3285a1bfca408d17fb9a7555))
+* **main:** Vite 8(rolldown) CJS 빌드에서 import.meta.url 변환 실패로 인한 실행 실패 해결 ([08fd78f](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/08fd78f5962213afd68c4adcec4643cfb2f119db))
+* **react-hooks:** eslint-plugin-react-hooks 7.1 위반 14건 정리 ([#166](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/issues/166)) ([eed4fb6](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/eed4fb6e40d218997e711bddd589f638beacdb4a))
+
+
+### Documentation
+
+* **claude:** WSL execution rules 통합 + npm install/ci 금지 룰 명문화 ([1d8c443](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/1d8c4439f7173de3857836e3d449b35064861704))
+* **residual-work:** §0 react-hooks 위반 정리 완료 — 섹션 제거 ([#167](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/issues/167)) ([618a63b](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/618a63b481b150969f96bb0712ace731972ca853))
+* **residual-work:** §0 최우선 — react-hooks 7.1 신규 룰 위반 14건 정리 계획 ([#165](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/issues/165)) ([2b11b1b](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/2b11b1b384ad257cd45fab7532b7048315b2f0fe))
+* **residual-work:** RTK가 lint 출력에 검사 대상 외 파일을 표시하는 사례 추가 ([#163](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/issues/163)) ([5d621de](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/5d621def23b3e861bb932e1b042937fa59a13da5))
+* WSL 실행 룰 실측 정정 + husky hook pwsh 위임 후속작업 박제 ([84a6829](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/84a6829c5ef1fb4dc7a6f1be5413b621dad7b4e4))
+
 ## [1.2.2](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/compare/1.2.1...1.2.2) (2026-05-20)
 
 
