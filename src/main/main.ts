@@ -59,6 +59,7 @@ import {
 import { GameSessionTracker, SessionContext } from "./game/GameSessionTracker";
 import { registerGameStatusIpc } from "./ipc/game-status-ipc";
 import { initKakaoSession, KAKAO_PARTITION } from "./kakao/session";
+import { shouldHideReleasedAutomationWindow } from "./kakao/visibility-policy";
 import { trayManager } from "./managers/TrayManager";
 import { setupSessionSecurity } from "./security/permissions";
 import { changelogService } from "./services/ChangelogService";
@@ -1189,6 +1190,7 @@ ipcMain.on("window-visibility-request", async (event, isVisible: boolean) => {
   if (!window || window.isDestroyed()) return;
 
   const showInactive = getEffectiveConfig("show_inactive_windows") === true;
+  const isDebugEnv = process.env.VITE_SHOW_GAME_WINDOW === "true";
   const triggerContext = getNavigationTrigger(event.sender.id);
   const isValidation = triggerContext === "ACCOUNT_VALIDATION";
 
@@ -1218,20 +1220,23 @@ ipcMain.on("window-visibility-request", async (event, isVisible: boolean) => {
       forcedVisibleWindows.delete(window.id);
       logger.log(`[Main] Window ${window.id} released FORCED VISIBILITY.`);
 
-      if (!showInactive) {
-        const isMainWindow =
-          context.mainWindow && context.mainWindow.id === window.id;
-        const isGameWindow =
-          context.gameWindow && context.gameWindow.id === window.id;
-        const isDebugWindow =
-          context.debugWindow && context.debugWindow.id === window.id;
+      const isMainWindow =
+        context.mainWindow && context.mainWindow.id === window.id;
+      const isDebugWindow =
+        context.debugWindow && context.debugWindow.id === window.id;
 
-        if (!isMainWindow && !isGameWindow && !isDebugWindow) {
-          logger.log(
-            `[Main] Hiding window ${window.id} (Config is OFF & Force Released)`,
-          );
-          window.hide();
-        }
+      if (
+        shouldHideReleasedAutomationWindow({
+          showInactive,
+          isDebugEnv,
+          isMainWindow: Boolean(isMainWindow),
+          isDebugWindow: Boolean(isDebugWindow),
+        })
+      ) {
+        logger.log(
+          `[Main] Hiding window ${window.id} (Visibility released & inactive display disabled)`,
+        );
+        window.hide();
       }
     }
   }
