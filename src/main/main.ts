@@ -23,10 +23,6 @@ import {
   setConfigWithEvent,
   deleteConfigWithEvent,
 } from "./utils/config-utils";
-import {
-  GameProcessInfo,
-  processMatchesGameContext,
-} from "./utils/game-process-context";
 import { DEBUG_APP_CONFIG } from "../shared/config";
 import { getGameName, getLauncherTitle, getAppName } from "../shared/naming";
 import {
@@ -93,6 +89,7 @@ import {
   DebugLogEvent,
   IServiceManager,
 } from "./events/types";
+import { GameSessionTracker, SessionContext } from "./game/GameSessionTracker";
 import { initKakaoSession, KAKAO_PARTITION } from "./kakao/session";
 import { trayManager } from "./managers/TrayManager";
 import { setupSessionSecurity } from "./security/permissions";
@@ -106,10 +103,7 @@ import { ProcessWatcher } from "./services/ProcessWatcher";
 import { serviceManager } from "./services/ServiceManager";
 import { themeCacheManager } from "./services/ThemeCacheManager";
 import { UpdateSchedulerService } from "./services/UpdateSchedulerService";
-import {
-  getGameStatus,
-  shouldResetStatusOnAutomationWindowClosed,
-} from "./state/GameStatusStore";
+import { getGameStatus } from "./state/GameStatusStore";
 import { getConfig, setupStoreObservers, default as store } from "./store";
 import {
   isAdmin,
@@ -169,13 +163,6 @@ async function checkLauncherVersionUpdate() {
     setConfigWithEvent("launcherVersion", currentVersion);
   }
 }
-
-// --- Global State for Interruption Handling ---
-let currentSystemStatus: RunStatus = "idle";
-let currentActiveContext: {
-  gameId: AppConfig["activeGame"];
-  serviceId: AppConfig["serviceChannel"];
-} | null = null;
 
 // --- Fatal Error Handling State ---
 let fatalErrorBuffer: string | null = null;
@@ -412,12 +399,7 @@ function startAutomationTimeout(ms: number = VALIDATION_TIMEOUT_MS) {
 const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
 
 // Track the current game/service being launched to sync context to popups
-interface SessionContext {
-  gameId: AppConfig["activeGame"];
-  serviceId: AppConfig["serviceChannel"];
-}
-
-let activeSessionContext: SessionContext | null = null;
+const gameSessionTracker = new GameSessionTracker();
 
 // Reliable mapping of window IDs to their game context
 const windowContextMap = new Map<number, SessionContext>();
@@ -799,7 +781,7 @@ ipcMain.on("admin:relaunch", () => relaunchAsAdmin());
 ipcMain.handle("session:logout", async () => {
   try {
     // 1. Reset Context
-    activeSessionContext = null;
+    gameSessionTracker.clear();
     pendingLoginUrls.delete("Kakao Games"); // Clear pending redirects for this service
 
     // 2. Close Game Window if exists (Prevents Auth Popups/Reloads)
@@ -1350,61 +1332,22 @@ const context: AppContext = {
   },
 };
 
-/**
- * Resets the game status back to 'idle' if a critical window is closed
- * while the system is still in an intermediate automation state.
- */
-function isMatchingGameProcessRunning(
-  gameId: AppConfig["activeGame"],
-  serviceId: AppConfig["serviceChannel"],
-) {
-  const watcher = appContext?.processWatcher;
-  if (!watcher) {
-    return false;
-  }
-
-  const matches = (info: GameProcessInfo) =>
-    processMatchesGameContext(info, { gameId, serviceId });
-
-  if (serviceId === "Kakao Games") {
-    const launcherName =
-      gameId === "POE2" ? "POE2_Launcher.exe" : "POE_Launcher.exe";
-
-    return (
-      watcher.isProcessRunning(launcherName, matches) ||
-      watcher.isProcessRunning("PathOfExile_KG.exe", matches)
-    );
-  }
-
-  return watcher.isProcessRunning("PathOfExile.exe", matches);
-}
-
 function resetGameStatusIfInterrupted(_win: BrowserWindow) {
-  // Default to POE2/Kakao if context is missing for some reason
-  const gameId = currentActiveContext?.gameId || "POE2";
-  const serviceId = currentActiveContext?.serviceId || "Kakao Games";
-  const hasMatchingProcess = isMatchingGameProcessRunning(gameId, serviceId);
+  const resetStatus = gameSessionTracker.getInterruptedResetStatus(appContext);
 
-  if (
-    shouldResetStatusOnAutomationWindowClosed(
-      currentSystemStatus,
-      hasMatchingProcess,
-    )
-  ) {
-    logger.log(
-      `[Main] Critical window closed during ${currentSystemStatus}. Resetting to idle.`,
-    );
-
-    eventBus.emit<GameStatusChangeEvent>(
-      EventType.GAME_STATUS_CHANGE,
-      appContext,
-      {
-        gameId,
-        serviceId,
-        status: "idle",
-      },
-    );
+  if (!resetStatus) {
+    return;
   }
+
+  logger.log(
+    `[Main] Critical window closed during ${resetStatus.interruptedStatus}. Resetting to idle.`,
+  );
+
+  eventBus.emit<GameStatusChangeEvent>(
+    EventType.GAME_STATUS_CHANGE,
+    appContext,
+    resetStatus.payload,
+  );
 }
 
 // 3. Register Global Store Observers
@@ -2431,6 +2374,7 @@ ipcMain.on(
       const mappedContext = windowContextMap.get(senderId);
 
       // Determine context (Priority: IPC Payload > Window Map > Global Active Session > Defaults)
+      const activeSessionContext = gameSessionTracker.getActiveSessionContext();
       const gameId =
         msgContext?.gameId ||
         mappedContext?.gameId ||
@@ -2576,6 +2520,7 @@ app.on("browser-window-created", (_, window) => {
     if (!window.isDestroyed()) {
       checkAndShow();
       // Seeding context to new windows if we are in a launch session
+      const activeSessionContext = gameSessionTracker.getActiveSessionContext();
       if (activeSessionContext) {
         window.webContents.send("execute-game-start", activeSessionContext);
       }
@@ -2598,6 +2543,7 @@ app.on("browser-window-created", (_, window) => {
   }
 
   // Register context mapping for the new window (popup)
+  const activeSessionContext = gameSessionTracker.getActiveSessionContext();
   if (activeSessionContext && !window.isDestroyed()) {
     windowContextMap.set(wcId, activeSessionContext);
   }
@@ -2629,33 +2575,7 @@ eventBus.register({
   id: "ActiveSessionTracker",
   targetEvent: EventType.GAME_STATUS_CHANGE,
   handle: async (event: GameStatusChangeEvent) => {
-    const { status, gameId, serviceId } = event.payload;
-    // Sync with global tracker for interruption handling
-    currentSystemStatus = status;
-
-    // If we are prepared to launch or already launching, update active context
-    if (
-      status === "preparing" ||
-      status === "processing" ||
-      status === "authenticating" ||
-      status === "ready"
-    ) {
-      activeSessionContext = { gameId, serviceId };
-      currentActiveContext = { gameId, serviceId };
-    }
-
-    const isCurrentContext =
-      !currentActiveContext ||
-      (currentActiveContext.gameId === gameId &&
-        currentActiveContext.serviceId === serviceId);
-
-    if (
-      isCurrentContext &&
-      (status === "idle" || status === "error" || status === "uninstalled")
-    ) {
-      activeSessionContext = null;
-      currentActiveContext = null;
-    }
+    gameSessionTracker.handleStatusChange(event.payload);
   },
 });
 
