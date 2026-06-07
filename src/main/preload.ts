@@ -74,6 +74,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("news:get-content", id, link),
   getNewsContentCache: (id: string) =>
     ipcRenderer.invoke("news:get-content-cache", id),
+  refreshAllNews: () => ipcRenderer.invoke("news:refresh-all"),
+  getNewsLastUpdatedAt: (
+    game: AppConfig["activeGame"],
+    service: AppConfig["serviceChannel"],
+    category: NewsCategory,
+  ) => ipcRenderer.invoke("news:get-last-updated-at", game, service, category),
   markNewsAsRead: (id: string) => ipcRenderer.invoke("news:mark-as-read", id),
   markMultipleNewsAsRead: (ids: string[]) =>
     ipcRenderer.invoke("news:mark-multiple-as-read", ids),

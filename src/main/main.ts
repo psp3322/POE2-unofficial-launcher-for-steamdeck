@@ -673,6 +673,22 @@ ipcMain.handle("news:get-content-cache", (_event, id: string) => {
   return newsService.getContentFromCache(id);
 });
 
+ipcMain.handle("news:refresh-all", async () => {
+  return newsService.refreshAllNews();
+});
+
+ipcMain.handle(
+  "news:get-last-updated-at",
+  (
+    _event,
+    game: AppConfig["activeGame"],
+    service: AppConfig["serviceChannel"],
+    category: NewsCategory,
+  ) => {
+    return newsService.getLastUpdatedAt({ game, service, category });
+  },
+);
+
 ipcMain.handle("news:mark-as-read", async (_event, id: string) => {
   return newsService.markAsRead(id);
 });
@@ -1449,7 +1465,7 @@ function initAppContext() {
 
 // Initialize Services
 newsService.init(() => {
-  mainWindow?.webContents.send("news:updated");
+  mainWindow?.webContents.send("news-updated");
 });
 
 // [Unified] DevTools Visibility Sync Logic
@@ -1624,12 +1640,25 @@ async function createWindow() {
     triggerDevToolsSync();
   };
 
+  const getNewsRefreshContext = (reason: string) => {
+    const config = getConfig() as AppConfig;
+    return {
+      game: config.activeGame,
+      service: config.serviceChannel,
+      reason,
+    };
+  };
+
   mainWindow.on("show", () => {
+    newsService.setActive(true, getNewsRefreshContext("show"));
     syncSubWindowsVisibility(true);
     mainWindow?.webContents.send("app:window-show");
     syncDebugWindow("MainShow");
   });
-  mainWindow.on("hide", () => syncSubWindowsVisibility(false));
+  mainWindow.on("hide", () => {
+    newsService.setActive(false);
+    syncSubWindowsVisibility(false);
+  });
 
   mainWindow.on("enter-full-screen", () => syncDebugWindow("FullScreenEnter"));
   mainWindow.on("leave-full-screen", () => syncDebugWindow("FullScreenLeave"));
@@ -1772,11 +1801,13 @@ async function createWindow() {
   // --- ProcessWatcher Optimization & wake-up integrated in Class ---
   mainWindow.on("blur", () => {
     logger.log("[Main] Window blurred (Focus Lost).");
+    newsService.setActive(false);
     getProcessWatcher()?.scheduleSuspension();
   });
 
   mainWindow.on("focus", () => {
     logger.log("[Main] Window focused.");
+    newsService.setActive(true, getNewsRefreshContext("focus"));
     getProcessWatcher()?.cancelSuspension();
   });
 

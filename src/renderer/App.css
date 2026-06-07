@@ -214,6 +214,68 @@ img {
   overflow: hidden;
 }
 
+.news-refresh-toolbar {
+  position: absolute;
+  top: 62px;
+  right: 60px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 8px 0 12px;
+  box-sizing: border-box;
+  background: rgba(0, 0, 0, 0.32);
+  border: 1px solid rgba(175, 148, 79, 0.16);
+  box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.35);
+  z-index: 5;
+}
+
+.news-refresh-toolbar-time {
+  color: #dfcf99;
+  font-size: 13px;
+  line-height: 1;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+.news-refresh-toolbar-button {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid rgba(175, 148, 79, 0.22);
+  background: rgba(0, 0, 0, 0.36);
+  color: #dfcf99;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.news-refresh-toolbar-button:hover:not(:disabled) {
+  color: #af944f;
+}
+
+.news-refresh-toolbar-button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.news-refresh-toolbar-button .material-symbols-outlined {
+  font-size: 19px;
+}
+
+.news-refresh-toolbar-button .material-symbols-outlined.spinning {
+  animation: newsRefreshToolbarSpin 0.8s linear infinite;
+}
+
+@keyframes newsRefreshToolbarSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .dev-notice-container {
   width: auto;
   margin: 100px 60px 0 20px;

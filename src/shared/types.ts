@@ -380,6 +380,12 @@ export interface ElectronAPI {
   ) => Promise<NewsItem[]>;
   getNewsContent: (id: string, link: string) => Promise<string>;
   getNewsContentCache: (id: string) => Promise<string | null>;
+  refreshAllNews: () => Promise<boolean>;
+  getNewsLastUpdatedAt: (
+    game: AppConfig["activeGame"],
+    service: AppConfig["serviceChannel"],
+    category: NewsCategory,
+  ) => Promise<number | null>;
   markNewsAsRead: (id: string) => Promise<void>;
   markMultipleNewsAsRead: (ids: string[]) => Promise<void>;
   onNewsUpdated: (callback: () => void) => () => void;
@@ -505,6 +511,7 @@ export interface NewsServiceState {
   items: Record<string, NewsItem[]>; // Key: "game-service-category"
   contents: Record<string, NewsContent>; // Key: threadId
   lastReadIds: string[]; // For 'N' marker logic
+  lastUpdatedAt: Record<string, number>; // Key: "game-service-category" or "dev-notice"
 }
 
 declare global {

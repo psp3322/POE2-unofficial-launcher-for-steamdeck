@@ -12,6 +12,7 @@ import {
   AppConfig,
   RunStatus,
   NewsItem,
+  NewsCategory,
   ChangelogItem,
   UpdateStatus,
   PatchProgress,
@@ -67,6 +68,41 @@ const STATUS_MESSAGES: Record<RunStatus, StatusMessageConfig> = {
   running: { message: "게임 실행 중", timeout: -1 }, // Sticky
   stopping: { message: "게임이 종료되었습니다.", timeout: 0 }, // Shown during transition
   error: { message: "실행 오류 발생", timeout: 3000 },
+};
+
+const DEV_NOTICE_SOURCE = {
+  game: "POE1",
+  service: "GGG",
+  category: "dev-notice",
+} as const;
+
+const NEWS_REFRESH_SOURCES: Array<{
+  game: AppConfig["activeGame"];
+  service: AppConfig["serviceChannel"];
+  category: NewsCategory;
+}> = [
+  DEV_NOTICE_SOURCE,
+  { game: "POE1", service: "GGG", category: "notice" },
+  { game: "POE1", service: "GGG", category: "patch-notes" },
+  { game: "POE2", service: "GGG", category: "notice" },
+  { game: "POE2", service: "GGG", category: "patch-notes" },
+  { game: "POE1", service: "Kakao Games", category: "notice" },
+  { game: "POE1", service: "Kakao Games", category: "patch-notes" },
+  { game: "POE2", service: "Kakao Games", category: "notice" },
+  { game: "POE2", service: "Kakao Games", category: "patch-notes" },
+];
+
+const formatNewsRefreshTime = (lastUpdatedAt: number | null) => {
+  if (!lastUpdatedAt) {
+    return "마지막 확인: 아직 확인 전";
+  }
+
+  const time = new Date(lastUpdatedAt).toLocaleTimeString("ko-KR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  return `마지막 확인: ${time}`;
 };
 
 // Session-level flags or refs
@@ -892,22 +928,102 @@ function App() {
 
   // Developer Notices State
   const [devNotices, setDevNotices] = useState<NewsItem[]>([]);
+  const [newsLastUpdatedAt, setNewsLastUpdatedAt] = useState<number | null>(
+    null,
+  );
+  const [isNewsRefreshing, setIsNewsRefreshing] = useState(false);
   const [selectedNotice, setSelectedNotice] = useState<NewsItem | null>(null);
 
   const handleNoticeClick = useCallback((item: NewsItem) => {
     setSelectedNotice(item);
   }, []);
 
-  useEffect(() => {
-    if (window.electronAPI) {
-      window.electronAPI
-        .getNewsCache("POE1", "GGG", "dev-notice")
-        .then(setDevNotices);
-      window.electronAPI
-        .getNews("POE1", "GGG", "dev-notice")
-        .then(setDevNotices);
+  const loadDevNotices = useCallback(async (live = false) => {
+    if (!window.electronAPI) return [];
+
+    const cached = await window.electronAPI.getNewsCache(
+      DEV_NOTICE_SOURCE.game,
+      DEV_NOTICE_SOURCE.service,
+      DEV_NOTICE_SOURCE.category,
+    );
+
+    if (!live) {
+      return cached;
     }
+
+    return window.electronAPI.getNews(
+      DEV_NOTICE_SOURCE.game,
+      DEV_NOTICE_SOURCE.service,
+      DEV_NOTICE_SOURCE.category,
+    );
   }, []);
+
+  const loadNewsLastUpdatedAt = useCallback(async () => {
+    if (!window.electronAPI) return null;
+
+    const timestamps = await Promise.all(
+      NEWS_REFRESH_SOURCES.map((source) =>
+        window.electronAPI.getNewsLastUpdatedAt(
+          source.game,
+          source.service,
+          source.category,
+        ),
+      ),
+    );
+    const validTimestamps = timestamps.filter(
+      (timestamp): timestamp is number => typeof timestamp === "number",
+    );
+
+    return validTimestamps.length > 0 ? Math.max(...validTimestamps) : null;
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const load = async (live = false) => {
+      const cached = await loadDevNotices(false);
+      const cachedLastUpdatedAt = await loadNewsLastUpdatedAt();
+      if (!isMounted) return;
+      setDevNotices(cached);
+      setNewsLastUpdatedAt(cachedLastUpdatedAt);
+
+      if (live) {
+        const latest = await loadDevNotices(true);
+        const latestLastUpdatedAt = await loadNewsLastUpdatedAt();
+        if (!isMounted) return;
+        setDevNotices(latest);
+        setNewsLastUpdatedAt(latestLastUpdatedAt);
+      }
+    };
+
+    load(true);
+
+    const unsubscribe = window.electronAPI?.onNewsUpdated(() => {
+      load(false);
+    });
+
+    return () => {
+      isMounted = false;
+      unsubscribe?.();
+    };
+  }, [loadDevNotices, loadNewsLastUpdatedAt]);
+
+  const handleManualNewsRefresh = useCallback(async () => {
+    if (!window.electronAPI || isNewsRefreshing) return;
+
+    setIsNewsRefreshing(true);
+    try {
+      await window.electronAPI.refreshAllNews();
+      const latest = await loadDevNotices(false);
+      const lastUpdatedAt = await loadNewsLastUpdatedAt();
+      setDevNotices(latest);
+      setNewsLastUpdatedAt(lastUpdatedAt);
+    } catch (error) {
+      logger.error("Failed to refresh news sections:", error);
+    } finally {
+      setIsNewsRefreshing(false);
+    }
+  }, [isNewsRefreshing, loadDevNotices, loadNewsLastUpdatedAt]);
 
   const handleDevRead = (id: string) => {
     window.electronAPI.markNewsAsRead(id);
@@ -1278,6 +1394,27 @@ function App() {
 
             {/* === Right Panel: Content Area === */}
             <div className="right-panel">
+              <div className="news-refresh-toolbar">
+                <span className="news-refresh-toolbar-time">
+                  {formatNewsRefreshTime(newsLastUpdatedAt)}
+                </span>
+                <button
+                  className="news-refresh-toolbar-button"
+                  onClick={handleManualNewsRefresh}
+                  disabled={isNewsRefreshing}
+                  title="전체 게시판 새로고침"
+                  aria-label="전체 게시판 새로고침"
+                  type="button"
+                >
+                  <span
+                    className={`material-symbols-outlined ${
+                      isNewsRefreshing ? "spinning" : ""
+                    }`}
+                  >
+                    refresh
+                  </span>
+                </button>
+              </div>
               <div className="dev-notice-container">
                 <NewsSection
                   title="개발자 공지사항"

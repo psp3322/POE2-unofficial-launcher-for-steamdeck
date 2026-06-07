@@ -26,4 +26,5 @@ export const NEWS_CACHE_DEFAULTS = {
   items: {},
   contents: {},
   lastReadIds: [],
+  lastUpdatedAt: {},
 };

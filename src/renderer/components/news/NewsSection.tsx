@@ -33,7 +33,11 @@ const NewsSection: React.FC<NewsSectionProps> = ({
       <div className={`news-section-header ${headerVariant || "short"}`}>
         <h3 className="news-section-title">{title}</h3>
         {forumUrl && (
-          <button className="view-more-btn" onClick={handleOpenForum}>
+          <button
+            className="view-more-btn"
+            onClick={handleOpenForum}
+            type="button"
+          >
             자세히 보기 <span className="arrow">▶</span>
           </button>
         )}
