@@ -6,7 +6,6 @@ import { execSync } from "node:child_process";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import electron from "vite-plugin-electron";
-import renderer from "vite-plugin-electron-renderer";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 let commitHash = "Dev";
@@ -123,7 +122,6 @@ export default defineConfig({
         },
       },
     ]),
-    renderer(),
   ],
   resolve: {
     alias: {
