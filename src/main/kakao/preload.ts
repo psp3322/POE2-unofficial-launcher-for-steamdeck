@@ -145,6 +145,33 @@ function createVisibilityRequest(context: HandlerContext, description: string) {
   };
 }
 
+function serializeAutomationError(error: unknown) {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    };
+  }
+
+  return {
+    name: "Error",
+    message: String(error),
+    stack: undefined,
+  };
+}
+
+function reportAutomationFailure(handlerName: string, error: unknown) {
+  const serialized = serializeAutomationError(error);
+  ipcRenderer.send("kakao:automation-failure", {
+    errorCode: "KAKAO_AUTOMATION_HANDLER_FAILURE",
+    handlerName,
+    url: window.location.href,
+    context: activeGameContext,
+    ...serialized,
+  });
+}
+
 function scheduleStableVisibilityReveal(options: {
   description: string;
   isReady: () => boolean;
@@ -1166,10 +1193,8 @@ async function dispatchPageLogic(triggerContext?: string) {
         };
         await handler.execute(context);
       } catch (e) {
-        logger.error(
-          `[Game Window] Error executing handler ${handler.name}:`,
-          e,
-        );
+        reportAutomationFailure(handler.name, e);
+        return;
       }
 
       // 3. Update Timeout in Main Process

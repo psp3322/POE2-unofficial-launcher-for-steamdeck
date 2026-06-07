@@ -21,6 +21,7 @@ export const Root = () => {
   const [fatalError, setFatalError] = useState<string | null>(null);
   const [reportData, setReportData] = useState<{
     errorDetails: string;
+    errorSummary?: string;
     type: "bug" | "suggestion";
   } | null>(null);
   const [launcherVersion, setLauncherVersion] = useState<string>("Unknown");
@@ -59,6 +60,7 @@ export const Root = () => {
     const handleShowReport = (event: Event) => {
       const customEvent = event as CustomEvent<{
         errorDetails: string;
+        errorSummary?: string;
         type: "bug" | "suggestion";
       }>;
       setReportData(customEvent.detail);
@@ -82,6 +84,7 @@ export const Root = () => {
       {reportData && !fatalError && (
         <FatalErrorModal
           errorDetails={reportData.errorDetails}
+          errorSummary={reportData.errorSummary}
           type={reportData.type}
           launcherVersion={launcherVersion}
           onClose={() => setReportData(null)}

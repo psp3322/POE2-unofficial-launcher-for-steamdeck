@@ -58,6 +58,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.on("debug-log", handler);
     return () => ipcRenderer.off("debug-log", handler);
   },
+  onExceptionLog: (callback: (log: DebugLogEvent["payload"]) => void) => {
+    const handler = (_event: IpcRendererEvent, log: DebugLogEvent["payload"]) =>
+      callback(log);
+    ipcRenderer.on("app:exception-log", handler);
+    return () => ipcRenderer.off("app:exception-log", handler);
+  },
   saveReport: (files: { name: string; content: string }[]) =>
     ipcRenderer.invoke("report:save", files),
   getNews: (

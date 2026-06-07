@@ -332,6 +332,7 @@ export interface ElectronAPI {
   onProgressMessage?: (callback: (text: string) => void) => void; // Deprecated
   onGameStatusUpdate?: (callback: (status: GameStatusState) => void) => void;
   onDebugLog?: (callback: (log: DebugLogPayload) => void) => () => void;
+  onExceptionLog?: (callback: (log: DebugLogPayload) => void) => () => void;
   onPatchProgress?: (callback: (progress: PatchProgress) => void) => () => void; // New
   getGameStatus: (
     gameId: string,

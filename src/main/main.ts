@@ -58,6 +58,15 @@ import {
 } from "./events/types";
 import { GameSessionTracker, SessionContext } from "./game/GameSessionTracker";
 import { registerGameStatusIpc } from "./ipc/game-status-ipc";
+import {
+  archiveAutomationDumpSession,
+  discardAutomationDumpSession,
+  dumpAutomationPage,
+  handleAutomationDumpGameStatus,
+  scheduleAutomationDumpRetentionCleanup,
+  startAutomationDumpSession,
+  type AutomationDumpArchiveResult,
+} from "./kakao/automation-page-dump";
 import { initKakaoSession, KAKAO_PARTITION } from "./kakao/session";
 import { shouldHideReleasedAutomationWindow } from "./kakao/visibility-policy";
 import { trayManager } from "./managers/TrayManager";
@@ -341,7 +350,12 @@ function startAutomationTimeout(ms: number = VALIDATION_TIMEOUT_MS) {
       targetWindow.center();
       targetWindow.focus();
       targetWindow.moveTop();
-
+      await dumpAutomationPage(targetWindow, {
+        reason: "automation-timeout",
+        triggerContext: triggerContext ?? undefined,
+        mainWindow,
+        debugWindow,
+      });
       // Use native dialog to avoid blocking the renderer thread (v9)
       try {
         const displayUrl = currentUrl.includes("?")
@@ -403,12 +417,26 @@ if (!gotTheLock) {
 
 // Debug Constants
 const FORCE_DEBUG = process.env.VITE_SHOW_GAME_WINDOW === "true";
+let didReportKakaoStartFailure = false;
 const DEBUG_KEYS = [
   "dev_mode",
   "debug_console",
   "show_inactive_windows",
   "show_inactive_window_console",
 ];
+
+type KakaoAutomationFailurePayload = {
+  errorCode?: string;
+  handlerName?: string;
+  message?: string;
+  name?: string;
+  stack?: string;
+  url?: string;
+  context?: {
+    gameId?: AppConfig["activeGame"];
+    serviceId?: AppConfig["serviceChannel"];
+  } | null;
+};
 
 /**
  * Get configuration value considering environment variable priority.
@@ -446,6 +474,94 @@ function getEffectiveConfig(
   return value;
 }
 
+function createKakaoAutomationError(payload: KakaoAutomationFailurePayload) {
+  const message =
+    payload.message || payload.errorCode || "KAKAO_AUTOMATION_FAILURE";
+  const error = new Error(message);
+  error.name = payload.name || "KakaoAutomationFailure";
+  if (payload.stack) {
+    error.stack = payload.stack;
+  }
+  return error;
+}
+
+function sanitizeKakaoFailureReason(value: string) {
+  return value.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+function formatKakaoStartFailureLog(input: {
+  errorCode: string;
+  archiveResult: AutomationDumpArchiveResult | null;
+}) {
+  const dumpLines = input.archiveResult
+    ? [
+        `진단 덤프 파일: ${input.archiveResult.archivePath}`,
+        "문의 시 위 파일을 함께 첨부해 주세요.",
+      ]
+    : [
+        "진단 덤프 파일: 생성되지 않았습니다.",
+        "문의 시 아래 오류 정보를 함께 전달해 주세요.",
+      ];
+
+  return [
+    "[KakaoStartFailure] 게임 실행 또는 로그인 절차 중 오류가 발생했습니다.",
+    `오류 코드: ${input.errorCode}`,
+    ...dumpLines,
+  ].join("\n");
+}
+
+async function finalizeKakaoStartFailure(input: {
+  gameId: AppConfig["activeGame"];
+  serviceId: AppConfig["serviceChannel"];
+  errorCode: string;
+  error: Error;
+  dumpReason: string;
+  targetWindow?: BrowserWindow | null;
+  triggerContext?: string;
+}) {
+  if (!appContext) return;
+  if (didReportKakaoStartFailure) {
+    logger.warn(
+      `[KakaoStartFailure] Ignored duplicate Kakao start failure report: ${input.errorCode}`,
+    );
+    return;
+  }
+  didReportKakaoStartFailure = true;
+
+  if (input.targetWindow && !input.targetWindow.isDestroyed()) {
+    await dumpAutomationPage(input.targetWindow, {
+      reason: input.dumpReason,
+      triggerContext: input.triggerContext,
+      mainWindow,
+      debugWindow,
+    });
+  }
+
+  const archiveResult = await archiveAutomationDumpSession(
+    `status-error-${input.errorCode}`,
+    { logResult: false },
+  );
+
+  logger.error(
+    formatKakaoStartFailureLog({
+      errorCode: input.errorCode,
+      archiveResult,
+    }),
+    input.error,
+  );
+
+  await eventBus.emit<GameStatusChangeEvent>(
+    EventType.GAME_STATUS_CHANGE,
+    appContext,
+    {
+      gameId: input.gameId,
+      serviceId: input.serviceId,
+      status: "error",
+      errorCode: input.errorCode,
+    },
+  );
+}
+
 // Security: Explicitly blocked permissions
 // Security: Permissions are now handled in src/main/security/permissions.ts
 
@@ -466,6 +582,45 @@ ipcMain.on("debug-log:send", (_event, log: DebugLogPayload) => {
     eventBus.emit<DebugLogEvent>(EventType.DEBUG_LOG, appContext, log);
   }
 });
+
+ipcMain.on(
+  "kakao:automation-failure",
+  async (event, payload: KakaoAutomationFailurePayload) => {
+    if (!appContext) return;
+
+    const senderId = event.sender.id;
+    const mappedContext = windowContextMap.get(senderId);
+    const activeSessionContext = gameSessionTracker.getActiveSessionContext();
+    const gameId =
+      payload.context?.gameId ||
+      mappedContext?.gameId ||
+      activeSessionContext?.gameId;
+    const serviceId =
+      payload.context?.serviceId ||
+      mappedContext?.serviceId ||
+      activeSessionContext?.serviceId;
+
+    if (!gameId || serviceId !== "Kakao Games") {
+      logger.warn(
+        `[KakaoStartFailure] Ignored automation failure from unknown context: ${senderId}`,
+      );
+      return;
+    }
+
+    const sourceWindow = BrowserWindow.fromWebContents(event.sender);
+    await finalizeKakaoStartFailure({
+      gameId,
+      serviceId,
+      errorCode: payload.errorCode || "KAKAO_AUTOMATION_FAILURE",
+      error: createKakaoAutomationError(payload),
+      dumpReason: `automation-failure-${sanitizeKakaoFailureReason(
+        payload.handlerName || "unknown",
+      )}`,
+      targetWindow: sourceWindow,
+      triggerContext: getNavigationTrigger(senderId) ?? undefined,
+    });
+  },
+);
 
 ipcMain.on("app:relaunch", () => {
   app.relaunch();
@@ -1215,6 +1370,12 @@ ipcMain.on("window-visibility-request", async (event, isVisible: boolean) => {
     window.center();
     window.focus();
     window.moveTop();
+    await dumpAutomationPage(window, {
+      reason: "window-visibility-request",
+      triggerContext: triggerContext ?? undefined,
+      mainWindow,
+      debugWindow,
+    });
   } else {
     if (forcedVisibleWindows.has(window.id)) {
       forcedVisibleWindows.delete(window.id);
@@ -1729,6 +1890,7 @@ async function createWindow() {
   setupMainLogger(appContext, (event) => {
     eventBus.emit(event.type, appContext, event.payload);
   });
+  scheduleAutomationDumpRetentionCleanup();
 
   // Register Handlers
   eventBus.register(ToolForceRepairHandler); // EventBus based
@@ -2108,6 +2270,18 @@ ipcMain.on(
   (_event, launchContext?: GameLaunchContext) => {
     logger.log('[Main] IPC "trigger-game-start" Received from Renderer');
     if (appContext) {
+      const config = getConfig() as AppConfig;
+      const gameId = launchContext?.gameId ?? config.activeGame;
+      const serviceId = launchContext?.serviceId ?? config.serviceChannel;
+      if (serviceId === "Kakao Games") {
+        didReportKakaoStartFailure = false;
+        startAutomationDumpSession({
+          gameId,
+          serviceId,
+          triggerContext: `GAME_START_${gameId}`,
+        });
+      }
+
       eventBus.emit<UIEvent>(
         EventType.UI_GAME_START_CLICK,
         appContext,
@@ -2421,6 +2595,15 @@ app.on("browser-window-created", (_, window) => {
       if (!window.isVisible()) {
         logger.log(`[Main] Showing window: ${url}`);
         window.show();
+        void (async () => {
+          const triggerContext = getNavigationTrigger(window.webContents.id);
+          await dumpAutomationPage(window, {
+            reason: "check-and-show",
+            triggerContext: triggerContext ?? undefined,
+            mainWindow,
+            debugWindow,
+          });
+        })();
       }
     } else {
       if (window.isVisible()) {
@@ -2491,6 +2674,7 @@ eventBus.register({
   targetEvent: EventType.GAME_STATUS_CHANGE,
   handle: async (event: GameStatusChangeEvent) => {
     gameSessionTracker.handleStatusChange(event.payload);
+    await handleAutomationDumpGameStatus(event.payload);
   },
 });
 
@@ -2541,6 +2725,12 @@ eventBus.register({
  */
 async function cleanupServices() {
   logger.log("[Main] Performing global service cleanup...");
+
+  try {
+    await discardAutomationDumpSession("app-cleanup");
+  } catch (e) {
+    logger.error("[Main] Failed to cleanup automation dump session:", e);
+  }
 
   // 1. Stop all registered services (Waiters, Watchers, Schedulers)
   try {

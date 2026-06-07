@@ -1,3 +1,4 @@
+import { isExceptionDebugLog } from "../../../shared/debug-log-policy";
 import { AppContext, DebugLogEvent, EventHandler, EventType } from "../types";
 
 export const DebugLogHandler: EventHandler<DebugLogEvent> = {
@@ -6,6 +7,23 @@ export const DebugLogHandler: EventHandler<DebugLogEvent> = {
   debug: false,
 
   handle: async (event: DebugLogEvent, context: AppContext) => {
+    const payloadWithTimestamp = {
+      ...event.payload,
+      timestamp: event.timestamp || Date.now(),
+    };
+
+    if (
+      isExceptionDebugLog(payloadWithTimestamp) &&
+      context.mainWindow &&
+      !context.mainWindow.isDestroyed() &&
+      !context.mainWindow.webContents.isDestroyed()
+    ) {
+      context.mainWindow.webContents.send(
+        "app:exception-log",
+        payloadWithTimestamp,
+      );
+    }
+
     // [Check] Master Switch: Dev Mode & Debug Console
     // Although main process controls window creation, checking here ensures we don't spam IPC if disabled dynamically.
     const isDev = context.getConfig("dev_mode");
@@ -13,10 +31,6 @@ export const DebugLogHandler: EventHandler<DebugLogEvent> = {
 
     if (!isDev || !isDebug) return;
 
-    const payloadWithTimestamp = {
-      ...event.payload,
-      timestamp: event.timestamp || Date.now(),
-    };
     // Send to Debug Window if it exists
     if (
       context.debugWindow &&
