@@ -57,14 +57,15 @@ import { trayManager } from "./managers/TrayManager";
 import { setupSessionSecurity } from "./security/permissions";
 import { changelogService } from "./services/ChangelogService";
 import { GameVersionScanner } from "./services/GameVersionScanner";
-import { LogWatcher } from "./services/LogWatcher";
 import { newsService } from "./services/NewsService";
 import { PatchManager } from "./services/PatchManager";
-import { PatchReservationService } from "./services/PatchReservationService";
-import { ProcessWatcher } from "./services/ProcessWatcher";
+import {
+  getPatchReservationService,
+  getProcessWatcher,
+  initializeCoreServices,
+} from "./services/register-services";
 import { serviceManager } from "./services/ServiceManager";
 import { themeCacheManager } from "./services/ThemeCacheManager";
-import { UpdateSchedulerService } from "./services/UpdateSchedulerService";
 import { getConfig, setupStoreObservers, default as store } from "./store";
 import {
   isAdmin,
@@ -1759,29 +1760,18 @@ async function createWindow() {
     logger.error("[Main] Failed to sync auto-launch settings:", err);
   });
 
-  // --- Service Registration & Management (v43) ---
-  serviceManager.register(themeCacheManager);
-  serviceManager.register(new ProcessWatcher(appContext));
-  serviceManager.register(new LogWatcher(appContext));
-  serviceManager.register(new PatchReservationService(appContext));
-  serviceManager.register(new UpdateSchedulerService(appContext));
-
-  // Initialize all services
-  await serviceManager.initAll();
-
-  // Legacy field support for handlers (if needed)
-  appContext.processWatcher =
-    serviceManager.get<ProcessWatcher>("ProcessWatcher");
+  const { processWatcher } = await initializeCoreServices(appContext);
+  appContext.processWatcher = processWatcher;
 
   // --- ProcessWatcher Optimization & wake-up integrated in Class ---
   mainWindow.on("blur", () => {
     logger.log("[Main] Window blurred (Focus Lost).");
-    serviceManager.get<ProcessWatcher>("ProcessWatcher")?.scheduleSuspension();
+    getProcessWatcher()?.scheduleSuspension();
   });
 
   mainWindow.on("focus", () => {
     logger.log("[Main] Window focused.");
-    serviceManager.get<ProcessWatcher>("ProcessWatcher")?.cancelSuspension();
+    getProcessWatcher()?.cancelSuspension();
   });
 
   // --- Main Window Loading ---
@@ -2240,10 +2230,7 @@ ipcMain.on("patch:reserve", (_event, reservation) => {
     `[Main] Patch Reservation added: ${reservation.gameId} at ${reservation.targetTime}`,
   );
   if (appContext?.serviceManager) {
-    const patchReservationService =
-      appContext.serviceManager.get<PatchReservationService>(
-        "PatchReservationService",
-      );
+    const patchReservationService = getPatchReservationService();
     if (patchReservationService) {
       patchReservationService.addReservation(reservation);
     }
@@ -2253,10 +2240,7 @@ ipcMain.on("patch:reserve", (_event, reservation) => {
 ipcMain.on("patch:delete-reservation", (_event, id: string) => {
   logger.log(`[Main] Patch Reservation deleted: ${id}`);
   if (appContext?.serviceManager) {
-    const patchReservationService =
-      appContext.serviceManager.get<PatchReservationService>(
-        "PatchReservationService",
-      );
+    const patchReservationService = getPatchReservationService();
     if (patchReservationService) {
       patchReservationService.deleteReservation(id);
     }
