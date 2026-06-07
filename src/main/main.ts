@@ -25,12 +25,7 @@ import {
 } from "./utils/config-utils";
 import { DEBUG_APP_CONFIG } from "../shared/config";
 import { getGameName, getLauncherTitle, getAppName } from "../shared/naming";
-import {
-  AppConfig,
-  RunStatus,
-  NewsCategory,
-  DebugLogPayload,
-} from "../shared/types";
+import { AppConfig, NewsCategory, DebugLogPayload } from "../shared/types";
 import { BASE_URLS } from "../shared/urls";
 import {
   AutoLaunchHandler,
@@ -90,6 +85,7 @@ import {
   IServiceManager,
 } from "./events/types";
 import { GameSessionTracker, SessionContext } from "./game/GameSessionTracker";
+import { registerGameStatusIpc } from "./ipc/game-status-ipc";
 import { initKakaoSession, KAKAO_PARTITION } from "./kakao/session";
 import { trayManager } from "./managers/TrayManager";
 import { setupSessionSecurity } from "./security/permissions";
@@ -103,7 +99,6 @@ import { ProcessWatcher } from "./services/ProcessWatcher";
 import { serviceManager } from "./services/ServiceManager";
 import { themeCacheManager } from "./services/ThemeCacheManager";
 import { UpdateSchedulerService } from "./services/UpdateSchedulerService";
-import { getGameStatus } from "./state/GameStatusStore";
 import { getConfig, setupStoreObservers, default as store } from "./store";
 import {
   isAdmin,
@@ -404,6 +399,12 @@ const gameSessionTracker = new GameSessionTracker();
 // Reliable mapping of window IDs to their game context
 const windowContextMap = new Map<number, SessionContext>();
 
+registerGameStatusIpc({
+  getAppContext: () => appContext,
+  getActiveSessionContext: () => gameSessionTracker.getActiveSessionContext(),
+  getWindowContext: (webContentsId) => windowContextMap.get(webContentsId),
+});
+
 // --- Single Instance Lock ---
 const gotTheLock = app.requestSingleInstanceLock();
 
@@ -513,13 +514,6 @@ ipcMain.on("app:fatal-error-ready", () => {
 ipcMain.handle("debug:get-history", () => {
   return getLogHistory();
 });
-
-ipcMain.handle(
-  "game:get-status",
-  (_event, gameId: string, serviceId: string) => {
-    return getGameStatus(gameId, serviceId);
-  },
-);
 
 // [Removed] Old session:logout handler (duplicates new partitioned one)
 
@@ -2357,59 +2351,6 @@ ipcMain.on("window-close", (event) => {
     }
   }
 });
-
-// Game Status Update IPC (From Game Window Preload)
-ipcMain.on(
-  "game-status-update",
-  (
-    _event,
-    status: unknown,
-    msgContext: {
-      gameId: AppConfig["activeGame"];
-      serviceId: AppConfig["serviceChannel"];
-    } | null,
-  ) => {
-    if (appContext) {
-      const senderId = _event.sender.id;
-      const mappedContext = windowContextMap.get(senderId);
-
-      // Determine context (Priority: IPC Payload > Window Map > Global Active Session > Defaults)
-      const activeSessionContext = gameSessionTracker.getActiveSessionContext();
-      const gameId =
-        msgContext?.gameId ||
-        mappedContext?.gameId ||
-        activeSessionContext?.gameId ||
-        "POE2";
-      const serviceId =
-        msgContext?.serviceId ||
-        mappedContext?.serviceId ||
-        activeSessionContext?.serviceId ||
-        "Kakao Games";
-
-      // Only log error if we absolutely don't know the context and had to use hard-coded defaults
-      if (
-        !msgContext &&
-        !mappedContext &&
-        !activeSessionContext &&
-        (!gameId || !serviceId)
-      ) {
-        logger.error(
-          `[Main] IPC "game-status-update" received from unknown window (${senderId}) with no active session context!`,
-        );
-      }
-
-      eventBus.emit<GameStatusChangeEvent>(
-        EventType.GAME_STATUS_CHANGE,
-        appContext,
-        {
-          gameId: gameId as AppConfig["activeGame"],
-          serviceId: serviceId as AppConfig["serviceChannel"],
-          status: status as RunStatus,
-        },
-      );
-    }
-  },
-);
 
 // --- Visibility Management ---
 
