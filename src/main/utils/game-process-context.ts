@@ -6,10 +6,11 @@ export interface GameProcessContext {
 }
 
 export interface GameProcessInfo {
+  pid?: number;
   name: string;
-  path: string;
-  gameId?: string;
-  serviceId?: string;
+  path?: string;
+  gameId?: AppConfig["activeGame"];
+  serviceId?: AppConfig["serviceChannel"];
 }
 
 const isPoe2Path = (path: string) => /path of exile\s*2/.test(path);
@@ -48,10 +49,6 @@ export const processMatchesGameContext = (
   if (context.serviceId === "GGG") {
     if (lowerName !== "pathofexile.exe") {
       return false;
-    }
-
-    if (!lowerPath) {
-      return true;
     }
 
     if (context.gameId === "POE2") {

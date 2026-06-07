@@ -6,6 +6,7 @@ import {
   GameStatusState,
   DebugLogPayload,
   ChangelogItem,
+  GameLaunchContext,
 } from "../../shared/types";
 
 // Event Enums
@@ -166,6 +167,8 @@ export interface ProcessEvent {
     name: string;
     path?: string;
     pid: number;
+    gameId?: AppConfig["activeGame"];
+    serviceId?: AppConfig["serviceChannel"];
   };
   timestamp?: number;
 }
@@ -173,7 +176,7 @@ export interface ProcessEvent {
 // 3. UI Event (Game Start Click, etc.)
 export interface UIEvent {
   type: EventType.UI_GAME_START_CLICK;
-  payload?: void;
+  payload?: GameLaunchContext;
   timestamp?: number;
 }
 
@@ -393,8 +396,8 @@ export interface IProcessWatcher {
       pid: number;
       name: string;
       path: string;
-      gameId?: string;
-      serviceId?: string;
+      gameId?: AppConfig["activeGame"];
+      serviceId?: AppConfig["serviceChannel"];
     }) => boolean,
   ) => boolean;
 }

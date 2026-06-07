@@ -34,4 +34,13 @@ describe("processMatchesGameContext", () => {
       ),
     ).toBe(true);
   });
+
+  it("does not match a GGG client with no path or inferred context", () => {
+    expect(
+      processMatchesGameContext(
+        { name: "PathOfExile.exe", path: "" },
+        { gameId: "POE2", serviceId: "GGG" },
+      ),
+    ).toBe(false);
+  });
 });

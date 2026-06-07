@@ -883,7 +883,10 @@ function App() {
       return;
     }
 
-    window.electronAPI.triggerGameStart();
+    window.electronAPI.triggerGameStart({
+      gameId: config.activeGame,
+      serviceId: config.serviceChannel,
+    });
     logger.log(`Game Start Triggered via IPC (${config.activeGame})`);
   };
 

@@ -15,11 +15,13 @@ export const StartPoe2KakaoHandler: EventHandler<UIEvent> = {
   id: "StartPoe2KakaoHandler",
   targetEvent: EventType.UI_GAME_START_CLICK,
 
-  condition: (_event, context: AppContext) => {
+  condition: (event, context: AppContext) => {
     const config = context.getConfig() as AppConfig;
     // Check if Active Game is POE2 AND Service Channel is Kakao Games
-    const isPoe2 = config.activeGame === "POE2";
-    const isKakao = config.serviceChannel === "Kakao Games";
+    const gameId = event.payload?.gameId ?? config.activeGame;
+    const serviceId = event.payload?.serviceId ?? config.serviceChannel;
+    const isPoe2 = gameId === "POE2";
+    const isKakao = serviceId === "Kakao Games";
 
     // Debug log to trace condition failures if any
     logger.log(

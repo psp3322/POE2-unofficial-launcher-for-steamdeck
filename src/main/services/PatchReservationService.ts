@@ -37,6 +37,7 @@ import {
   PatchRetryRequestedEvent,
   ConfigChangeEvent,
   PatchUiTitleTickEvent,
+  UIEvent,
 } from "../events/types";
 import { setConfigWithEvent } from "../utils/config-utils";
 import { logger } from "../utils/logger";
@@ -184,7 +185,10 @@ export class PatchReservationService implements IService {
         res.serviceId as AppConfig["serviceChannel"],
       );
     }
-    eventBus.emit(EventType.UI_GAME_START_CLICK, this.context, undefined);
+    eventBus.emit<UIEvent>(EventType.UI_GAME_START_CLICK, this.context, {
+      gameId: res.gameId as AppConfig["activeGame"],
+      serviceId: res.serviceId as AppConfig["serviceChannel"],
+    });
 
     // 3. 30s Silence Timeout
     this.stateTimeout = setTimeout(() => {

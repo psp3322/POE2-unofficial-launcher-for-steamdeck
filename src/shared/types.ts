@@ -95,6 +95,11 @@ export interface AppConfig {
   fontMutationSchema?: number;
 }
 
+export interface GameLaunchContext {
+  gameId: AppConfig["activeGame"];
+  serviceId: AppConfig["serviceChannel"];
+}
+
 export interface PatchReservation {
   id: string; // 고유 ID (UUID 또는 timestamp)
   gameId: AppConfig["activeGame"];
@@ -310,7 +315,7 @@ export interface ElectronAPI {
     ) => void,
   ) => () => void;
 
-  triggerGameStart: () => void;
+  triggerGameStart: (context: GameLaunchContext) => void;
   minimizeWindow: () => void;
   closeWindow: () => void;
   getConfig: (

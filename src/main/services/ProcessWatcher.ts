@@ -7,6 +7,7 @@ import {
   IService,
   PatchUiTitleTickEvent,
   ProcessEvent,
+  UIEvent,
 } from "../events/types";
 import {
   getAllGameStatuses,
@@ -40,9 +41,15 @@ export class ProcessWatcher implements IService {
    */
   private activePids: Map<
     number,
-    { name: string; path: string; gameId?: string; serviceId?: string }
+    {
+      name: string;
+      path: string;
+      gameId?: AppConfig["activeGame"];
+      serviceId?: AppConfig["serviceChannel"];
+    }
   > = new Map();
-  private lastKakaoLauncher: string | null = null;
+  private lastKakaoLauncher: AppConfig["activeGame"] | null = null;
+  private launchIntentHandlerId: string | null = null;
   private suspendTimer: NodeJS.Timeout | null = null;
   private isChecking = false;
   private titleWatchTimer: NodeJS.Timeout | null = null;
@@ -50,10 +57,15 @@ export class ProcessWatcher implements IService {
   constructor(private context: AppContext) {}
 
   public async init(): Promise<void> {
+    this.registerLaunchIntentListener();
     this.startWatching();
   }
 
   public async stop(): Promise<void> {
+    if (this.launchIntentHandlerId) {
+      eventBus.off(EventType.UI_GAME_START_CLICK, this.launchIntentHandlerId);
+      this.launchIntentHandlerId = null;
+    }
     this.stopWatching();
   }
 
@@ -89,8 +101,8 @@ export class ProcessWatcher implements IService {
       pid: number;
       name: string;
       path: string;
-      gameId?: string;
-      serviceId?: string;
+      gameId?: AppConfig["activeGame"];
+      serviceId?: AppConfig["serviceChannel"];
     }) => boolean,
   ): boolean {
     for (const [pid, info] of this.activePids.entries()) {
@@ -247,6 +259,8 @@ export class ProcessWatcher implements IService {
             name: p.name,
             path: p.path,
             pid: p.pid,
+            gameId: identity.gameId,
+            serviceId: identity.serviceId,
           });
         }
       }
@@ -268,13 +282,15 @@ export class ProcessWatcher implements IService {
             name: info.name,
             path: info.path,
             pid: pid, // Using the key from valid iteration
+            gameId: info.gameId,
+            serviceId: info.serviceId,
           });
 
           this.activePids.delete(pid);
         }
       }
 
-      this.reconcileStaleActiveStatuses(currentProcesses);
+      this.reconcileStaleActiveStatuses();
     } catch (e) {
       this.logger.error(`Error during runCheck:`, e);
     } finally {
@@ -282,9 +298,7 @@ export class ProcessWatcher implements IService {
     }
   }
 
-  private reconcileStaleActiveStatuses(
-    currentProcesses: processUtils.ProcessInfo[],
-  ) {
+  private reconcileStaleActiveStatuses() {
     const now = Date.now();
 
     for (const statusState of getAllGameStatuses()) {
@@ -297,7 +311,7 @@ export class ProcessWatcher implements IService {
         continue;
       }
 
-      if (this.hasMatchingProcess(statusState, currentProcesses)) {
+      if (this.hasMatchingProcess(statusState)) {
         continue;
       }
 
@@ -319,18 +333,43 @@ export class ProcessWatcher implements IService {
     }
   }
 
-  private hasMatchingProcess(
-    statusState: {
-      gameId: AppConfig["activeGame"];
-      serviceId: AppConfig["serviceChannel"];
-    },
-    currentProcesses: processUtils.ProcessInfo[],
-  ): boolean {
-    return currentProcesses.some((processInfo) =>
-      processMatchesGameContext(processInfo, {
-        gameId: statusState.gameId,
-        serviceId: statusState.serviceId,
-      }),
+  private hasMatchingProcess(statusState: {
+    gameId: AppConfig["activeGame"];
+    serviceId: AppConfig["serviceChannel"];
+  }): boolean {
+    return Array.from(this.activePids.entries()).some(([pid, processInfo]) =>
+      processMatchesGameContext(
+        {
+          pid,
+          name: processInfo.name,
+          path: processInfo.path,
+          gameId: processInfo.gameId,
+          serviceId: processInfo.serviceId,
+        },
+        {
+          gameId: statusState.gameId,
+          serviceId: statusState.serviceId,
+        },
+      ),
+    );
+  }
+
+  private registerLaunchIntentListener() {
+    if (this.launchIntentHandlerId) return;
+
+    this.launchIntentHandlerId = eventBus.on<UIEvent>(
+      EventType.UI_GAME_START_CLICK,
+      (event) => {
+        if (event.payload?.serviceId !== "Kakao Games") {
+          return;
+        }
+
+        this.lastKakaoLauncher = event.payload.gameId;
+        this.logger.log(
+          `[ProcessWatcher] Recorded Kakao launch intent: ${event.payload.gameId}`,
+        );
+        this.wakeUp("game start click");
+      },
     );
   }
 
@@ -391,7 +430,10 @@ export class ProcessWatcher implements IService {
   private inferProcessIdentity(
     name: string,
     path: string,
-  ): { gameId?: string; serviceId?: string } {
+  ): {
+    gameId?: AppConfig["activeGame"];
+    serviceId?: AppConfig["serviceChannel"];
+  } {
     const lowerName = name.toLowerCase();
     const lowerPath = path?.toLowerCase() || "";
 

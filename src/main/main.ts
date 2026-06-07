@@ -26,7 +26,12 @@ import {
 } from "./utils/config-utils";
 import { DEBUG_APP_CONFIG } from "../shared/config";
 import { getGameName, getLauncherTitle, getAppName } from "../shared/naming";
-import { AppConfig, NewsCategory, DebugLogPayload } from "../shared/types";
+import {
+  AppConfig,
+  NewsCategory,
+  DebugLogPayload,
+  GameLaunchContext,
+} from "../shared/types";
 import { BASE_URLS } from "../shared/urls";
 import { syncAutoLaunch } from "./events/handlers/AutoLaunchHandler";
 import {
@@ -49,6 +54,7 @@ import {
   UpdateWindowTitleEvent,
   DebugLogEvent,
   IServiceManager,
+  UIEvent,
 } from "./events/types";
 import { GameSessionTracker, SessionContext } from "./game/GameSessionTracker";
 import { registerGameStatusIpc } from "./ipc/game-status-ipc";
@@ -2061,14 +2067,21 @@ function initDebugWindow(triggerSource: string = "Dynamic") {
 }
 
 // IPC Handlers
-ipcMain.on("trigger-game-start", () => {
-  logger.log('[Main] IPC "trigger-game-start" Received from Renderer');
-  if (appContext) {
-    eventBus.emit(EventType.UI_GAME_START_CLICK, appContext, undefined);
-  } else {
-    logger.error("[Main] AppContext not initialized!");
-  }
-});
+ipcMain.on(
+  "trigger-game-start",
+  (_event, launchContext?: GameLaunchContext) => {
+    logger.log('[Main] IPC "trigger-game-start" Received from Renderer');
+    if (appContext) {
+      eventBus.emit<UIEvent>(
+        EventType.UI_GAME_START_CLICK,
+        appContext,
+        launchContext,
+      );
+    } else {
+      logger.error("[Main] AppContext not initialized!");
+    }
+  },
+);
 
 // --- Patch Management IPC ---
 // Keep track of the active patch manager for cancellation

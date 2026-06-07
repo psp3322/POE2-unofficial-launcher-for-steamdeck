@@ -14,6 +14,7 @@ import {
   PatchReservation,
   RemoteFontItem,
   ImportSelection,
+  GameLaunchContext,
 } from "../shared/types";
 
 const logger = new PreloadLogger({ type: "PRELOAD", typeColor: "#8BE9FD" });
@@ -22,9 +23,9 @@ const logger = new PreloadLogger({ type: "PRELOAD", typeColor: "#8BE9FD" });
 // Used by React Renderer (App.tsx)
 
 contextBridge.exposeInMainWorld("electronAPI", {
-  triggerGameStart: () => {
+  triggerGameStart: (context: GameLaunchContext) => {
     logger.log("[Preload] Sending trigger-game-start to Main Process");
-    ipcRenderer.send("trigger-game-start");
+    ipcRenderer.send("trigger-game-start", context);
   },
   minimizeWindow: () => ipcRenderer.send("window-minimize"),
   closeWindow: () => ipcRenderer.send("window-close"),
