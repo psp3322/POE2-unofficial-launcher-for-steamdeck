@@ -118,6 +118,7 @@ dist
 
 # Vite
 dist-electron
+.tmp/
 release
 
 # OS
