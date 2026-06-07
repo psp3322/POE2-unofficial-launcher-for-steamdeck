@@ -19,6 +19,7 @@ import JSZip from "jszip";
 
 import { ContextProvider } from "./context-provider";
 import { eventBus } from "./events/EventBus";
+import { registerCoreEventHandlers } from "./events/register-handlers";
 import {
   setConfigWithEvent,
   deleteConfigWithEvent,
@@ -27,49 +28,14 @@ import { DEBUG_APP_CONFIG } from "../shared/config";
 import { getGameName, getLauncherTitle, getAppName } from "../shared/naming";
 import { AppConfig, NewsCategory, DebugLogPayload } from "../shared/types";
 import { BASE_URLS } from "../shared/urls";
+import { syncAutoLaunch } from "./events/handlers/AutoLaunchHandler";
 import {
-  AutoLaunchHandler,
-  syncAutoLaunch,
-} from "./events/handlers/AutoLaunchHandler";
-import {
-  LogSessionHandler,
-  LogWebRootHandler,
-  LogErrorHandler,
-  AutoPatchProcessStopHandler,
-  PatchProgressHandler,
-  ProcessWillTerminateHandler,
   triggerPendingManualPatches,
   cancelPendingPatches,
 } from "./events/handlers/AutoPatchHandler";
-import { ChangelogCheckHandler } from "./events/handlers/ChangelogCheckHandler";
-import { ChangelogUISyncHandler } from "./events/handlers/ChangelogUISyncHandler";
-import { CleanupLauncherWindowHandler } from "./events/handlers/CleanupLauncherWindowHandler";
-import {
-  ConfigChangeSyncHandler,
-  ConfigDeleteSyncHandler,
-} from "./events/handlers/ConfigSyncHandler";
-import { DebugLogHandler } from "./events/handlers/DebugLogHandler";
-import { DevToolsVisibilityHandler } from "./events/handlers/DevToolsVisibilityHandler";
 import { FontIpcHandler } from "./events/handlers/FontIpcHandler";
-import { GameInstallCheckHandler } from "./events/handlers/GameInstallCheckHandler";
-import {
-  GameProcessStartHandler,
-  GameProcessStopHandler,
-} from "./events/handlers/GameProcessStatusHandler";
-import { GameStatusSyncHandler } from "./events/handlers/GameStatusSyncHandler";
-import { InactiveWindowVisibilityHandler } from "./events/handlers/InactiveWindowVisibilityHandler";
-import { StartPoe1KakaoHandler } from "./events/handlers/StartPoe1KakaoHandler";
-import { StartPoe2KakaoHandler } from "./events/handlers/StartPoe2KakaoHandler";
-import { StartPoeGggHandler } from "./events/handlers/StartPoeGggHandler";
-import { SystemWakeUpHandler } from "./events/handlers/SystemWakeUpHandler";
 import { ToolForceRepairHandler } from "./events/handlers/ToolHandler";
-import { UacHandler } from "./events/handlers/UacHandler";
-import {
-  UpdateCheckHandler,
-  UpdateDownloadHandler,
-  UpdateInstallHandler,
-  triggerUpdateCheck,
-} from "./events/handlers/UpdateHandler";
+import { triggerUpdateCheck } from "./events/handlers/UpdateHandler";
 import {
   AppContext,
   ConfigChangeEvent,
@@ -1348,34 +1314,9 @@ function resetGameStatusIfInterrupted(_win: BrowserWindow) {
 setupStoreObservers(context);
 
 // 4. Register Event Handlers
-const handlers = [
-  DebugLogHandler,
-  ConfigChangeSyncHandler,
-  ConfigDeleteSyncHandler,
-  StartPoe1KakaoHandler,
-  StartPoe2KakaoHandler,
-  StartPoeGggHandler,
-  CleanupLauncherWindowHandler,
-  GameStatusSyncHandler,
-  GameProcessStartHandler,
-  GameProcessStopHandler,
-  GameInstallCheckHandler,
-  SystemWakeUpHandler,
-  UpdateCheckHandler,
-  UpdateDownloadHandler,
-  UpdateInstallHandler,
-  LogSessionHandler,
-  LogWebRootHandler,
-  LogErrorHandler,
-  AutoPatchProcessStopHandler,
-  PatchProgressHandler, // Added
-  AutoLaunchHandler, // Added
-  ProcessWillTerminateHandler,
-  DevToolsVisibilityHandler,
-  ChangelogCheckHandler,
-  ChangelogUISyncHandler,
-  UacHandler, // Added
-  InactiveWindowVisibilityHandler, // [New] Dynamic Visibility
+registerCoreEventHandlers();
+
+const mainEventHandlers = [
   {
     id: "UpdateWindowTitleHandler",
     targetEvent: EventType.UPDATE_WINDOW_TITLE,
@@ -1465,7 +1406,7 @@ ipcMain.on("ui:update-install", (_event, isSilent?: boolean) => {
   }
 });
 
-handlers.forEach((handler) => {
+mainEventHandlers.forEach((handler) => {
   eventBus.register(handler as EventHandler<AppEvent>);
 });
 
