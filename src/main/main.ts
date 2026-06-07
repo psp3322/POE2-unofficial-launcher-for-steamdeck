@@ -23,6 +23,10 @@ import {
   setConfigWithEvent,
   deleteConfigWithEvent,
 } from "./utils/config-utils";
+import {
+  GameProcessInfo,
+  processMatchesGameContext,
+} from "./utils/game-process-context";
 import { DEBUG_APP_CONFIG } from "../shared/config";
 import { getGameName, getLauncherTitle, getAppName } from "../shared/naming";
 import {
@@ -60,7 +64,6 @@ import { GameInstallCheckHandler } from "./events/handlers/GameInstallCheckHandl
 import {
   GameProcessStartHandler,
   GameProcessStopHandler,
-  getGlobalGameStatus,
 } from "./events/handlers/GameProcessStatusHandler";
 import { GameStatusSyncHandler } from "./events/handlers/GameStatusSyncHandler";
 import { InactiveWindowVisibilityHandler } from "./events/handlers/InactiveWindowVisibilityHandler";
@@ -103,6 +106,10 @@ import { ProcessWatcher } from "./services/ProcessWatcher";
 import { serviceManager } from "./services/ServiceManager";
 import { themeCacheManager } from "./services/ThemeCacheManager";
 import { UpdateSchedulerService } from "./services/UpdateSchedulerService";
+import {
+  getGameStatus,
+  shouldResetStatusOnAutomationWindowClosed,
+} from "./state/GameStatusStore";
 import { getConfig, setupStoreObservers, default as store } from "./store";
 import {
   isAdmin,
@@ -528,7 +535,7 @@ ipcMain.handle("debug:get-history", () => {
 ipcMain.handle(
   "game:get-status",
   (_event, gameId: string, serviceId: string) => {
-    return getGlobalGameStatus(gameId, serviceId);
+    return getGameStatus(gameId, serviceId);
   },
 );
 
@@ -1347,22 +1354,46 @@ const context: AppContext = {
  * Resets the game status back to 'idle' if a critical window is closed
  * while the system is still in an intermediate automation state.
  */
-function resetGameStatusIfInterrupted(_win: BrowserWindow) {
-  // Only interrupt if we are in a middle-state that requires a window/session
-  const interruptibleStates: RunStatus[] = [
-    "preparing",
-    "processing",
-    "authenticating",
-  ];
+function isMatchingGameProcessRunning(
+  gameId: AppConfig["activeGame"],
+  serviceId: AppConfig["serviceChannel"],
+) {
+  const watcher = appContext?.processWatcher;
+  if (!watcher) {
+    return false;
+  }
 
-  if (interruptibleStates.includes(currentSystemStatus)) {
+  const matches = (info: GameProcessInfo) =>
+    processMatchesGameContext(info, { gameId, serviceId });
+
+  if (serviceId === "Kakao Games") {
+    const launcherName =
+      gameId === "POE2" ? "POE2_Launcher.exe" : "POE_Launcher.exe";
+
+    return (
+      watcher.isProcessRunning(launcherName, matches) ||
+      watcher.isProcessRunning("PathOfExile_KG.exe", matches)
+    );
+  }
+
+  return watcher.isProcessRunning("PathOfExile.exe", matches);
+}
+
+function resetGameStatusIfInterrupted(_win: BrowserWindow) {
+  // Default to POE2/Kakao if context is missing for some reason
+  const gameId = currentActiveContext?.gameId || "POE2";
+  const serviceId = currentActiveContext?.serviceId || "Kakao Games";
+  const hasMatchingProcess = isMatchingGameProcessRunning(gameId, serviceId);
+
+  if (
+    shouldResetStatusOnAutomationWindowClosed(
+      currentSystemStatus,
+      hasMatchingProcess,
+    )
+  ) {
     logger.log(
       `[Main] Critical window closed during ${currentSystemStatus}. Resetting to idle.`,
     );
-
-    // Default to POE2/Kakao if context is missing for some reason
-    const gameId = currentActiveContext?.gameId || "POE2";
-    const serviceId = currentActiveContext?.serviceId || "Kakao Games";
 
     eventBus.emit<GameStatusChangeEvent>(
       EventType.GAME_STATUS_CHANGE,
@@ -2606,10 +2637,24 @@ eventBus.register({
     if (
       status === "preparing" ||
       status === "processing" ||
-      status === "authenticating"
+      status === "authenticating" ||
+      status === "ready"
     ) {
       activeSessionContext = { gameId, serviceId };
       currentActiveContext = { gameId, serviceId };
+    }
+
+    const isCurrentContext =
+      !currentActiveContext ||
+      (currentActiveContext.gameId === gameId &&
+        currentActiveContext.serviceId === serviceId);
+
+    if (
+      isCurrentContext &&
+      (status === "idle" || status === "error" || status === "uninstalled")
+    ) {
+      activeSessionContext = null;
+      currentActiveContext = null;
     }
   },
 });

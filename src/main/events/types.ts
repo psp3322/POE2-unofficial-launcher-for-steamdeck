@@ -389,7 +389,13 @@ export interface IProcessWatcher {
   wakeUp: (reason: string) => void;
   isProcessRunning: (
     name: string,
-    criteria?: (info: { pid: number; path: string }) => boolean,
+    criteria?: (info: {
+      pid: number;
+      name: string;
+      path: string;
+      gameId?: string;
+      serviceId?: string;
+    }) => boolean,
   ) => boolean;
 }
 

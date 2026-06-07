@@ -1,4 +1,5 @@
-import { AppConfig, GameStatusState } from "../../../shared/types";
+import { AppConfig } from "../../../shared/types";
+import { updateGameStatusCache } from "../../state/GameStatusStore";
 import { logger } from "../../utils/logger";
 import { eventBus } from "../EventBus";
 import {
@@ -22,9 +23,6 @@ interface ProcessStrategy {
   onStop?: ProcessCallback;
 }
 
-// --- State Cache ---
-export const globalGameStatusCache: Record<string, GameStatusState> = {};
-
 // --- Helper: Status Emitters ---
 
 const emitGameStatus = (
@@ -33,27 +31,11 @@ const emitGameStatus = (
   serviceId: AppConfig["serviceChannel"],
   status: "running" | "idle" | "stopping",
 ) => {
-  const key = `${gameId}_${serviceId}`;
-  const payload: GameStatusState = { gameId, serviceId, status };
-
-  globalGameStatusCache[key] = payload;
+  const payload = updateGameStatusCache({ gameId, serviceId, status });
   eventBus.emit<GameStatusChangeEvent>(
     EventType.GAME_STATUS_CHANGE,
     context,
     payload,
-  );
-};
-
-export const getGlobalGameStatus = (
-  gameId: string,
-  serviceId: string,
-): GameStatusState => {
-  return (
-    globalGameStatusCache[`${gameId}_${serviceId}`] || {
-      gameId,
-      serviceId,
-      status: "idle",
-    }
   );
 };
 
