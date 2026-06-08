@@ -102,6 +102,12 @@ export const CONFIG_METADATA: Record<string, ConfigDefinition> = {
     category: "General",
     description: "앱 최초 실행 시 온보딩 위저드를 표시할지 여부를 설정합니다.",
   },
+  NEWS_OPEN_MODE: {
+    key: "newsOpenMode",
+    name: "News Open Mode",
+    category: "General",
+    description: "게시글을 목록 안에서 펼칠지 별도 모달로 열지 선택합니다.",
+  },
   PROCESS_WATCH_MODE: {
     key: "processWatchMode",
     name: "Game Process Watch Mode",
@@ -226,6 +232,7 @@ export const CONFIG_KEYS = {
   CLOSE_ACTION: CONFIG_METADATA.CLOSE_ACTION.key,
   QUIT_ON_GAME_START: CONFIG_METADATA.QUIT_ON_GAME_START.key,
   SHOW_ONBOARDING: CONFIG_METADATA.SHOW_ONBOARDING.key,
+  NEWS_OPEN_MODE: CONFIG_METADATA.NEWS_OPEN_MODE.key,
   PROCESS_WATCH_MODE: CONFIG_METADATA.PROCESS_WATCH_MODE.key,
   AGGRESSIVE_PATCH_MODE: CONFIG_METADATA.AGGRESSIVE_PATCH_MODE.key,
   SKIP_DAUM_GAME_STARTER_UAC: CONFIG_METADATA.SKIP_DAUM_GAME_STARTER_UAC.key,
@@ -258,6 +265,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   closeAction: "minimize",
   quitOnGameStart: false,
   showOnboarding: true,
+  newsOpenMode: "inline",
   processWatchMode: "resource-saving",
   aggressivePatchMode: false,
   skipDaumGameStarterUac: false,

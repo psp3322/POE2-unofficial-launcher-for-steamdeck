@@ -251,6 +251,29 @@
   line-height: 1.6;
 }
 
+.news-inline-markdown-body {
+  background: transparent !important;
+  color: #d4d4d4 !important;
+  font-size: 12px !important;
+  line-height: 1.6 !important;
+}
+
+.news-inline-markdown-body h1,
+.news-inline-markdown-body h2,
+.news-inline-markdown-body h3 {
+  color: #dfcf99 !important;
+  font-size: 14px !important;
+  margin: 8px 0 !important;
+  padding-bottom: 4px !important;
+  border-bottom: 1px solid rgba(175, 148, 79, 0.22) !important;
+}
+
+.news-inline-markdown-body p,
+.news-inline-markdown-body ul,
+.news-inline-markdown-body ol {
+  margin: 0 0 8px 0 !important;
+}
+
 /* Scrollbars */
 .news-list::-webkit-scrollbar,
 .news-scroll-view::-webkit-scrollbar {

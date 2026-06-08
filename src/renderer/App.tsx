@@ -13,6 +13,7 @@ import {
   RunStatus,
   NewsItem,
   NewsCategory,
+  NewsOpenMode,
   ChangelogItem,
   UpdateStatus,
   PatchProgress,
@@ -105,6 +106,15 @@ const formatNewsRefreshTime = (lastUpdatedAt: number | null) => {
   return `마지막 확인: ${time}`;
 };
 
+const NEWS_OPEN_MODE_OPTIONS: Array<{
+  mode: NewsOpenMode;
+  icon: string;
+  label: string;
+}> = [
+  { mode: "inline", icon: "view_agenda", label: "목록에서 펼치기" },
+  { mode: "modal", icon: "open_in_full", label: "팝업으로 열기" },
+];
+
 // Session-level flags or refs
 
 // --- 🛠️ Testing Scenarios (Toggle as needed) ---
@@ -157,6 +167,8 @@ function App() {
   // Configuration State (Unified)
   const [config, setConfigState] = useState<AppConfig>(DEFAULT_CONFIG);
   const [isConfigLoaded, setIsConfigLoaded] = useState(false);
+  const currentNewsOpenMode: NewsOpenMode =
+    config.newsOpenMode === "modal" ? "modal" : "inline";
 
   const [poe1Theme, setPoe1Theme] = useState<
     | (ThemeDefinition & { assets: Record<string, string>; isRemote: boolean })
@@ -938,6 +950,14 @@ function App() {
     setSelectedNotice(item);
   }, []);
 
+  const handleNewsOpenModeChange = useCallback((mode: NewsOpenMode) => {
+    setConfigState((prev) => ({
+      ...prev,
+      newsOpenMode: mode,
+    }));
+    void window.electronAPI?.setConfig(CONFIG_KEYS.NEWS_OPEN_MODE, mode);
+  }, []);
+
   const loadDevNotices = useCallback(async (live = false) => {
     if (!window.electronAPI) return [];
 
@@ -1395,31 +1415,60 @@ function App() {
             {/* === Right Panel: Content Area === */}
             <div className="right-panel">
               <div className="news-refresh-toolbar">
-                <span className="news-refresh-toolbar-time">
-                  {formatNewsRefreshTime(newsLastUpdatedAt)}
-                </span>
-                <button
-                  className="news-refresh-toolbar-button"
-                  onClick={handleManualNewsRefresh}
-                  disabled={isNewsRefreshing}
-                  title="전체 게시판 새로고침"
-                  aria-label="전체 게시판 새로고침"
-                  type="button"
-                >
-                  <span
-                    className={`material-symbols-outlined ${
-                      isNewsRefreshing ? "spinning" : ""
-                    }`}
+                <div className="news-open-mode-panel">
+                  <span className="news-open-mode-label">게시글 보기:</span>
+                  <div
+                    className="news-open-mode-toggle"
+                    role="group"
+                    aria-label="게시글 열기 방식"
                   >
-                    refresh
+                    {NEWS_OPEN_MODE_OPTIONS.map((option) => (
+                      <button
+                        key={option.mode}
+                        className={`news-open-mode-button ${
+                          currentNewsOpenMode === option.mode ? "active" : ""
+                        }`}
+                        onClick={() => handleNewsOpenModeChange(option.mode)}
+                        title={option.label}
+                        aria-label={option.label}
+                        aria-pressed={currentNewsOpenMode === option.mode}
+                        type="button"
+                      >
+                        <span className="material-symbols-outlined">
+                          {option.icon}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="news-refresh-status-panel">
+                  <span className="news-refresh-toolbar-time">
+                    {formatNewsRefreshTime(newsLastUpdatedAt)}
                   </span>
-                </button>
+                  <button
+                    className="news-refresh-toolbar-button"
+                    onClick={handleManualNewsRefresh}
+                    disabled={isNewsRefreshing}
+                    title="전체 게시판 새로고침"
+                    aria-label="전체 게시판 새로고침"
+                    type="button"
+                  >
+                    <span
+                      className={`material-symbols-outlined ${
+                        isNewsRefreshing ? "spinning" : ""
+                      }`}
+                    >
+                      refresh
+                    </span>
+                  </button>
+                </div>
               </div>
               <div className="dev-notice-container">
                 <NewsSection
                   title="개발자 공지사항"
                   items={devNotices}
                   forumUrl=""
+                  openMode={currentNewsOpenMode}
                   onRead={handleDevRead}
                   onShowModal={handleNoticeClick}
                   isDevSection={true}
@@ -1429,6 +1478,7 @@ function App() {
               <NewsDashboard
                 activeGame={config.activeGame}
                 serviceChannel={config.serviceChannel}
+                openMode={currentNewsOpenMode}
                 onItemClick={handleNoticeClick}
               />
             </div>

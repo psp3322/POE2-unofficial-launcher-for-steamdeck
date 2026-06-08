@@ -18,6 +18,8 @@ export interface ConfigDefinition {
   description: string;
 }
 
+export type NewsOpenMode = "inline" | "modal";
+
 export interface AppConfig {
   [key: string]: unknown;
   serviceChannel: "Kakao Games" | "GGG";
@@ -44,6 +46,7 @@ export interface AppConfig {
   closeAction: "minimize" | "close";
   quitOnGameStart: boolean;
   showOnboarding: boolean;
+  newsOpenMode: NewsOpenMode;
   /**
    * - "resource-saving": Optimization Mode (Background Scan OFF)
    * - "always-on": High Performance Mode (Background Scan ON)
