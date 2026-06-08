@@ -188,6 +188,7 @@ let mainWindow: BrowserWindow | null;
 let gameWindow: BrowserWindow | null;
 let debugWindow: BrowserWindow | null = null; // Debug Window Reference
 let debugDestructionTimeout: NodeJS.Timeout | null = null; // [New] Delayed destruction timer
+let debugRecoveryTimeout: NodeJS.Timeout | null = null;
 
 // --- Account Validation State ---
 let validationModeActive = false;
@@ -2092,6 +2093,38 @@ function syncDebugWindow(triggerSource: string = "Dynamic") {
 
 let isInitInProgress = false; // Guard against recursive/redundant calls during creation
 
+function destroyDebugWindowForRecovery(reason: string) {
+  if (debugDestructionTimeout) {
+    clearTimeout(debugDestructionTimeout);
+    debugDestructionTimeout = null;
+  }
+
+  if (debugWindow && !debugWindow.isDestroyed()) {
+    logger.warn(`[Main] Destroying Debug Window for recovery: ${reason}`);
+    debugWindow.destroy();
+  }
+
+  debugWindow = null;
+  context.debugWindow = null;
+}
+
+function scheduleDebugWindowRecovery(reason: string) {
+  if (debugRecoveryTimeout) return;
+
+  logger.warn(`[Main] Scheduling Debug Window recovery: ${reason}`);
+  destroyDebugWindowForRecovery(reason);
+
+  debugRecoveryTimeout = setTimeout(() => {
+    debugRecoveryTimeout = null;
+    if (
+      getEffectiveConfig("dev_mode") === true &&
+      getEffectiveConfig("debug_console") === true
+    ) {
+      initDebugWindow(`Recovery:${reason}`);
+    }
+  }, 250);
+}
+
 /**
  * Creates or destroys the debug window based on current configuration.
  * Can be called multiple times during runtime to toggle the window.
@@ -2130,6 +2163,7 @@ function initDebugWindow(triggerSource: string = "Dynamic") {
       logger.log(
         `[Main][${triggerSource}] Cancelled pending destruction for Debug Window.`,
       );
+      destroyDebugWindowForRecovery("Re-enabled while destruction was pending");
     }
 
     // 2. If doesn't exist or destroyed -> Create
@@ -2161,6 +2195,33 @@ function initDebugWindow(triggerSource: string = "Dynamic") {
             debugWindow.show();
             syncDebugWindow("ReadyToShow");
           }
+        });
+
+        debugWindow.webContents.on("did-finish-load", () => {
+          logger.log("[Main] Debug Window finished loading.");
+        });
+
+        debugWindow.webContents.on(
+          "did-fail-load",
+          (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+            if (!isMainFrame) return;
+            logger.error(
+              `[Main] Debug Window failed to load: ${errorCode} ${errorDescription} (${validatedURL})`,
+            );
+            scheduleDebugWindowRecovery("LoadFailed");
+          },
+        );
+
+        debugWindow.webContents.on("unresponsive", () => {
+          logger.error("[Main] Debug Window renderer became unresponsive.");
+          scheduleDebugWindowRecovery("RendererUnresponsive");
+        });
+
+        debugWindow.webContents.on("render-process-gone", (_event, details) => {
+          logger.error(
+            `[Main] Debug Window render process gone: ${details.reason}`,
+          );
+          scheduleDebugWindowRecovery("RenderProcessGone");
         });
 
         // Update Context
