@@ -134,7 +134,12 @@ describe("kakao visibility policy", () => {
     ).toBe(false);
   });
 
-  it("detects Daum game login redirects during background validation", () => {
+  it("detects Kakao game login redirects during background validation", () => {
+    expect(
+      isDaumGameLoginRedirect(new URL("https://kakaogames.com/login")),
+    ).toBe(true);
+
+    /* kakao-transition:legacy-start */
     expect(
       isDaumGameLoginRedirect(new URL("https://poe.game.daum.net/login")),
     ).toBe(true);
@@ -146,6 +151,8 @@ describe("kakao visibility policy", () => {
     expect(isDaumGameLoginRedirect(new URL("https://poe.game.daum.net/"))).toBe(
       false,
     );
+    /* kakao-transition:legacy-end */
+
     expect(
       isDaumGameLoginRedirect(new URL("https://accounts.kakao.com/login")),
     ).toBe(false);

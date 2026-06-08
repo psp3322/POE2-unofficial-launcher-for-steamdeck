@@ -1,5 +1,8 @@
+import {
+  getKakaoGameStartUrlCandidates,
+  type KakaoTransitionUrlCandidate,
+} from "../../../shared/kakao-service-transition";
 import { AppConfig } from "../../../shared/types";
-import { BASE_URLS } from "../../../shared/urls";
 import { logger } from "../../utils/logger";
 import { eventBus } from "../EventBus";
 import {
@@ -9,6 +12,8 @@ import {
   GameStatusChangeEvent,
   UIEvent,
 } from "../types";
+
+import type { BrowserWindow } from "electron";
 
 // Note: We use EventHandler<UIEvent> to strictly type 'event' argument in handle
 export const StartPoe1KakaoHandler: EventHandler<UIEvent> = {
@@ -66,22 +71,19 @@ export const StartPoe1KakaoHandler: EventHandler<UIEvent> = {
     // This prevents flashing of hidden pages before login.
 
     // 2. Load Target URL
-    const targetUrl = `${BASE_URLS["Kakao Games"].POE1}#autoStart`;
+    const targetCandidates = getKakaoGameStartUrlCandidates("POE1");
 
     // Mark as Game Start context BEFORE loading URL (to avoid race with preload.ts)
     if (typeof global.setNavigationTrigger === "function") {
       global.setNavigationTrigger(gameWindow.webContents.id, "GAME_START_POE1");
     }
 
-    logger.log(`[StartPoe1KakaoHandler] Loading URL: ${targetUrl}`);
+    const loadedCandidate = await loadFirstAvailableCandidate(
+      gameWindow,
+      targetCandidates,
+    );
 
-    try {
-      await gameWindow.loadURL(targetUrl);
-    } catch (error) {
-      logger.error(
-        `[StartPoe1KakaoHandler] Failed to load URL: ${targetUrl}`,
-        error,
-      );
+    if (!loadedCandidate) {
       eventBus.emit<GameStatusChangeEvent>(
         EventType.GAME_STATUS_CHANGE,
         context,
@@ -122,3 +124,31 @@ export const StartPoe1KakaoHandler: EventHandler<UIEvent> = {
     // For now, this handles the main initiator flow.
   },
 };
+
+async function loadFirstAvailableCandidate(
+  gameWindow: BrowserWindow,
+  candidates: KakaoTransitionUrlCandidate[],
+): Promise<KakaoTransitionUrlCandidate | null> {
+  for (const candidate of candidates) {
+    logger.log(
+      `[StartPoe1KakaoHandler] Loading ${candidate.phase.toUpperCase()} URL: ${
+        candidate.url
+      }`,
+    );
+
+    try {
+      await gameWindow.loadURL(candidate.url);
+      return candidate;
+    } catch (error) {
+      logger.warn(
+        `[StartPoe1KakaoHandler] Failed to load ${candidate.phase.toUpperCase()} URL: ${
+          candidate.url
+        }`,
+        error,
+      );
+    }
+  }
+
+  logger.error("[StartPoe1KakaoHandler] All Kakao start URLs failed to load.");
+  return null;
+}

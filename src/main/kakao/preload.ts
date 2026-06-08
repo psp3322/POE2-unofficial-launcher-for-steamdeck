@@ -14,6 +14,13 @@ import {
   UNHANDLED_PAGE_REVEAL_DELAY_MS,
   USER_REQUIRED_PAGE_REVEAL_DELAY_MS,
 } from "./visibility-policy";
+import {
+  getKakaoUrlPhase,
+  isKakaoLauncherUrl,
+  isKakaoMemberUrl,
+  isKakaoPoeHomeUrl,
+  isKakaoSecurityCenterUrl,
+} from "../../shared/kakao-service-transition";
 import { AppConfig } from "../../shared/types";
 import { logger } from "../utils/preload-logger";
 
@@ -172,6 +179,18 @@ function reportAutomationFailure(handlerName: string, error: unknown) {
   });
 }
 
+function requestStartUrlFallback(handlerName: string) {
+  const currentUrl = new URL(window.location.href);
+  ipcRenderer.send("kakao:start-url-fallback-request", {
+    handlerName,
+    phase: activeGameContext
+      ? getKakaoUrlPhase(currentUrl, activeGameContext.gameId)
+      : getKakaoUrlPhase(currentUrl),
+    url: window.location.href,
+    context: activeGameContext,
+  });
+}
+
 function scheduleStableVisibilityReveal(options: {
   description: string;
   isReady: () => boolean;
@@ -265,6 +284,7 @@ function safeClick(
 function observeAndInteract(
   checkFn: (obs?: MutationObserver) => boolean,
   timeoutMs: number = 10000,
+  onTimeout?: () => void,
 ) {
   if (checkFn()) return;
 
@@ -272,9 +292,10 @@ function observeAndInteract(
     "[Game Window] Target not found immediately. Starting observer...",
   );
 
+  let completed = false;
   const observer = new MutationObserver((_mutations, obs) => {
     if (checkFn(obs)) {
-      // Logic handled in checkFn
+      completed = true;
     }
   });
 
@@ -282,8 +303,10 @@ function observeAndInteract(
 
   if (timeoutMs > 0) {
     setTimeout(() => {
+      if (completed) return;
       observer.disconnect();
       logger.log("[Game Window] Observer timed out.");
+      onTimeout?.();
     }, timeoutMs);
   }
 }
@@ -292,26 +315,30 @@ function observeAndInteract(
 
 /**
  * POE1 Main Page Handler
- * Matches: poe.game.daum.net (excluding other subdomains if necessary)
+ * Matches Kakao PoE1 homepage candidates during service transition.
  */
 const PoeMainHandler: PageHandler = {
   name: "PoeMainHandler",
   description: "POE1 Homepage - Game Start",
   match: (url) =>
-    url.hostname === "poe.game.daum.net" && url.hash.includes("autoStart"),
+    isKakaoPoeHomeUrl(url, "POE1") && url.hash.includes("autoStart"),
   triggeredBy: ["GAME_START_POE1"],
   execute: async () => {
     logger.log(`[Handler] Executing ${PoeMainHandler.name}`);
 
-    observeAndInteract((obs) => {
-      const startBtn = document.querySelector(SELECTORS.POE1.BTN_GAME_START);
-      if (safeClick(startBtn as HTMLElement)) {
-        logger.log("[PoeMainHandler] Clicked POE1 Start Button");
-        if (obs) obs.disconnect();
-        return true;
-      }
-      return false;
-    });
+    observeAndInteract(
+      (obs) => {
+        const startBtn = document.querySelector(SELECTORS.POE1.BTN_GAME_START);
+        if (safeClick(startBtn as HTMLElement)) {
+          logger.log("[PoeMainHandler] Clicked POE1 Start Button");
+          if (obs) obs.disconnect();
+          return true;
+        }
+        return false;
+      },
+      10000,
+      () => requestStartUrlFallback(PoeMainHandler.name),
+    );
   },
 };
 
@@ -322,10 +349,7 @@ const PoeMainHandler: PageHandler = {
 const AccountValidationHandler: PageHandler = {
   name: "AccountValidationHandler",
   description: "Account Verification (Hidden Background)",
-  match: (url) =>
-    (url.hostname === "poe.game.daum.net" ||
-      url.hostname === "pathofexile2.game.daum.net") &&
-    isValidationMode,
+  match: (url) => isKakaoPoeHomeUrl(url) && isValidationMode,
   timeoutMs: -1, // No timeout for background validation
   triggeredBy: ["ACCOUNT_VALIDATION"],
   execute: async () => {
@@ -429,15 +453,14 @@ const DaumGameLoginValidationHandler: PageHandler = {
 
 /**
  * POE2 Main Page Handler
- * Matches: pathofexile2.game.daum.net
+ * Matches Kakao PoE2 homepage candidates during service transition.
  * Handles Intro Modal & Game Start Button
  */
 const Poe2MainHandler: PageHandler = {
   name: "Poe2MainHandler",
   description: "POE2 Homepage - Intro Modal & Game Start",
   match: (url) =>
-    url.hostname === "pathofexile2.game.daum.net" &&
-    url.hash.includes("autoStart"),
+    isKakaoPoeHomeUrl(url, "POE2") && url.hash.includes("autoStart"),
   triggeredBy: ["GAME_START_POE2"],
   execute: async () => {
     logger.log(`[Handler] Executing ${Poe2MainHandler.name}`);
@@ -481,18 +504,22 @@ const Poe2MainHandler: PageHandler = {
     };
 
     // 2. Observer for Button Interactivity
-    observeAndInteract((obs) => {
-      // Try handling modal first in every mutation cycle if it exists
-      handleIntroModal().catch(logger.error);
+    observeAndInteract(
+      (obs) => {
+        // Try handling modal first in every mutation cycle if it exists
+        handleIntroModal().catch(logger.error);
 
-      const startBtn = document.querySelector(SELECTORS.POE2.BTN_GAME_START);
-      if (safeClick(startBtn as HTMLElement)) {
-        logger.log("[Poe2MainHandler] Clicked POE2 Main Start Button");
-        if (obs) obs.disconnect();
-        return true;
-      }
-      return false;
-    });
+        const startBtn = document.querySelector(SELECTORS.POE2.BTN_GAME_START);
+        if (safeClick(startBtn as HTMLElement)) {
+          logger.log("[Poe2MainHandler] Clicked POE2 Main Start Button");
+          if (obs) obs.disconnect();
+          return true;
+        }
+        return false;
+      },
+      10000,
+      () => requestStartUrlFallback(Poe2MainHandler.name),
+    );
   },
 };
 
@@ -501,7 +528,7 @@ const LauncherCheckHandler: PageHandler = {
   description: "Launcher Init Page (Login Required Check)",
   match: (url) => {
     return (
-      url.hostname === "pubsvc.game.daum.net" &&
+      isKakaoLauncherUrl(url) &&
       (url.pathname.includes("/gamestart/poe.html") ||
         url.pathname.includes("/gamestart/poe2.html"))
     );
@@ -866,7 +893,7 @@ const KakaoAuthHandler: PageHandler = {
 const SecurityCenterHandler: PageHandler = {
   name: "SecurityCenterHandler",
   description: "Security Center / Designated PC",
-  match: (url) => url.hostname === "security-center.game.daum.net",
+  match: (url) => isKakaoSecurityCenterUrl(url),
   timeoutMs: -1,
   triggeredBy: ["GAME_START_POE1", "GAME_START_POE2"],
   execute: (context) => {
@@ -986,8 +1013,7 @@ const LauncherCompletionHandler: PageHandler = {
   name: "LauncherCompletionHandler",
   description: "Launcher Completion / Game Launch Confirmed",
   match: (url) =>
-    url.hostname === "pubsvc.game.daum.net" &&
-    url.pathname.includes("/completed.html"),
+    isKakaoLauncherUrl(url) && url.pathname.includes("/completed.html"),
   triggeredBy: ["GAME_START_POE1", "GAME_START_POE2"],
   execute: () => {
     logger.log(`[Handler] Executing ${LauncherCompletionHandler.name}`);
@@ -1010,7 +1036,7 @@ const DaumStarterPopupHandler: PageHandler = {
   name: "DaumStarterPopupHandler",
   description: "Daum Starter Install Popup",
   match: (url) =>
-    url.hostname === "security-center.game.daum.net" &&
+    isKakaoSecurityCenterUrl(url) &&
     url.pathname.includes("/popup/install_daumstarter"),
   visibility: "user-required",
   timeoutMs: -1, // Installation takes time
@@ -1027,8 +1053,7 @@ const DaumMemberCertHandler: PageHandler = {
   name: "DaumMemberCertHandler",
   description: "Daum Member Certification",
   match: (url) =>
-    url.hostname === "member.game.daum.net" &&
-    url.pathname.includes("/cert/kakao/init"),
+    isKakaoMemberUrl(url) && url.pathname.includes("/cert/kakao/init"),
   visibility: "user-required",
   timeoutMs: -1, // Certification needs user action
   triggeredBy: ["GAME_START_POE1", "GAME_START_POE2"],
@@ -1095,10 +1120,7 @@ const KakaoLoginValidationHandler: PageHandler = {
 const KakaoManualValidationHandler: PageHandler = {
   name: "KakaoManualValidationHandler",
   description: "Manual Login Success Detector",
-  match: (url) =>
-    (url.hostname === "poe.game.daum.net" ||
-      url.hostname === "pathofexile2.game.daum.net") &&
-    !url.hash.includes("autoStart"),
+  match: (url) => isKakaoPoeHomeUrl(url) && !url.hash.includes("autoStart"),
   triggeredBy: ["ACCOUNT_MANUAL_LOGIN"],
   execute: (ctx) => {
     logger.log(

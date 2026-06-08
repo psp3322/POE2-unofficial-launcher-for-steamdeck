@@ -1,3 +1,5 @@
+import { isKakaoGameLoginRedirectUrl } from "../../shared/kakao-service-transition";
+
 export const USER_REQUIRED_PAGE_REVEAL_DELAY_MS = 1200;
 export const UNHANDLED_PAGE_REVEAL_DELAY_MS = 1200;
 export const DAUM_GAME_LOGIN_REDIRECT_GRACE_MS = 8000;
@@ -115,11 +117,7 @@ export function shouldRevealUnhandledAutomatedPage(
 }
 
 export function isDaumGameLoginRedirect(url: URL): boolean {
-  return (
-    (url.hostname === "poe.game.daum.net" ||
-      url.hostname === "pathofexile2.game.daum.net") &&
-    url.pathname.includes("/login")
-  );
+  return isKakaoGameLoginRedirectUrl(url);
 }
 
 export function shouldSignalDaumGameLoginRequired(
