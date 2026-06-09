@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach, Mock } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, Mock } from "vitest";
 
+import { NEWS_REFRESH_INTERVAL } from "../../shared/news-config";
 import { NewsService } from "../services/NewsService";
 
 // Mock fetch and electron-store
@@ -10,7 +11,9 @@ vi.mock("electron-store", () => {
     default: class {
       data: Record<string, unknown> = {};
       constructor(options: { defaults?: Record<string, unknown> }) {
-        this.data = options.defaults || {};
+        this.data = options.defaults
+          ? JSON.parse(JSON.stringify(options.defaults))
+          : {};
       }
       get(key: string) {
         return this.data[key];
@@ -27,8 +30,51 @@ describe("NewsService", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-07T00:00:00.000Z"));
     service = new NewsService();
   });
+
+  afterEach(() => {
+    service.stop();
+    vi.useRealTimers();
+  });
+
+  const mockForumHtml = (id: string, title: string) => `
+    <table class="forumTable">
+      <tr class="headerRow"><th>Title</th></tr>
+      <tr>
+        <td class="title"><a class="title" href="/forum/view-thread/${id}">${title}</a></td>
+        <td class="postBy"><div class="post_date">, Jan 01, 2024</div></td>
+      </tr>
+    </table>
+  `;
+
+  const mockNewsFetches = () => {
+    (globalThis.fetch as Mock).mockImplementation((url: string) => {
+      if (url.includes("notice/list.json")) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve([
+              {
+                title: "Dev Notice",
+                url: "https://example.com/notice/dev.md",
+                date: "2026-06-07",
+                priority: true,
+              },
+            ]),
+        });
+      }
+
+      const id = url.includes("2212") ? "patch-1" : "notice-1";
+      const title = url.includes("2212") ? "Patch Note" : "Notice";
+      return Promise.resolve({
+        ok: true,
+        text: () => Promise.resolve(mockForumHtml(id, title)),
+      });
+    });
+  };
 
   it("should fetch news list correctly from GGG", async () => {
     const mockHtml = `
@@ -79,5 +125,116 @@ describe("NewsService", () => {
   it("should handle read status correctly", () => {
     service.markAsRead("12345");
     // Just verify no crash
+  });
+
+  it("refreshes due forum news and developer notices on one schedule", async () => {
+    const onUpdated = vi.fn();
+    mockNewsFetches();
+    service.init(onUpdated);
+
+    await service.refreshDue({
+      game: "POE2",
+      service: "GGG",
+      reason: "test",
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(3);
+    expect(onUpdated).toHaveBeenCalledTimes(1);
+    expect(service.getCacheItems("GGG-POE2-notice")[0].title).toBe("Notice");
+    expect(service.getCacheItems("GGG-POE2-patch-notes")[0].title).toBe(
+      "Patch Note",
+    );
+    expect(service.getCacheItems("dev-notice")[0].title).toBe("Dev Notice");
+    expect(service.getLastUpdatedAt("GGG-POE2-notice")).toBe(Date.now());
+    expect(service.getLastUpdatedAt("GGG-POE2-patch-notes")).toBe(Date.now());
+    expect(service.getLastUpdatedAt("dev-notice")).toBe(Date.now());
+
+    (globalThis.fetch as Mock).mockClear();
+    onUpdated.mockClear();
+
+    await service.refreshDue({
+      game: "POE2",
+      service: "GGG",
+      reason: "not-due",
+    });
+
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(onUpdated).not.toHaveBeenCalled();
+
+    vi.setSystemTime(new Date(Date.now() + NEWS_REFRESH_INTERVAL));
+    await service.refreshDue({
+      game: "POE2",
+      service: "GGG",
+      reason: "due-again",
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(3);
+    expect(service.getLastUpdatedAt("GGG-POE2-notice")).toBe(Date.now());
+  });
+
+  it("manually refreshes all news sources before the scheduled interval", async () => {
+    const onUpdated = vi.fn();
+    mockNewsFetches();
+    service.init(onUpdated);
+
+    const changed = await service.refreshAllNews();
+
+    expect(changed).toBe(true);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(9);
+    expect(onUpdated).toHaveBeenCalledTimes(1);
+    expect(service.getCacheItems("GGG-POE2-notice")[0].title).toBe("Notice");
+    expect(service.getCacheItems("GGG-POE2-patch-notes")[0].title).toBe(
+      "Patch Note",
+    );
+    expect(service.getCacheItems("dev-notice")[0].title).toBe("Dev Notice");
+    expect(service.getLastUpdatedAt("GGG-POE2-notice")).toBe(Date.now());
+    expect(service.getLastUpdatedAt("GGG-POE2-patch-notes")).toBe(Date.now());
+    expect(service.getLastUpdatedAt("Kakao Games-POE1-patch-notes")).toBe(
+      Date.now(),
+    );
+    expect(service.getLastUpdatedAt("dev-notice")).toBe(Date.now());
+
+    (globalThis.fetch as Mock).mockClear();
+    onUpdated.mockClear();
+    vi.setSystemTime(new Date(Date.now() + 1000));
+
+    const unchanged = await service.refreshAllNews();
+
+    expect(unchanged).toBe(false);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(9);
+    expect(onUpdated).toHaveBeenCalledTimes(1);
+    expect(service.getLastUpdatedAt("GGG-POE2-notice")).toBe(Date.now());
+    expect(service.getLastUpdatedAt("GGG-POE2-patch-notes")).toBe(Date.now());
+    expect(service.getLastUpdatedAt("Kakao Games-POE1-patch-notes")).toBe(
+      Date.now(),
+    );
+    expect(service.getLastUpdatedAt("dev-notice")).toBe(Date.now());
+  });
+
+  it("defers due refresh while inactive and runs it when focused again", async () => {
+    const onUpdated = vi.fn();
+    mockNewsFetches();
+    service.init(onUpdated);
+
+    service.setActive(false);
+    const refreshedWhileInactive = await service.refreshDue({
+      game: "POE2",
+      service: "GGG",
+      reason: "timer",
+    });
+
+    expect(refreshedWhileInactive).toBe(false);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+
+    service.setActive(true, {
+      game: "POE2",
+      service: "GGG",
+      reason: "focus",
+    });
+
+    await vi.waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledTimes(3);
+      expect(onUpdated).toHaveBeenCalledTimes(1);
+    });
   });
 });

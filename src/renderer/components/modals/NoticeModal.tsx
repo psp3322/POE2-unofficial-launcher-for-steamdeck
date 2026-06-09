@@ -1,9 +1,13 @@
-import DOMPurify from "dompurify";
-import { marked } from "marked";
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState } from "react";
 import "github-markdown-css/github-markdown-dark.css";
 
 import { NewsItem } from "../../../shared/types";
+import {
+  getNewsContentClassName,
+  getNewsTypeLabel,
+  renderNewsContentHtml,
+  shouldShowNewsBrowserButton,
+} from "../news/news-content";
 import "./NoticeModal.css";
 
 interface NoticeModalProps {
@@ -16,76 +20,90 @@ const NoticeModal: React.FC<NoticeModalProps> = ({ item, onClose }) => {
   const [content, setContent] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Reset visibility/content when the item prop disappears.
-  // Done in render phase so the effect body avoids a cascading setState.
-  const [prevItemId, setPrevItemId] = useState<string | null>(item?.id ?? null);
-  if (!item && prevItemId !== null) {
-    setPrevItemId(null);
-    setIsVisible(false);
-    setContent(null);
-  } else if (item && item.id !== prevItemId) {
-    setPrevItemId(item.id);
-  }
-
-  const loadContent = useCallback(async () => {
-    if (!item) return;
-    setIsLoading(true);
-    try {
-      // Try cache first
-      const cached = await window.electronAPI.getNewsContentCache(item.id);
-      if (cached) {
-        setContent(cached);
-      }
-
-      // Fetch live
-      const result = await window.electronAPI.getNewsContent(
-        item.id,
-        item.link,
-      );
-      setContent(result);
-    } catch (error) {
-      console.error("Failed to load notice content:", error);
-      if (!content) {
-        setContent("내용을 불러오는 데 실패했습니다.");
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  }, [item, content]);
-
   useEffect(() => {
-    // Configure marked to open links in new tab
-    marked.use({
-      gfm: true,
-      breaks: true,
-      renderer: {
-        link(token) {
-          const { href, title, text } = token;
-          const isExternal = href.startsWith("http");
-          const target = isExternal
-            ? ' target="_blank" rel="noopener noreferrer"'
-            : "";
-          const titleAttr = title ? ` title="${title}"` : "";
-          return `<a href="${href}"${target}${titleAttr}>${text}</a>`;
-        },
-      },
-    });
+    let isCancelled = false;
 
-    if (item) {
-      // Fade-in animation
-      const timer = setTimeout(() => setIsVisible(true), 10);
+    if (!item) {
+      void Promise.resolve().then(() => {
+        if (isCancelled) return;
+        setIsVisible(false);
+        setContent(null);
+        setIsLoading(false);
+      });
 
-      // Load content (deferred via microtask so the synchronous setIsLoading inside
-      // loadContent doesn't trigger a cascading render from this effect).
-      void Promise.resolve().then(loadContent);
-
-      return () => clearTimeout(timer);
+      return () => {
+        isCancelled = true;
+      };
     }
-  }, [item, loadContent]);
+
+    let hasLoadedContent = false;
+
+    const timer = setTimeout(() => {
+      if (!isCancelled) {
+        setIsVisible(true);
+      }
+    }, 10);
+
+    const loadContent = async () => {
+      setContent(null);
+      setIsLoading(true);
+
+      try {
+        const cached = await window.electronAPI.getNewsContentCache(item.id);
+        if (isCancelled) return;
+
+        if (cached) {
+          hasLoadedContent = true;
+          setContent(cached);
+        }
+
+        const result = await window.electronAPI.getNewsContent(
+          item.id,
+          item.link,
+        );
+        if (isCancelled) return;
+
+        hasLoadedContent = true;
+        setContent(result);
+      } catch (error) {
+        console.error("Failed to load notice content:", error);
+        if (!isCancelled && !hasLoadedContent) {
+          setContent("내용을 불러오는 데 실패했습니다.");
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    void Promise.resolve().then(loadContent);
+
+    return () => {
+      isCancelled = true;
+      clearTimeout(timer);
+    };
+  }, [item]);
 
   const handleClose = () => {
     setIsVisible(false);
     setTimeout(onClose, 300); // Wait for fade-out
+  };
+
+  const handleContentClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    const anchor = target.closest("a");
+    if (anchor && anchor.href) {
+      event.preventDefault();
+      window.open(anchor.href, "_blank");
+    }
+  };
+
+  const handleOpenBrowser = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    if (item) {
+      window.open(item.link, "_blank");
+    }
   };
 
   if (!item && !isVisible) return null;
@@ -99,15 +117,29 @@ const NoticeModal: React.FC<NoticeModalProps> = ({ item, onClose }) => {
         {/* Header */}
         <div className="notice-header">
           <div className="notice-header-title">
-            <div className="notice-type-badge">개발자 공지사항</div>
+            {item && (
+              <div className="notice-type-badge">{getNewsTypeLabel(item)}</div>
+            )}
             <h2>{item?.title}</h2>
             <div className="notice-meta">
               <span className="notice-date">{item?.date}</span>
             </div>
           </div>
-          <button onClick={handleClose} className="notice-close-x">
-            &times;
-          </button>
+          <div className="notice-header-actions">
+            <button onClick={handleClose} className="notice-close-x">
+              &times;
+            </button>
+            {item && shouldShowNewsBrowserButton(item) && (
+              <button
+                className="notice-browser-btn"
+                onClick={handleOpenBrowser}
+                type="button"
+              >
+                <span className="material-symbols-outlined">language</span>
+                브라우저에서 보기
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Content Area */}
@@ -115,15 +147,15 @@ const NoticeModal: React.FC<NoticeModalProps> = ({ item, onClose }) => {
           {isLoading && !content ? (
             <div className="notice-loading">내용을 불러오는 중...</div>
           ) : (
-            <div className="markdown-body notice-markdown-body">
+            <div
+              className={item ? getNewsContentClassName(item, "modal") : ""}
+              onClick={handleContentClick}
+            >
               <div
                 dangerouslySetInnerHTML={{
-                  __html: DOMPurify.sanitize(
-                    marked.parse(content || "") as string,
-                    {
-                      ADD_ATTR: ["target", "rel"],
-                    },
-                  ),
+                  __html: item
+                    ? renderNewsContentHtml(item, content || "")
+                    : "",
                 }}
               />
             </div>

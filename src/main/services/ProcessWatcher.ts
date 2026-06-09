@@ -3,15 +3,28 @@ import { SUPPORTED_PROCESS_NAMES } from "../events/handlers/GameProcessStatusHan
 import {
   AppContext,
   EventType,
+  GameStatusChangeEvent,
   IService,
   PatchUiTitleTickEvent,
   ProcessEvent,
+  UIEvent,
 } from "../events/types";
+import {
+  getAllGameStatuses,
+  isLaunchBlockingStatus,
+  isProcessExpectedStatus,
+  updateGameStatusCache,
+} from "../state/GameStatusStore";
+import { processMatchesGameContext } from "../utils/game-process-context";
 import { Logger } from "../utils/logger";
 import { PowerShellManager } from "../utils/powershell";
 import * as processUtils from "../utils/process";
 
+import type { AppConfig } from "../../shared/types";
+
 const TARGET_PROCESSES = SUPPORTED_PROCESS_NAMES;
+const SUSPEND_DELAY_MS = 60 * 1000;
+const PROCESS_EXPECTED_GRACE_MS = 30 * 1000;
 
 export class ProcessWatcher implements IService {
   public readonly id = "ProcessWatcher";
@@ -28,9 +41,15 @@ export class ProcessWatcher implements IService {
    */
   private activePids: Map<
     number,
-    { name: string; path: string; gameId?: string; serviceId?: string }
+    {
+      name: string;
+      path: string;
+      gameId?: AppConfig["activeGame"];
+      serviceId?: AppConfig["serviceChannel"];
+    }
   > = new Map();
-  private lastKakaoLauncher: string | null = null;
+  private lastKakaoLauncher: AppConfig["activeGame"] | null = null;
+  private launchIntentHandlerId: string | null = null;
   private suspendTimer: NodeJS.Timeout | null = null;
   private isChecking = false;
   private titleWatchTimer: NodeJS.Timeout | null = null;
@@ -38,10 +57,15 @@ export class ProcessWatcher implements IService {
   constructor(private context: AppContext) {}
 
   public async init(): Promise<void> {
+    this.registerLaunchIntentListener();
     this.startWatching();
   }
 
   public async stop(): Promise<void> {
+    if (this.launchIntentHandlerId) {
+      eventBus.off(EventType.UI_GAME_START_CLICK, this.launchIntentHandlerId);
+      this.launchIntentHandlerId = null;
+    }
     this.stopWatching();
   }
 
@@ -73,11 +97,26 @@ export class ProcessWatcher implements IService {
    */
   public isProcessRunning(
     name: string,
-    criteria?: (info: { pid: number; path: string }) => boolean,
+    criteria?: (info: {
+      pid: number;
+      name: string;
+      path: string;
+      gameId?: AppConfig["activeGame"];
+      serviceId?: AppConfig["serviceChannel"];
+    }) => boolean,
   ): boolean {
     for (const [pid, info] of this.activePids.entries()) {
       if (info.name.toLowerCase() === name.toLowerCase()) {
-        if (!criteria || criteria({ pid, path: info.path })) {
+        if (
+          !criteria ||
+          criteria({
+            pid,
+            name: info.name,
+            path: info.path,
+            gameId: info.gameId,
+            serviceId: info.serviceId,
+          })
+        ) {
           return true;
         }
       }
@@ -93,6 +132,48 @@ export class ProcessWatcher implements IService {
     return this.context.getConfig("processWatchMode") !== "always-on";
   }
 
+  private hasActiveSession(): boolean {
+    if (this.activePids.size > 0) {
+      return true;
+    }
+
+    return getAllGameStatuses().some((statusState) =>
+      isLaunchBlockingStatus(statusState.status),
+    );
+  }
+
+  private queueSuspensionCheck() {
+    if (this.suspendTimer) clearTimeout(this.suspendTimer);
+    this.suspendTimer = setTimeout(() => {
+      void this.trySuspendAfterInactivity();
+    }, SUSPEND_DELAY_MS);
+  }
+
+  private async trySuspendAfterInactivity() {
+    this.suspendTimer = null;
+
+    if (this.isChecking) {
+      this.logger.log(
+        "Process check is still running. Delaying watcher suspension.",
+      );
+      this.queueSuspensionCheck();
+      return;
+    }
+
+    await this.runCheck();
+
+    if (this.hasActiveSession()) {
+      this.logger.log(
+        "Active game session detected. Delaying watcher suspension.",
+      );
+      this.queueSuspensionCheck();
+      return;
+    }
+
+    this.logger.log("Inactivity detected (1m). Suspending to save resources.");
+    this.stopWatching();
+  }
+
   public scheduleSuspension() {
     // If optimization is disabled, we never suspend the watcher.
     if (!this.isOptimizationEnabled()) {
@@ -100,14 +181,7 @@ export class ProcessWatcher implements IService {
     }
 
     // Start 1-minute timer to suspend watcher
-    if (this.suspendTimer) clearTimeout(this.suspendTimer);
-    this.suspendTimer = setTimeout(() => {
-      this.suspendTimer = null; // Mark as suspended
-      this.logger.log(
-        "Inactivity detected (1m). Suspending to save resources.",
-      );
-      this.stopWatching();
-    }, 60 * 1000);
+    this.queueSuspensionCheck();
   }
 
   public cancelSuspension() {
@@ -151,11 +225,7 @@ export class ProcessWatcher implements IService {
     const isDebugFocused = this.context.debugWindow?.isFocused();
 
     if (!isMainFocused && !isDebugFocused) {
-      this.suspendTimer = setTimeout(() => {
-        this.suspendTimer = null;
-        this.logger.log("Wake-up period ended. Suspending again.");
-        this.stopWatching();
-      }, 60 * 1000);
+      this.queueSuspensionCheck();
     }
   }
 
@@ -189,6 +259,8 @@ export class ProcessWatcher implements IService {
             name: p.name,
             path: p.path,
             pid: p.pid,
+            gameId: identity.gameId,
+            serviceId: identity.serviceId,
           });
         }
       }
@@ -210,16 +282,95 @@ export class ProcessWatcher implements IService {
             name: info.name,
             path: info.path,
             pid: pid, // Using the key from valid iteration
+            gameId: info.gameId,
+            serviceId: info.serviceId,
           });
 
           this.activePids.delete(pid);
         }
       }
+
+      this.reconcileStaleActiveStatuses();
     } catch (e) {
       this.logger.error(`Error during runCheck:`, e);
     } finally {
       this.isChecking = false;
     }
+  }
+
+  private reconcileStaleActiveStatuses() {
+    const now = Date.now();
+
+    for (const statusState of getAllGameStatuses()) {
+      if (!isProcessExpectedStatus(statusState.status)) {
+        continue;
+      }
+
+      const elapsed = now - (statusState.timestamp ?? 0);
+      if (elapsed < PROCESS_EXPECTED_GRACE_MS) {
+        continue;
+      }
+
+      if (this.hasMatchingProcess(statusState)) {
+        continue;
+      }
+
+      const payload = updateGameStatusCache({
+        gameId: statusState.gameId,
+        serviceId: statusState.serviceId,
+        status: "idle",
+      });
+
+      this.logger.log(
+        `[ProcessWatcher] Reconciled stale ${statusState.status} status to idle: ${statusState.gameId} / ${statusState.serviceId}`,
+      );
+
+      eventBus.emit<GameStatusChangeEvent>(
+        EventType.GAME_STATUS_CHANGE,
+        this.context,
+        payload,
+      );
+    }
+  }
+
+  private hasMatchingProcess(statusState: {
+    gameId: AppConfig["activeGame"];
+    serviceId: AppConfig["serviceChannel"];
+  }): boolean {
+    return Array.from(this.activePids.entries()).some(([pid, processInfo]) =>
+      processMatchesGameContext(
+        {
+          pid,
+          name: processInfo.name,
+          path: processInfo.path,
+          gameId: processInfo.gameId,
+          serviceId: processInfo.serviceId,
+        },
+        {
+          gameId: statusState.gameId,
+          serviceId: statusState.serviceId,
+        },
+      ),
+    );
+  }
+
+  private registerLaunchIntentListener() {
+    if (this.launchIntentHandlerId) return;
+
+    this.launchIntentHandlerId = eventBus.on<UIEvent>(
+      EventType.UI_GAME_START_CLICK,
+      (event) => {
+        if (event.payload?.serviceId !== "Kakao Games") {
+          return;
+        }
+
+        this.lastKakaoLauncher = event.payload.gameId;
+        this.logger.log(
+          `[ProcessWatcher] Recorded Kakao launch intent: ${event.payload.gameId}`,
+        );
+        this.wakeUp("game start click");
+      },
+    );
   }
 
   private ensureTitleMonitoring(shouldRun: boolean) {
@@ -279,7 +430,10 @@ export class ProcessWatcher implements IService {
   private inferProcessIdentity(
     name: string,
     path: string,
-  ): { gameId?: string; serviceId?: string } {
+  ): {
+    gameId?: AppConfig["activeGame"];
+    serviceId?: AppConfig["serviceChannel"];
+  } {
     const lowerName = name.toLowerCase();
     const lowerPath = path?.toLowerCase() || "";
 

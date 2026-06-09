@@ -14,6 +14,7 @@ import {
   PatchReservation,
   RemoteFontItem,
   ImportSelection,
+  GameLaunchContext,
 } from "../shared/types";
 
 const logger = new PreloadLogger({ type: "PRELOAD", typeColor: "#8BE9FD" });
@@ -22,9 +23,9 @@ const logger = new PreloadLogger({ type: "PRELOAD", typeColor: "#8BE9FD" });
 // Used by React Renderer (App.tsx)
 
 contextBridge.exposeInMainWorld("electronAPI", {
-  triggerGameStart: () => {
+  triggerGameStart: (context: GameLaunchContext) => {
     logger.log("[Preload] Sending trigger-game-start to Main Process");
-    ipcRenderer.send("trigger-game-start");
+    ipcRenderer.send("trigger-game-start", context);
   },
   minimizeWindow: () => ipcRenderer.send("window-minimize"),
   closeWindow: () => ipcRenderer.send("window-close"),
@@ -57,6 +58,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.on("debug-log", handler);
     return () => ipcRenderer.off("debug-log", handler);
   },
+  onExceptionLog: (callback: (log: DebugLogEvent["payload"]) => void) => {
+    const handler = (_event: IpcRendererEvent, log: DebugLogEvent["payload"]) =>
+      callback(log);
+    ipcRenderer.on("app:exception-log", handler);
+    return () => ipcRenderer.off("app:exception-log", handler);
+  },
   saveReport: (files: { name: string; content: string }[]) =>
     ipcRenderer.invoke("report:save", files),
   getNews: (
@@ -73,6 +80,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("news:get-content", id, link),
   getNewsContentCache: (id: string) =>
     ipcRenderer.invoke("news:get-content-cache", id),
+  refreshAllNews: () => ipcRenderer.invoke("news:refresh-all"),
+  getNewsLastUpdatedAt: (
+    game: AppConfig["activeGame"],
+    service: AppConfig["serviceChannel"],
+    category: NewsCategory,
+  ) => ipcRenderer.invoke("news:get-last-updated-at", game, service, category),
   markNewsAsRead: (id: string) => ipcRenderer.invoke("news:mark-as-read", id),
   markMultipleNewsAsRead: (ids: string[]) =>
     ipcRenderer.invoke("news:mark-multiple-as-read", ids),

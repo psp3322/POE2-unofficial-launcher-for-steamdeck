@@ -1,4 +1,6 @@
-import { AppConfig, GameStatusState } from "../../../shared/types";
+import { AppConfig } from "../../../shared/types";
+import { updateGameStatusCache } from "../../state/GameStatusStore";
+import { processMatchesGameContext } from "../../utils/game-process-context";
 import { logger } from "../../utils/logger";
 import { eventBus } from "../EventBus";
 import {
@@ -22,9 +24,6 @@ interface ProcessStrategy {
   onStop?: ProcessCallback;
 }
 
-// --- State Cache ---
-export const globalGameStatusCache: Record<string, GameStatusState> = {};
-
 // --- Helper: Status Emitters ---
 
 const emitGameStatus = (
@@ -33,10 +32,7 @@ const emitGameStatus = (
   serviceId: AppConfig["serviceChannel"],
   status: "running" | "idle" | "stopping",
 ) => {
-  const key = `${gameId}_${serviceId}`;
-  const payload: GameStatusState = { gameId, serviceId, status };
-
-  globalGameStatusCache[key] = payload;
+  const payload = updateGameStatusCache({ gameId, serviceId, status });
   eventBus.emit<GameStatusChangeEvent>(
     EventType.GAME_STATUS_CHANGE,
     context,
@@ -44,23 +40,61 @@ const emitGameStatus = (
   );
 };
 
-export const getGlobalGameStatus = (
-  gameId: string,
-  serviceId: string,
-): GameStatusState => {
-  return (
-    globalGameStatusCache[`${gameId}_${serviceId}`] || {
-      gameId,
-      serviceId,
-      status: "idle",
-    }
-  );
-};
-
 // ...
 
 // --- State for Inference ---
 let lastDetectedKakaoLauncher: "POE1" | "POE2" | null = null;
+
+const getKakaoGameId = (event: ProcessEvent): AppConfig["activeGame"] => {
+  return event.payload.gameId ?? lastDetectedKakaoLauncher ?? "POE2";
+};
+
+const inferGggGameId = (
+  event: ProcessEvent,
+): AppConfig["activeGame"] | null => {
+  if (event.payload.gameId) {
+    return event.payload.gameId;
+  }
+
+  const lowerPath = event.payload.path?.toLowerCase() || "";
+
+  if (lowerPath.includes("path of exile 2")) {
+    return "POE2";
+  }
+
+  if (lowerPath.includes("path of exile")) {
+    return "POE1";
+  }
+
+  return null;
+};
+
+const isProcessRunningForContext = (
+  context: AppContext,
+  processName: string,
+  target: {
+    gameId: AppConfig["activeGame"];
+    serviceId: AppConfig["serviceChannel"];
+  },
+  excludePid?: number,
+) => {
+  return context.processWatcher?.isProcessRunning?.(
+    processName,
+    (info: {
+      pid: number;
+      name: string;
+      path: string;
+      gameId?: AppConfig["activeGame"];
+      serviceId?: AppConfig["serviceChannel"];
+    }) => {
+      if (excludePid !== undefined && info.pid === excludePid) {
+        return false;
+      }
+
+      return processMatchesGameContext(info, target);
+    },
+  );
+};
 
 const PROCESS_STRATEGIES: ProcessStrategy[] = [
   // 1. Kakao PoE2 Launcher
@@ -75,8 +109,11 @@ const PROCESS_STRATEGIES: ProcessStrategy[] = [
     },
     onStop: (event, context) => {
       // If Game Client is running, ignore Launcher stop
-      const isGameRunning =
-        context.processWatcher?.isProcessRunning?.("PathOfExile_KG.exe");
+      const isGameRunning = isProcessRunningForContext(
+        context,
+        "PathOfExile_KG.exe",
+        { gameId: "POE2", serviceId: "Kakao Games" },
+      );
 
       if (isGameRunning) {
         logger.log(
@@ -105,8 +142,11 @@ const PROCESS_STRATEGIES: ProcessStrategy[] = [
     },
     onStop: (event, context) => {
       // If Game Client is running, ignore Launcher stop
-      const isGameRunning =
-        context.processWatcher?.isProcessRunning?.("PathOfExile_KG.exe");
+      const isGameRunning = isProcessRunningForContext(
+        context,
+        "PathOfExile_KG.exe",
+        { gameId: "POE1", serviceId: "Kakao Games" },
+      );
 
       if (isGameRunning) {
         logger.log(
@@ -127,9 +167,10 @@ const PROCESS_STRATEGIES: ProcessStrategy[] = [
   {
     processName: "PathOfExile_KG.exe",
     onStart: (event, context) => {
-      // Use the last seen launcher to determine Game ID
-      // because obtaining path requires Admin rights which we might not have.
-      const inferredGameId = lastDetectedKakaoLauncher || "POE2"; // Default to POE2 if unknown (Safest bet for now)
+      // Prefer ProcessWatcher context. Fall back to the last launch intent only
+      // when the shared Kakao executable has no path or identity metadata.
+      const inferredGameId = getKakaoGameId(event);
+      lastDetectedKakaoLauncher = inferredGameId;
 
       logger.log(
         `[GameProcess] Detected PathOfExile_KG.exe. Inferred Game: ${inferredGameId} (Last Launcher: ${lastDetectedKakaoLauncher})`,
@@ -138,15 +179,18 @@ const PROCESS_STRATEGIES: ProcessStrategy[] = [
       emitGameStatus(context, inferredGameId, "Kakao Games", "running");
     },
     onStop: (event, context) => {
-      const inferredGameId = lastDetectedKakaoLauncher || "POE2";
+      const inferredGameId = getKakaoGameId(event);
+      const targetContext = {
+        gameId: inferredGameId,
+        serviceId: "Kakao Games" as const,
+      };
 
-      // [Fix] Check if any instance of PathOfExile_KG.exe is still running
-      // This handles the case where an old process terminates while a new one has started
-      // MUST exclude the PID of the process that just stopped.
       const stoppedPid = event.payload.pid;
-      const isGameRunning = context.processWatcher?.isProcessRunning?.(
+      const isGameRunning = isProcessRunningForContext(
+        context,
         "PathOfExile_KG.exe",
-        (info: { pid: number; path: string }) => info.pid !== stoppedPid,
+        targetContext,
+        stoppedPid,
       );
 
       if (isGameRunning) {
@@ -172,31 +216,30 @@ const PROCESS_STRATEGIES: ProcessStrategy[] = [
   {
     processName: "PathOfExile.exe",
     onStart: (event, context) => {
-      const { path } = event.payload;
-      const lowerPath = path?.toLowerCase() || "";
-
-      let gameId: AppConfig["activeGame"];
-
-      if (lowerPath.includes("path of exile 2")) {
-        gameId = "POE2";
-      } else if (lowerPath.includes("path of exile")) {
-        gameId = "POE1";
-      } else {
+      const gameId = inferGggGameId(event);
+      if (!gameId) {
         return;
       }
 
       emitGameStatus(context, gameId, "GGG", "running");
     },
     onStop: (event, context) => {
-      const { path } = event.payload;
-      const lowerPath = path?.toLowerCase() || "";
+      const gameId = inferGggGameId(event);
+      if (!gameId) {
+        return;
+      }
 
-      let gameId: AppConfig["activeGame"];
-      if (lowerPath.includes("path of exile 2")) {
-        gameId = "POE2";
-      } else if (lowerPath.includes("path of exile")) {
-        gameId = "POE1";
-      } else {
+      const isGameRunning = isProcessRunningForContext(
+        context,
+        "PathOfExile.exe",
+        { gameId, serviceId: "GGG" },
+        event.payload.pid,
+      );
+
+      if (isGameRunning) {
+        logger.log(
+          `[GameProcess] PathOfExile.exe stopped, but another ${gameId} GGG instance is running. Status maintained.`,
+        );
         return;
       }
 

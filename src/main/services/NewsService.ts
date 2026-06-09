@@ -19,10 +19,57 @@ import {
 } from "../../shared/types";
 import { Logger } from "../utils/logger";
 
+type ForumNewsCategory = Extract<NewsCategory, "notice" | "patch-notes">;
+
+type NewsRefreshContext = {
+  game: AppConfig["activeGame"];
+  service: AppConfig["serviceChannel"];
+  reason?: string;
+  force?: boolean;
+};
+
+type NewsRefreshSource =
+  | {
+      kind: "forum";
+      key: string;
+      game: AppConfig["activeGame"];
+      service: AppConfig["serviceChannel"];
+      category: ForumNewsCategory;
+    }
+  | {
+      kind: "dev";
+      key: "dev-notice";
+    };
+
+type FetchResult = {
+  items: NewsItem[];
+  changed: boolean;
+};
+
+const DEV_NOTICE_KEY = "dev-notice";
+const FORUM_REFRESH_CATEGORIES: ForumNewsCategory[] = ["notice", "patch-notes"];
+const FORUM_REFRESH_COMBINATIONS: Array<{
+  game: AppConfig["activeGame"];
+  service: AppConfig["serviceChannel"];
+}> = [
+  { game: "POE1", service: "GGG" },
+  { game: "POE2", service: "GGG" },
+  { game: "POE1", service: "Kakao Games" },
+  { game: "POE2", service: "Kakao Games" },
+];
+
+const isForumNewsCategory = (
+  category: NewsCategory,
+): category is ForumNewsCategory => {
+  return category === "notice" || category === "patch-notes";
+};
+
 export class NewsService {
   private store: Store<NewsServiceState>;
   private refreshTimer: NodeJS.Timeout | null = null;
   private onUpdated: (() => void) | null = null;
+  private isActive = true;
+  private hasPendingRefresh = false;
   private lastConfig: {
     game: AppConfig["activeGame"];
     service: AppConfig["serviceChannel"];
@@ -39,36 +86,210 @@ export class NewsService {
 
   init(onUpdated: () => void) {
     this.onUpdated = onUpdated;
-    // Start periodic refresh
     if (this.refreshTimer) clearInterval(this.refreshTimer);
     this.refreshTimer = setInterval(
-      () => this.refreshAll(),
+      () => void this.refreshDue({ reason: "timer" }),
       NEWS_REFRESH_INTERVAL,
     );
   }
 
-  private async refreshAll() {
-    if (!this.lastConfig) return;
-    this.logger.log("Background refresh started...");
-    await Promise.all([
-      this.fetchNewsList(
-        this.lastConfig.game,
-        this.lastConfig.service,
-        "notice",
-      ),
-      this.fetchNewsList(
-        this.lastConfig.game,
-        this.lastConfig.service,
-        "patch-notes",
-      ),
-      this.fetchDevNotices().then((items) => {
-        const allItems = this.store.get("items");
-        allItems["dev-notice"] = items;
-        this.store.set("items", allItems);
-      }),
-    ]);
+  stop() {
+    if (this.refreshTimer) {
+      clearInterval(this.refreshTimer);
+      this.refreshTimer = null;
+    }
+  }
 
-    if (this.onUpdated) this.onUpdated();
+  setActive(isActive: boolean, context?: NewsRefreshContext) {
+    this.isActive = isActive;
+
+    if (!isActive) {
+      this.hasPendingRefresh = true;
+      this.logger.log("News refresh suspended while launcher is inactive.");
+      return;
+    }
+
+    const shouldRefreshOnResume = this.hasPendingRefresh || Boolean(context);
+    this.hasPendingRefresh = false;
+
+    if (shouldRefreshOnResume) {
+      void this.refreshDue({
+        ...context,
+        reason: context?.reason ?? "resume",
+      });
+    }
+  }
+
+  async refreshDue(context?: Partial<NewsRefreshContext>): Promise<boolean> {
+    const sources = this.getRefreshSources(context);
+    const dueSources = sources.filter((source) =>
+      context?.force ? true : this.isRefreshDue(source.key),
+    );
+
+    if (dueSources.length === 0) {
+      this.hasPendingRefresh = false;
+      return false;
+    }
+
+    if (!this.isActive && !context?.force) {
+      this.hasPendingRefresh = true;
+      this.logger.log(
+        `News refresh deferred (${context?.reason ?? "timer"}): launcher inactive.`,
+      );
+      return false;
+    }
+
+    this.logger.log(
+      `News refresh started (${context?.reason ?? "manual"}): ${dueSources
+        .map((source) => source.key)
+        .join(", ")}`,
+    );
+
+    const results = await Promise.all(
+      dueSources.map((source) => this.refreshSource(source)),
+    );
+    const changed = results.some((result) => result.changed);
+
+    this.hasPendingRefresh = false;
+    if (changed) {
+      this.emitUpdated();
+    }
+
+    return changed;
+  }
+
+  async refreshAllNews(): Promise<boolean> {
+    const sources = this.getAllRefreshSources();
+
+    this.logger.log(
+      `News refresh started (manual): ${sources
+        .map((source) => source.key)
+        .join(", ")}`,
+    );
+
+    const results = await Promise.all(
+      sources.map((source) => this.refreshSource(source)),
+    );
+    const changed = results.some((result) => result.changed);
+    this.hasPendingRefresh = false;
+
+    // Manual refresh should update timestamps in the renderer even when content is unchanged.
+    this.emitUpdated();
+
+    return changed;
+  }
+
+  private getRefreshSources(
+    context?: Partial<NewsRefreshContext>,
+  ): NewsRefreshSource[] {
+    const game = context?.game ?? this.lastConfig?.game;
+    const service = context?.service ?? this.lastConfig?.service;
+    const sources: NewsRefreshSource[] = [{ kind: "dev", key: DEV_NOTICE_KEY }];
+
+    if (!game || !service) {
+      return sources;
+    }
+
+    for (const category of FORUM_REFRESH_CATEGORIES) {
+      sources.push({
+        kind: "forum",
+        key: this.getForumKey(game, service, category),
+        game,
+        service,
+        category,
+      });
+    }
+
+    return sources;
+  }
+
+  private getAllRefreshSources(): NewsRefreshSource[] {
+    const sources: NewsRefreshSource[] = [{ kind: "dev", key: DEV_NOTICE_KEY }];
+
+    for (const { game, service } of FORUM_REFRESH_COMBINATIONS) {
+      for (const category of FORUM_REFRESH_CATEGORIES) {
+        sources.push({
+          kind: "forum",
+          key: this.getForumKey(game, service, category),
+          game,
+          service,
+          category,
+        });
+      }
+    }
+
+    return sources;
+  }
+
+  private isRefreshDue(key: string): boolean {
+    const lastRefreshedAt = this.getLastUpdatedAt(key) ?? 0;
+    return Date.now() - lastRefreshedAt >= NEWS_REFRESH_INTERVAL;
+  }
+
+  private async refreshSource(source: NewsRefreshSource): Promise<FetchResult> {
+    if (source.kind === "dev") {
+      return this.fetchDevNoticeList({ notify: false });
+    }
+
+    return this.fetchNewsListWithResult(
+      source.game,
+      source.service,
+      source.category,
+      {
+        notify: false,
+        updateLastConfig: false,
+      },
+    );
+  }
+
+  private getForumKey(
+    game: AppConfig["activeGame"],
+    service: AppConfig["serviceChannel"],
+    category: ForumNewsCategory,
+  ) {
+    return `${service}-${game}-${category}`;
+  }
+
+  private markRefreshed(key: string) {
+    const lastUpdatedAt = this.store.get("lastUpdatedAt") || {};
+    lastUpdatedAt[key] = Date.now();
+    this.store.set("lastUpdatedAt", lastUpdatedAt);
+  }
+
+  getLastUpdatedAt(
+    keyOrConfig:
+      | string
+      | {
+          game: AppConfig["activeGame"];
+          service: AppConfig["serviceChannel"];
+          category: NewsCategory;
+        },
+  ): number | null {
+    const key =
+      typeof keyOrConfig === "string"
+        ? keyOrConfig
+        : this.getNewsKey(
+            keyOrConfig.game,
+            keyOrConfig.service,
+            keyOrConfig.category,
+          );
+    return this.store.get("lastUpdatedAt")?.[key] ?? null;
+  }
+
+  private getNewsKey(
+    game: AppConfig["activeGame"],
+    service: AppConfig["serviceChannel"],
+    category: NewsCategory,
+  ) {
+    if (category === "dev-notice") {
+      return DEV_NOTICE_KEY;
+    }
+
+    return `${service}-${game}-${category}`;
+  }
+
+  private emitUpdated() {
+    this.onUpdated?.();
   }
 
   private async fetchWithRetry(
@@ -98,15 +319,39 @@ export class NewsService {
     service: AppConfig["serviceChannel"],
     category: NewsCategory,
   ): Promise<NewsItem[]> {
-    this.lastConfig = { game, service };
-    const key = `${service}-${game}-${category}`;
+    if (category === "dev-notice") {
+      return this.fetchDevNotices();
+    }
+
+    if (!isForumNewsCategory(category)) {
+      return [];
+    }
+
+    const result = await this.fetchNewsListWithResult(game, service, category);
+    return result.items;
+  }
+
+  private async fetchNewsListWithResult(
+    game: AppConfig["activeGame"],
+    service: AppConfig["serviceChannel"],
+    category: ForumNewsCategory,
+    options: { notify?: boolean; updateLastConfig?: boolean } = {},
+  ): Promise<FetchResult> {
+    const notify = options.notify ?? true;
+    const updateLastConfig = options.updateLastConfig ?? true;
+
+    if (updateLastConfig) {
+      this.lastConfig = { game, service };
+    }
+
+    const key = this.getForumKey(game, service, category);
     const url = NEWS_URL_MAP[key];
 
-    if (!url) return [];
+    if (!url) return { items: [], changed: false };
 
     if (this.fetchLock.has(key)) {
       this.logger.log(`Fetch already in progress for ${key}. Skipping.`);
-      return this.getCacheItems(key);
+      return { items: this.getCacheItems(key), changed: false };
     }
 
     this.fetchLock.add(key);
@@ -179,7 +424,7 @@ export class NewsService {
         this.store.set("items", allItems);
 
         // Notify UI if it was a background refresh or if we need to update
-        if (this.onUpdated) this.onUpdated();
+        if (notify) this.emitUpdated();
         this.logger.log(`News updated for ${key}. (New items detected)`);
 
         // Run garbage collection to clean up orphaned contents
@@ -189,19 +434,34 @@ export class NewsService {
       this.logger.log(
         `Successfully fetched ${category} for ${service}-${game}.`,
       );
-      return items;
+      this.markRefreshed(key);
+      return { items, changed: isChanged };
     } catch (error) {
       this.logger.error(`Failed to fetch news list for ${key}:`, error);
-      return this.getCacheItems(key);
+      return { items: this.getCacheItems(key), changed: false };
     } finally {
       this.fetchLock.delete(key);
     }
   }
 
   async fetchDevNotices(): Promise<NewsItem[]> {
-    const url = NEWS_URL_MAP["dev-notice"];
-    if (!url) return [];
+    const result = await this.fetchDevNoticeList();
+    return result.items;
+  }
 
+  private async fetchDevNoticeList(
+    options: { notify?: boolean } = {},
+  ): Promise<FetchResult> {
+    const notify = options.notify ?? true;
+    const url = NEWS_URL_MAP["dev-notice"];
+    if (!url) return { items: [], changed: false };
+
+    if (this.fetchLock.has(DEV_NOTICE_KEY)) {
+      this.logger.log("Fetch already in progress for dev-notice. Skipping.");
+      return { items: this.getCacheItems(DEV_NOTICE_KEY), changed: false };
+    }
+
+    this.fetchLock.add(DEV_NOTICE_KEY);
     this.logger.log("Fetching developer notices...");
 
     try {
@@ -212,7 +472,7 @@ export class NewsService {
 
       if (!Array.isArray(data)) {
         this.logger.warn("Dev notices data is not an array.");
-        return [];
+        return { items: this.getCacheItems(DEV_NOTICE_KEY), changed: false };
       }
 
       const items: NewsItem[] = data.map(
@@ -239,21 +499,36 @@ export class NewsService {
         },
       );
 
-      this.logger.log(
-        `Successfully fetched ${items.length} developer notices.`,
-      );
-
       // Sort: Priority (Sticky) first, then by date descending
-      return items
+      const sortedItems = items
         .sort((a, b) => {
           if (a.isSticky && !b.isSticky) return -1;
           if (!a.isSticky && b.isSticky) return 1;
           return new Date(b.date).getTime() - new Date(a.date).getTime();
         })
         .slice(0, MAX_NEWS_COUNT);
+
+      const cachedItems = this.getCacheItems(DEV_NOTICE_KEY);
+      const isChanged =
+        JSON.stringify(cachedItems) !== JSON.stringify(sortedItems);
+      const allItems = this.store.get("items");
+      allItems[DEV_NOTICE_KEY] = sortedItems;
+      this.store.set("items", allItems);
+      this.markRefreshed(DEV_NOTICE_KEY);
+
+      if (isChanged) {
+        this.logger.log(
+          `Successfully fetched ${sortedItems.length} developer notices.`,
+        );
+        if (notify) this.emitUpdated();
+      }
+
+      return { items: sortedItems, changed: isChanged };
     } catch (error) {
       this.logger.error("Failed to fetch dev notices:", error);
-      return [];
+      return { items: this.getCacheItems(DEV_NOTICE_KEY), changed: false };
+    } finally {
+      this.fetchLock.delete(DEV_NOTICE_KEY);
     }
   }
 
@@ -354,7 +629,7 @@ export class NewsService {
         if (lboxContainers.length > 0) {
           this.logger.log(
             `[NewsService] Basic content selector missed for post ${id}. ` +
-            `Falling back to merging ${lboxContainers.length} .lbox-container elements.`
+              `Falling back to merging ${lboxContainers.length} .lbox-container elements.`,
           );
 
           const unwantedSelectors = [
@@ -372,13 +647,15 @@ export class NewsService {
             });
           });
 
-          cleanHtml = lboxContainers.map((container) => container.innerHTML.trim()).join("\n");
+          cleanHtml = lboxContainers
+            .map((container) => container.innerHTML.trim())
+            .join("\n");
         } else {
           // 대체제도 없는 최종적인 구조 붕괴 상황에만 예외 발생
           throw new Error(
             `게시글 본문(content) 및 대체 컨테이너(lbox-container)를 모두 찾을 수 없습니다. (HTML 구조 붕괴 또는 글 삭제)\n` +
-            `Target URL: ${link}\n` +
-            `Tested Selectors: .forumPost .content, .newsPost .content, .content-container .content, .lbox-container`
+              `Target URL: ${link}\n` +
+              `Tested Selectors: .forumPost .content, .newsPost .content, .content-container .content, .lbox-container`,
           );
         }
       } else {

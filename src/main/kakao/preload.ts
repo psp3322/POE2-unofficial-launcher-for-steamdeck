@@ -1,5 +1,26 @@
 import { ipcRenderer } from "electron";
 
+import {
+  hasVisibleKakaoLoginForm,
+  hasVisibleKakaoQrLoginPrompt,
+  getSecurityCenterVisibilityState,
+  isDaumGameLoginRedirect,
+  type PageVisibilityMode,
+  DAUM_GAME_LOGIN_REDIRECT_GRACE_MS,
+  SECURITY_CENTER_UNRESOLVED_REVEAL_DELAY_MS,
+  shouldRequestVisibilityOnHandlerMatch,
+  shouldRevealUnhandledAutomatedPage,
+  shouldSignalDaumGameLoginRequired,
+  UNHANDLED_PAGE_REVEAL_DELAY_MS,
+  USER_REQUIRED_PAGE_REVEAL_DELAY_MS,
+} from "./visibility-policy";
+import {
+  getKakaoUrlPhase,
+  isKakaoLauncherUrl,
+  isKakaoMemberUrl,
+  isKakaoPoeHomeUrl,
+  isKakaoSecurityCenterUrl,
+} from "../../shared/kakao-service-transition";
 import { AppConfig } from "../../shared/types";
 import { logger } from "../utils/preload-logger";
 
@@ -20,8 +41,8 @@ interface PageHandler {
   description: string;
   /** Condition to activate this handler */
   match: (url: URL) => boolean;
-  /** If true, this page should be forcefully shown regardless of "Inactive Window" setting */
-  visible?: boolean;
+  /** Page-level visibility behavior when the handler matches. */
+  visibility?: PageVisibilityMode;
   /** List of trigger contexts this handler is active for. If undefined, active for all. */
   triggeredBy?: string[];
   /**
@@ -117,6 +138,95 @@ function requestWindowVisibility(visible: boolean) {
   ipcRenderer.send("window-visibility-request", visible);
 }
 
+function createVisibilityRequest(context: HandlerContext, description: string) {
+  let didRequest = false;
+
+  return (reason: string) => {
+    if (didRequest) return;
+    didRequest = true;
+
+    logger.log(
+      `[Visibility] ${description} requires user attention (${reason}).`,
+    );
+    context.setVisible(true);
+  };
+}
+
+function serializeAutomationError(error: unknown) {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    };
+  }
+
+  return {
+    name: "Error",
+    message: String(error),
+    stack: undefined,
+  };
+}
+
+function reportAutomationFailure(handlerName: string, error: unknown) {
+  const serialized = serializeAutomationError(error);
+  ipcRenderer.send("kakao:automation-failure", {
+    errorCode: "KAKAO_AUTOMATION_HANDLER_FAILURE",
+    handlerName,
+    url: window.location.href,
+    context: activeGameContext,
+    ...serialized,
+  });
+}
+
+function requestStartUrlFallback(handlerName: string) {
+  const currentUrl = new URL(window.location.href);
+  ipcRenderer.send("kakao:start-url-fallback-request", {
+    handlerName,
+    phase: activeGameContext
+      ? getKakaoUrlPhase(currentUrl, activeGameContext.gameId)
+      : getKakaoUrlPhase(currentUrl),
+    url: window.location.href,
+    context: activeGameContext,
+  });
+}
+
+function scheduleStableVisibilityReveal(options: {
+  description: string;
+  isReady: () => boolean;
+  reveal: (reason: string) => void;
+  delayMs?: number;
+  fallbackToStablePage?: boolean;
+}) {
+  const initialUrl = window.location.href;
+  const delayMs = options.delayMs ?? USER_REQUIRED_PAGE_REVEAL_DELAY_MS;
+
+  const timeoutId = window.setTimeout(() => {
+    if (window.location.href !== initialUrl) {
+      logger.log(
+        `[Visibility] ${options.description} reveal skipped: URL changed before ${delayMs}ms.`,
+      );
+      return;
+    }
+
+    if (options.isReady()) {
+      options.reveal("interactive UI detected after delay");
+      return;
+    }
+
+    if (options.fallbackToStablePage) {
+      options.reveal(`page stayed unresolved for ${delayMs}ms`);
+      return;
+    }
+
+    logger.log(
+      `[Visibility] ${options.description} reveal skipped: interactive UI not detected.`,
+    );
+  }, delayMs);
+
+  return () => window.clearTimeout(timeoutId);
+}
+
 function safeClick(
   element: HTMLElement | null,
   description: string = "element",
@@ -174,6 +284,7 @@ function safeClick(
 function observeAndInteract(
   checkFn: (obs?: MutationObserver) => boolean,
   timeoutMs: number = 10000,
+  onTimeout?: () => void,
 ) {
   if (checkFn()) return;
 
@@ -181,9 +292,10 @@ function observeAndInteract(
     "[Game Window] Target not found immediately. Starting observer...",
   );
 
+  let completed = false;
   const observer = new MutationObserver((_mutations, obs) => {
     if (checkFn(obs)) {
-      // Logic handled in checkFn
+      completed = true;
     }
   });
 
@@ -191,8 +303,10 @@ function observeAndInteract(
 
   if (timeoutMs > 0) {
     setTimeout(() => {
+      if (completed) return;
       observer.disconnect();
       logger.log("[Game Window] Observer timed out.");
+      onTimeout?.();
     }, timeoutMs);
   }
 }
@@ -201,26 +315,30 @@ function observeAndInteract(
 
 /**
  * POE1 Main Page Handler
- * Matches: poe.game.daum.net (excluding other subdomains if necessary)
+ * Matches Kakao PoE1 homepage candidates during service transition.
  */
 const PoeMainHandler: PageHandler = {
   name: "PoeMainHandler",
   description: "POE1 Homepage - Game Start",
   match: (url) =>
-    url.hostname === "poe.game.daum.net" && url.hash.includes("autoStart"),
+    isKakaoPoeHomeUrl(url, "POE1") && url.hash.includes("autoStart"),
   triggeredBy: ["GAME_START_POE1"],
   execute: async () => {
     logger.log(`[Handler] Executing ${PoeMainHandler.name}`);
 
-    observeAndInteract((obs) => {
-      const startBtn = document.querySelector(SELECTORS.POE1.BTN_GAME_START);
-      if (safeClick(startBtn as HTMLElement)) {
-        logger.log("[PoeMainHandler] Clicked POE1 Start Button");
-        if (obs) obs.disconnect();
-        return true;
-      }
-      return false;
-    });
+    observeAndInteract(
+      (obs) => {
+        const startBtn = document.querySelector(SELECTORS.POE1.BTN_GAME_START);
+        if (safeClick(startBtn as HTMLElement)) {
+          logger.log("[PoeMainHandler] Clicked POE1 Start Button");
+          if (obs) obs.disconnect();
+          return true;
+        }
+        return false;
+      },
+      10000,
+      () => requestStartUrlFallback(PoeMainHandler.name),
+    );
   },
 };
 
@@ -231,10 +349,7 @@ const PoeMainHandler: PageHandler = {
 const AccountValidationHandler: PageHandler = {
   name: "AccountValidationHandler",
   description: "Account Verification (Hidden Background)",
-  match: (url) =>
-    (url.hostname === "poe.game.daum.net" ||
-      url.hostname === "pathofexile2.game.daum.net") &&
-    isValidationMode,
+  match: (url) => isKakaoPoeHomeUrl(url) && isValidationMode,
   timeoutMs: -1, // No timeout for background validation
   triggeredBy: ["ACCOUNT_VALIDATION"],
   execute: async () => {
@@ -306,17 +421,46 @@ const AccountValidationHandler: PageHandler = {
   },
 };
 
+const DaumGameLoginValidationHandler: PageHandler = {
+  name: "DaumGameLoginValidationHandler",
+  description: "Daum Game Login Redirect (Validation Mode)",
+  match: (url) => isDaumGameLoginRedirect(url),
+  timeoutMs: -1,
+  triggeredBy: ["ACCOUNT_VALIDATION"],
+  execute: (ctx) => {
+    const initialHref = window.location.href;
+    logger.log(
+      `[Validator] Detected Daum game login redirect during validation: ${initialHref}. Waiting ${DAUM_GAME_LOGIN_REDIRECT_GRACE_MS}ms before signalling login-required.`,
+    );
+
+    ctx.setVisible(false);
+
+    window.setTimeout(() => {
+      if (
+        !shouldSignalDaumGameLoginRequired(initialHref, window.location.href)
+      ) {
+        logger.log(
+          `[Validator] Daum login redirect resolved before login-required signal: ${window.location.href}`,
+        );
+        return;
+      }
+
+      ipcRenderer.send("kakao:login-required", { url: initialHref });
+      logger.log("[Validator] Validation stopped at Daum login redirect.");
+    }, DAUM_GAME_LOGIN_REDIRECT_GRACE_MS);
+  },
+};
+
 /**
  * POE2 Main Page Handler
- * Matches: pathofexile2.game.daum.net
+ * Matches Kakao PoE2 homepage candidates during service transition.
  * Handles Intro Modal & Game Start Button
  */
 const Poe2MainHandler: PageHandler = {
   name: "Poe2MainHandler",
   description: "POE2 Homepage - Intro Modal & Game Start",
   match: (url) =>
-    url.hostname === "pathofexile2.game.daum.net" &&
-    url.hash.includes("autoStart"),
+    isKakaoPoeHomeUrl(url, "POE2") && url.hash.includes("autoStart"),
   triggeredBy: ["GAME_START_POE2"],
   execute: async () => {
     logger.log(`[Handler] Executing ${Poe2MainHandler.name}`);
@@ -360,18 +504,22 @@ const Poe2MainHandler: PageHandler = {
     };
 
     // 2. Observer for Button Interactivity
-    observeAndInteract((obs) => {
-      // Try handling modal first in every mutation cycle if it exists
-      handleIntroModal().catch(logger.error);
+    observeAndInteract(
+      (obs) => {
+        // Try handling modal first in every mutation cycle if it exists
+        handleIntroModal().catch(logger.error);
 
-      const startBtn = document.querySelector(SELECTORS.POE2.BTN_GAME_START);
-      if (safeClick(startBtn as HTMLElement)) {
-        logger.log("[Poe2MainHandler] Clicked POE2 Main Start Button");
-        if (obs) obs.disconnect();
-        return true;
-      }
-      return false;
-    });
+        const startBtn = document.querySelector(SELECTORS.POE2.BTN_GAME_START);
+        if (safeClick(startBtn as HTMLElement)) {
+          logger.log("[Poe2MainHandler] Clicked POE2 Main Start Button");
+          if (obs) obs.disconnect();
+          return true;
+        }
+        return false;
+      },
+      10000,
+      () => requestStartUrlFallback(Poe2MainHandler.name),
+    );
   },
 };
 
@@ -380,7 +528,7 @@ const LauncherCheckHandler: PageHandler = {
   description: "Launcher Init Page (Login Required Check)",
   match: (url) => {
     return (
-      url.hostname === "pubsvc.game.daum.net" &&
+      isKakaoLauncherUrl(url) &&
       (url.pathname.includes("/gamestart/poe.html") ||
         url.pathname.includes("/gamestart/poe2.html"))
     );
@@ -413,11 +561,19 @@ const DaumLoginHandler: PageHandler = {
   name: "DaumLoginHandler",
   description: "Daum Login Page",
   match: (url) => url.hostname === "logins.daum.net",
-  visible: true,
   timeoutMs: -1, // No timeout for login
   triggeredBy: ["GAME_START_POE1", "GAME_START_POE2", "ACCOUNT_VALIDATION"],
-  execute: () => {
+  execute: (context) => {
     logger.log(`[Handler] Executing ${DaumLoginHandler.name}`);
+
+    const reveal = createVisibilityRequest(context, "Daum login page");
+    const cancelReveal = scheduleStableVisibilityReveal({
+      description: "Daum login page",
+      isReady: () => false,
+      reveal,
+      fallbackToStablePage: true,
+    });
+
     observeAndInteract((obs) => {
       const selectors = [
         SELECTORS.LOGIN_DAUM.BTN_KAKAO_LOGIN,
@@ -426,6 +582,8 @@ const DaumLoginHandler: PageHandler = {
       for (const sel of selectors) {
         const btn = document.querySelector(sel);
         if (safeClick(btn as HTMLElement)) {
+          cancelReveal();
+          context.setVisible(false);
           if (obs) obs.disconnect();
           return true;
         }
@@ -442,15 +600,26 @@ const KakaoLoginHandler: PageHandler = {
     url.hostname === "accounts.kakao.com" &&
     url.pathname.includes("/login") &&
     !url.pathname.includes("/simple"),
-  visible: true,
   timeoutMs: -1, // Interaction might be needed
   triggeredBy: ["GAME_START_POE1", "GAME_START_POE2", "ACCOUNT_MANUAL_LOGIN"],
-  execute: () => {
+  execute: (context) => {
     logger.log(`[Handler] Executing ${KakaoLoginHandler.name}`);
 
     let hasAutoChecked = false;
+    const reveal = createVisibilityRequest(context, "Kakao login page");
+
+    scheduleStableVisibilityReveal({
+      description: "Kakao login page",
+      isReady: () => hasVisibleKakaoLoginForm(document),
+      reveal,
+      fallbackToStablePage: true,
+    });
 
     observeAndInteract((_obs) => {
+      if (hasVisibleKakaoLoginForm(document)) {
+        reveal("login input form detected");
+      }
+
       const checkbox = document.querySelector(
         SELECTORS.KAKAO_LOGIN.CHECKBOX_SAVE,
       ) as HTMLInputElement;
@@ -544,15 +713,26 @@ const KakaoQRLoginHandler: PageHandler = {
   description: "Kakao QR Login Page - Auto Check 'Stay Signed In'",
   match: (url) =>
     url.hostname === "accounts.kakao.com" && url.pathname.includes("/qr_login"),
-  visible: true,
   timeoutMs: -1, // QR login needs time
   triggeredBy: ["GAME_START_POE1", "GAME_START_POE2", "ACCOUNT_MANUAL_LOGIN"],
-  execute: () => {
+  execute: (context) => {
     logger.log(`[Handler] Executing ${KakaoQRLoginHandler.name}`);
 
     let hasAutoChecked = false;
+    const reveal = createVisibilityRequest(context, "Kakao QR login page");
+
+    scheduleStableVisibilityReveal({
+      description: "Kakao QR login page",
+      isReady: () => hasVisibleKakaoQrLoginPrompt(document),
+      reveal,
+      fallbackToStablePage: true,
+    });
 
     observeAndInteract((_obs) => {
+      if (hasVisibleKakaoQrLoginPrompt(document)) {
+        reveal("QR login prompt detected");
+      }
+
       const checkboxLabel = document.querySelector(
         SELECTORS.KAKAO_LOGIN.QR_CHECKBOX,
       ) as HTMLElement;
@@ -713,71 +893,117 @@ const KakaoAuthHandler: PageHandler = {
 const SecurityCenterHandler: PageHandler = {
   name: "SecurityCenterHandler",
   description: "Security Center / Designated PC",
-  match: (url) => url.hostname === "security-center.game.daum.net",
+  match: (url) => isKakaoSecurityCenterUrl(url),
   timeoutMs: -1,
   triggeredBy: ["GAME_START_POE1", "GAME_START_POE2"],
   execute: (context) => {
     logger.log(`[Handler] Executing ${SecurityCenterHandler.name}`);
     ipcRenderer.send("game-status-update", "authenticating", activeGameContext);
 
-    let isDelayQueued = false;
-    let delayTimeoutId: NodeJS.Timeout | null = null;
+    const reveal = createVisibilityRequest(context, "Security Center");
+    let delayTimeoutId: number | null = null;
+
+    const clearDelayedReveal = () => {
+      if (delayTimeoutId === null) return;
+      window.clearTimeout(delayTimeoutId);
+      delayTimeoutId = null;
+    };
+
+    const scheduleUnresolvedReveal = () => {
+      if (delayTimeoutId !== null) return;
+
+      const initialUrl = window.location.href;
+      delayTimeoutId = window.setTimeout(() => {
+        delayTimeoutId = null;
+
+        if (window.location.href !== initialUrl) {
+          logger.log(
+            `[SecurityCenter] Delayed reveal skipped: URL changed before ${SECURITY_CENTER_UNRESOLVED_REVEAL_DELAY_MS}ms.`,
+          );
+          return;
+        }
+
+        const state = getSecurityCenterVisibilityState(document);
+        if (state === "auto-progress") {
+          logger.log(
+            "[SecurityCenter] Delayed reveal skipped: auto-progress UI is still active.",
+          );
+          context.setVisible(false);
+          return;
+        }
+
+        if (state === "user-required") {
+          reveal("security verification UI detected after delay");
+          return;
+        }
+
+        reveal(
+          `page stayed unresolved for ${SECURITY_CENTER_UNRESOLVED_REVEAL_DELAY_MS}ms`,
+        );
+      }, SECURITY_CENTER_UNRESOLVED_REVEAL_DELAY_MS);
+    };
 
     observeAndInteract((obs) => {
-      // [Visibility Logic] Only show window if "Designated PC" certificate UI is present
-      if (document.querySelector("div.device-cert")) {
-        logger.log(
-          "[SecurityCenter] Device Cert UI detected. Requesting visibility...",
-        );
-        requestWindowVisibility(true);
+      const state = getSecurityCenterVisibilityState(document);
+
+      if (state === "user-required") {
+        clearDelayedReveal();
+        reveal("security verification UI detected");
+        return false;
       }
 
       // 1. Attribute Match
-      if (
-        safeClick(
+      const clickedPcInfoButton =
+        state === "auto-progress" &&
+        (safeClick(
           document.querySelector(
             SELECTORS.SECURITY.PC_INFO_BTN_ATTR,
           ) as HTMLElement,
-        )
-      ) {
-        logger.log("[SecurityCenter] Clicked PC Info Button (Attribute)");
-        // Do NOT disconnect yet - wait for device-cert UI
+          "PC Info Button (Attribute)",
+        ) ||
+          safeClick(
+            document.querySelector(
+              SELECTORS.SECURITY.BTN_DESIGNATED_CONFIRM,
+            ) as HTMLElement,
+            "PC Info Button (Class)",
+          ));
+
+      if (clickedPcInfoButton) {
+        logger.log("[SecurityCenter] Clicked PC Info Button");
+        clearDelayedReveal();
+        context.setVisible(false);
+        return false;
       }
-      // 2. Class Match
-      if (
-        safeClick(
-          document.querySelector(
-            SELECTORS.SECURITY.BTN_DESIGNATED_CONFIRM,
-          ) as HTMLElement,
-        )
-      ) {
-        logger.log("[SecurityCenter] Clicked PC Info Button (Class)");
-        // Do NOT disconnect yet - wait for device-cert UI
-      }
-      // 3. Generic Popup
+
+      // 2. Generic Popup
       if (
         safeClick(
           document.querySelector(
             SELECTORS.SECURITY.BTN_POPUP_CONFIRM,
           ) as HTMLElement,
+          "Generic Popup Confirm",
         )
       ) {
+        clearDelayedReveal();
+        context.setVisible(false);
         if (obs) obs.disconnect();
-        if (delayTimeoutId) {
-          clearTimeout(delayTimeoutId);
-          delayTimeoutId = null;
-          context.setVisible(false);
-        }
         return true;
       }
 
-      if (!isDelayQueued) {
-        isDelayQueued = true;
-        delayTimeoutId = setTimeout(() => {
-          context.setVisible(true);
-        }, 2000);
+      const currentState = getSecurityCenterVisibilityState(document);
+      if (currentState === "auto-progress") {
+        clearDelayedReveal();
+        context.setVisible(false);
+        return false;
       }
 
+      if (currentState === "user-required") {
+        clearDelayedReveal();
+        reveal("security verification UI detected");
+        return false;
+      }
+
+      scheduleUnresolvedReveal();
       return false;
     });
   },
@@ -787,8 +1013,7 @@ const LauncherCompletionHandler: PageHandler = {
   name: "LauncherCompletionHandler",
   description: "Launcher Completion / Game Launch Confirmed",
   match: (url) =>
-    url.hostname === "pubsvc.game.daum.net" &&
-    url.pathname.includes("/completed.html"),
+    isKakaoLauncherUrl(url) && url.pathname.includes("/completed.html"),
   triggeredBy: ["GAME_START_POE1", "GAME_START_POE2"],
   execute: () => {
     logger.log(`[Handler] Executing ${LauncherCompletionHandler.name}`);
@@ -811,9 +1036,9 @@ const DaumStarterPopupHandler: PageHandler = {
   name: "DaumStarterPopupHandler",
   description: "Daum Starter Install Popup",
   match: (url) =>
-    url.hostname === "security-center.game.daum.net" &&
+    isKakaoSecurityCenterUrl(url) &&
     url.pathname.includes("/popup/install_daumstarter"),
-  visible: true,
+  visibility: "user-required",
   timeoutMs: -1, // Installation takes time
   triggeredBy: ["GAME_START_POE1", "GAME_START_POE2"],
   execute: () => {
@@ -828,9 +1053,8 @@ const DaumMemberCertHandler: PageHandler = {
   name: "DaumMemberCertHandler",
   description: "Daum Member Certification",
   match: (url) =>
-    url.hostname === "member.game.daum.net" &&
-    url.pathname.includes("/cert/kakao/init"),
-  visible: true,
+    isKakaoMemberUrl(url) && url.pathname.includes("/cert/kakao/init"),
+  visibility: "user-required",
   timeoutMs: -1, // Certification needs user action
   triggeredBy: ["GAME_START_POE1", "GAME_START_POE2"],
   execute: () => {
@@ -842,7 +1066,7 @@ const KCBAuthHandler: PageHandler = {
   name: "KCBAuthHandler",
   description: "KCB Authentication",
   match: (url) => url.hostname === "safe.ok-name.co.kr",
-  visible: true,
+  visibility: "user-required",
   timeoutMs: -1, // KCB Auth needs user action
   triggeredBy: ["GAME_START_POE1", "GAME_START_POE2"],
   execute: () => {
@@ -854,7 +1078,7 @@ const KCBCardAuthHandler: PageHandler = {
   name: "KCBCardAuthHandler",
   description: "KCB Card Authentication",
   match: (url) => url.hostname === "card.ok-name.co.kr",
-  visible: true,
+  visibility: "user-required",
   timeoutMs: -1, // Card Auth needs user action
   triggeredBy: ["GAME_START_POE1", "GAME_START_POE2"],
   execute: () => {
@@ -896,10 +1120,7 @@ const KakaoLoginValidationHandler: PageHandler = {
 const KakaoManualValidationHandler: PageHandler = {
   name: "KakaoManualValidationHandler",
   description: "Manual Login Success Detector",
-  match: (url) =>
-    (url.hostname === "poe.game.daum.net" ||
-      url.hostname === "pathofexile2.game.daum.net") &&
-    !url.hash.includes("autoStart"),
+  match: (url) => isKakaoPoeHomeUrl(url) && !url.hash.includes("autoStart"),
   triggeredBy: ["ACCOUNT_MANUAL_LOGIN"],
   execute: (ctx) => {
     logger.log(
@@ -920,6 +1141,7 @@ const HANDLERS: PageHandler[] = [
   KakaoAuthHandler, // Priority 3: Automated OAuth consent
   KakaoLoginValidationHandler, // Priority 3: Roadblock/Failure capture for other /login pages
   KakaoManualValidationHandler, // Success Detector for manual mode
+  DaumGameLoginValidationHandler,
   AccountValidationHandler,
   PoeMainHandler,
   Poe2MainHandler,
@@ -968,12 +1190,14 @@ async function dispatchPageLogic(triggerContext?: string) {
       logger.log(`[Game Window] Matched Handler: ${handler.name}`);
 
       // 1. Check Visibility Requirement
-      // Priority: Handler.visible > Config
-      const isVisibleByHandler = handler.visible === true;
+      const shouldShowOnMatch = shouldRequestVisibilityOnHandlerMatch(
+        handler.visibility,
+        isValidationMode,
+      );
 
-      if (isVisibleByHandler && !isValidationMode) {
+      if (shouldShowOnMatch) {
         logger.log(
-          `[Game Window] Visibility required (Handler: ${isVisibleByHandler}). Requesting show...`,
+          `[Game Window] Visibility required by ${handler.name}. Requesting show...`,
         );
         requestWindowVisibility(true);
       } else {
@@ -991,10 +1215,8 @@ async function dispatchPageLogic(triggerContext?: string) {
         };
         await handler.execute(context);
       } catch (e) {
-        logger.error(
-          `[Game Window] Error executing handler ${handler.name}:`,
-          e,
-        );
+        reportAutomationFailure(handler.name, e);
+        return;
       }
 
       // 3. Update Timeout in Main Process
@@ -1012,18 +1234,27 @@ async function dispatchPageLogic(triggerContext?: string) {
 
   // [New] Exceptional UI capture: Force show and log error if no handler matches during game start.
   // This ensures that unexpected pages (maintenance, extra redirects) are visible to the user.
-  const isAutomatedGameStart =
-    triggerContext === "GAME_START_POE1" ||
-    triggerContext === "GAME_START_POE2";
+  if (shouldRevealUnhandledAutomatedPage(triggerContext, currentUrl.href)) {
+    const initialHref = currentUrl.href;
 
-  const isAboutBlank = currentUrl.href === "about:blank";
-
-  if (isAutomatedGameStart && !isAboutBlank) {
-    logger.error(
-      `[Game Window] UNHANDLED PAGE DETECTED during automated flow: ${currentUrl.href}`,
+    logger.warn(
+      `[Game Window] Unhandled page candidate during automated flow: ${initialHref}. Waiting ${UNHANDLED_PAGE_REVEAL_DELAY_MS}ms before showing.`,
     );
-    // Explicitly bypass local visibility helpers and force main process to show
-    ipcRenderer.send("window-visibility-request", true);
+
+    window.setTimeout(() => {
+      if (window.location.href !== initialHref) {
+        logger.log(
+          `[Game Window] Unhandled page reveal skipped: URL changed from ${initialHref} to ${window.location.href}.`,
+        );
+        return;
+      }
+
+      logger.error(
+        `[Game Window] UNHANDLED PAGE DETECTED during automated flow: ${initialHref}`,
+      );
+      // Explicitly bypass local visibility helpers and force main process to show
+      ipcRenderer.send("window-visibility-request", true);
+    }, UNHANDLED_PAGE_REVEAL_DELAY_MS);
   }
 }
 

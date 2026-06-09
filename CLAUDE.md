@@ -26,6 +26,16 @@ To work with the wiki visible as read context: `claude --add-dir ~/project_llm_w
 - `npm run format` — prettier.
 - Husky + lint-staged run eslint --fix + prettier on commit.
 
+## GitHub CLI token
+
+- Do not run `gh auth switch` or `gh auth login` for repo-local GitHub work; those commands mutate shared GitHub CLI state and can affect other running agents.
+- `.env` is gitignored and may contain a repo-local `GH_TOKEN`. `gh` does not read `.env` automatically.
+- Never print `.env` or token values. Check only whether `.env` is ignored or whether `GH_TOKEN` is present.
+- Prefer injecting `GH_TOKEN` only into the current command/process:
+  - One command: `GH_TOKEN="$(grep '^GH_TOKEN=' .env | cut -d= -f2-)" gh pr view 187`
+  - Current shell: `set -a; source .env; set +a; gh pr view 187; unset GH_TOKEN`
+- If scripting, read `.env` and pass `GH_TOKEN` through the child process environment instead of changing global `gh` auth state.
+
 ### WSL execution rules (detect at session start)
 
 If `uname -r` contains `microsoft`/`WSL`, this is WSL — WSL is the development primary (edit/git/lint/rtk) and Windows is the build/run primary (Electron + actual POE / POE2 game test, which Linux cannot run). Both OSes share the same `node_modules` under `D:\project_poe2\POE2-unofficial-launcher\`.

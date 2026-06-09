@@ -6,7 +6,6 @@ import { execSync } from "node:child_process";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import electron from "vite-plugin-electron";
-import renderer from "vite-plugin-electron-renderer";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 let commitHash = "Dev";
@@ -42,6 +41,70 @@ const defines = {
   __PRODUCT_NAME__: JSON.stringify(productName),
 };
 
+type ElectronStartupOptions = {
+  startup: (argv?: string[]) => Promise<void>;
+  reload: () => void;
+};
+
+type ElectronProcess = NodeJS.Process & {
+  electronApp?: unknown;
+};
+
+type ExecError = Error & {
+  stderr?: Buffer | string;
+};
+
+const getElectronStartupArgs = () => {
+  const args = [".", "--no-sandbox"];
+  const remoteDebuggingPort =
+    process.env.ELECTRON_REMOTE_DEBUGGING_PORT || "9222";
+
+  args.push(`--remote-debugging-port=${remoteDebuggingPort}`);
+
+  return args;
+};
+
+const startElectronApp = async (options: ElectronStartupOptions) => {
+  try {
+    return await options.startup(getElectronStartupArgs());
+  } catch (error) {
+    if (!isMissingTaskkillProcessError(error)) {
+      throw error;
+    }
+
+    const electronProcess = process as ElectronProcess;
+    console.warn(
+      "[vite] Ignoring stale Electron PID cleanup failure and retrying startup.",
+    );
+    electronProcess.electronApp = undefined;
+    return options.startup(getElectronStartupArgs());
+  }
+};
+
+const reloadElectronRenderer = (options: ElectronStartupOptions) => {
+  if ((process as ElectronProcess).electronApp) {
+    options.reload();
+    return;
+  }
+
+  return startElectronApp(options);
+};
+
+function isMissingTaskkillProcessError(error: unknown) {
+  if (!(error instanceof Error)) return false;
+
+  const execError = error as ExecError;
+  const stderr = Buffer.isBuffer(execError.stderr)
+    ? execError.stderr.toString("utf8")
+    : (execError.stderr ?? "");
+  const message = `${error.message}\n${stderr}`;
+
+  return (
+    message.includes("taskkill") &&
+    (/not found/i.test(message) || message.includes("찾을 수 없습니다"))
+  );
+}
+
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [
@@ -50,6 +113,7 @@ export default defineConfig({
       {
         // Main-Process entry file of the Electron App.
         entry: "src/main/main.ts",
+        onstart: startElectronApp,
         vite: {
           define: defines,
           build: {
@@ -61,6 +125,7 @@ export default defineConfig({
       },
       {
         entry: "src/main/workers/FontMutatorWorker.ts",
+        onstart: startElectronApp,
         vite: {
           define: defines,
           build: {
@@ -75,6 +140,7 @@ export default defineConfig({
       },
       {
         entry: "src/main/workers/OtfMutatorWorker.ts",
+        onstart: startElectronApp,
         vite: {
           define: defines,
           build: {
@@ -90,18 +156,14 @@ export default defineConfig({
       },
       {
         entry: "src/main/preload.ts",
-        onstart(options) {
-          options.reload();
-        },
+        onstart: reloadElectronRenderer,
         vite: {
           define: defines,
         },
       },
       {
         entry: "src/main/kakao/preload.ts",
-        onstart(options) {
-          options.reload();
-        },
+        onstart: reloadElectronRenderer,
         vite: {
           build: {
             outDir: "dist-electron/kakao",
@@ -123,7 +185,6 @@ export default defineConfig({
         },
       },
     ]),
-    renderer(),
   ],
   resolve: {
     alias: {

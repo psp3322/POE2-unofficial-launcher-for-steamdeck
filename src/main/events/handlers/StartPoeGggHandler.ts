@@ -17,14 +17,16 @@ export const StartPoeGggHandler: EventHandler<UIEvent> = {
   id: "StartPoeGggHandler",
   targetEvent: EventType.UI_GAME_START_CLICK,
 
-  condition: (_event, context: AppContext) => {
+  condition: (event, context: AppContext) => {
     const config = context.getConfig() as AppConfig;
-    return config.serviceChannel === "GGG";
+    const serviceId = event.payload?.serviceId ?? config.serviceChannel;
+    return serviceId === "GGG";
   },
 
-  handle: async (_event, context) => {
+  handle: async (event, context) => {
     const config = context.getConfig() as AppConfig;
-    const { activeGame, serviceChannel } = config;
+    const activeGame = event.payload?.gameId ?? config.activeGame;
+    const serviceChannel = event.payload?.serviceId ?? config.serviceChannel;
 
     logger.log(`[StartPoeGggHandler] Starting ${activeGame} for GGG...`);
 

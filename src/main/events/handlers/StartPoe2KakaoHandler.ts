@@ -1,5 +1,8 @@
+import {
+  getKakaoGameStartUrlCandidates,
+  type KakaoTransitionUrlCandidate,
+} from "../../../shared/kakao-service-transition";
 import { AppConfig } from "../../../shared/types";
-import { BASE_URLS } from "../../../shared/urls";
 import { logger } from "../../utils/logger";
 import { eventBus } from "../EventBus";
 import {
@@ -10,16 +13,20 @@ import {
   UIEvent,
 } from "../types";
 
+import type { BrowserWindow } from "electron";
+
 // Note: We use EventHandler<UIEvent> to strictly type 'event' argument in handle
 export const StartPoe2KakaoHandler: EventHandler<UIEvent> = {
   id: "StartPoe2KakaoHandler",
   targetEvent: EventType.UI_GAME_START_CLICK,
 
-  condition: (_event, context: AppContext) => {
+  condition: (event, context: AppContext) => {
     const config = context.getConfig() as AppConfig;
     // Check if Active Game is POE2 AND Service Channel is Kakao Games
-    const isPoe2 = config.activeGame === "POE2";
-    const isKakao = config.serviceChannel === "Kakao Games";
+    const gameId = event.payload?.gameId ?? config.activeGame;
+    const serviceId = event.payload?.serviceId ?? config.serviceChannel;
+    const isPoe2 = gameId === "POE2";
+    const isKakao = serviceId === "Kakao Games";
 
     // Debug log to trace condition failures if any
     logger.log(
@@ -65,46 +72,30 @@ export const StartPoe2KakaoHandler: EventHandler<UIEvent> = {
     // This prevents flashing of hidden pages before login.
 
     // 2. Load Target URL
-    const targetUrl = `${BASE_URLS["Kakao Games"].POE2}/main#autoStart`;
+    const targetCandidates = getKakaoGameStartUrlCandidates("POE2");
 
     // Mark as Game Start context BEFORE loading URL (to avoid race with preload.ts)
     if (typeof global.setNavigationTrigger === "function") {
       global.setNavigationTrigger(gameWindow.webContents.id, "GAME_START_POE2");
     }
 
-    logger.log(`[StartPoe2KakaoHandler] Loading URL: ${targetUrl}`);
+    const loadedCandidate = await loadFirstAvailableCandidate(
+      gameWindow,
+      targetCandidates,
+    );
 
-    try {
-      await gameWindow.loadURL(targetUrl);
-    } catch (err: unknown) {
-      const error = err as Error & { code?: number };
-
-      // ERR_ABORTED (-3) is EXPECTED when Electron hands off a custom protocol (daumgamestarter://) to the OS.
-      // This means the external app launch was triggered successfully.
-      if (
-        error.message &&
-        (error.message.includes("ERR_ABORTED") || error.code === -3)
-      ) {
-        logger.log(
-          `[StartPoe2KakaoHandler] Navigation aborted (-3) as expected for custom protocol launch. Success.`,
-        );
-      } else {
-        logger.error(
-          `[StartPoe2KakaoHandler] Failed to load URL: ${targetUrl}`,
-          error,
-        );
-        eventBus.emit<GameStatusChangeEvent>(
-          EventType.GAME_STATUS_CHANGE,
-          context,
-          {
-            gameId: "POE2",
-            serviceId: "Kakao Games",
-            status: "error",
-            errorCode: "URL_LOAD_FAILED",
-          },
-        );
-        return;
-      }
+    if (!loadedCandidate) {
+      eventBus.emit<GameStatusChangeEvent>(
+        EventType.GAME_STATUS_CHANGE,
+        context,
+        {
+          gameId: "POE2",
+          serviceId: "Kakao Games",
+          status: "error",
+          errorCode: "URL_LOAD_FAILED",
+        },
+      );
+      return;
     }
 
     // 3. Send Execute Command to Renderer (Content Script)
@@ -130,3 +121,44 @@ export const StartPoe2KakaoHandler: EventHandler<UIEvent> = {
     }
   },
 };
+
+async function loadFirstAvailableCandidate(
+  gameWindow: BrowserWindow,
+  candidates: KakaoTransitionUrlCandidate[],
+): Promise<KakaoTransitionUrlCandidate | null> {
+  for (const candidate of candidates) {
+    logger.log(
+      `[StartPoe2KakaoHandler] Loading ${candidate.phase.toUpperCase()} URL: ${
+        candidate.url
+      }`,
+    );
+
+    try {
+      await gameWindow.loadURL(candidate.url);
+      return candidate;
+    } catch (err: unknown) {
+      const error = err as Error & { code?: number };
+
+      // ERR_ABORTED (-3) is expected when Electron hands off a custom protocol to the OS.
+      if (
+        error.message &&
+        (error.message.includes("ERR_ABORTED") || error.code === -3)
+      ) {
+        logger.log(
+          "[StartPoe2KakaoHandler] Navigation aborted (-3) as expected for custom protocol launch. Success.",
+        );
+        return candidate;
+      }
+
+      logger.warn(
+        `[StartPoe2KakaoHandler] Failed to load ${candidate.phase.toUpperCase()} URL: ${
+          candidate.url
+        }`,
+        error,
+      );
+    }
+  }
+
+  logger.error("[StartPoe2KakaoHandler] All Kakao start URLs failed to load.");
+  return null;
+}

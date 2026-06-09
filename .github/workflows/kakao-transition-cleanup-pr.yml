@@ -1,0 +1,113 @@
+name: Kakao Transition Cleanup PR
+
+on:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  open-cleanup-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check cleanup review date
+        id: due
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const dueAt = new Date("2026-06-18T00:00:00+09:00").getTime();
+          const isManual = process.env.GITHUB_EVENT_NAME === "workflow_dispatch";
+          const shouldRun = isManual || Date.now() >= dueAt;
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `should_run=${shouldRun}\n`);
+          console.log(shouldRun ? "Cleanup PR is due." : "Cleanup PR is not due yet.");
+          NODE
+
+      - name: Checkout
+        if: steps.due.outputs.should_run == 'true'
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Set up Node.js
+        if: steps.due.outputs.should_run == 'true'
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "24"
+
+      - name: Check existing cleanup PR
+        if: steps.due.outputs.should_run == 'true'
+        id: existing-pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          existing_pr="$(
+            gh pr list \
+              --state open \
+              --search '카카오게임즈 전환 레거시 주소 정리 in:title' \
+              --json number \
+              --jq '.[0].number // ""'
+          )"
+          echo "number=${existing_pr}" >> "$GITHUB_OUTPUT"
+          if [ -n "$existing_pr" ]; then
+            echo "Existing cleanup PR found: #${existing_pr}"
+          fi
+
+      - name: Build URL check report
+        if: steps.due.outputs.should_run == 'true' && steps.existing-pr.outputs.number == ''
+        run: |
+          node scripts/check-kakao-transition-urls.cjs \
+            --markdown kakao-transition-url-check.md \
+            --json kakao-transition-url-check.json
+
+      - name: Apply cleanup change
+        if: steps.due.outputs.should_run == 'true' && steps.existing-pr.outputs.number == ''
+        run: node scripts/apply-kakao-transition-cleanup.cjs
+
+      - name: Open cleanup PR
+        if: steps.due.outputs.should_run == 'true' && steps.existing-pr.outputs.number == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet -- src/shared/kakao-service-transition.ts src/main/tests/kakao-service-transition.test.ts src/main/tests/kakao-visibility-policy.test.ts; then
+            echo "No cleanup changes to propose."
+            exit 0
+          fi
+
+          branch="chore/kakao-transition-cleanup-${GITHUB_RUN_ID}"
+          git checkout -b "$branch"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add \
+            src/shared/kakao-service-transition.ts \
+            src/main/tests/kakao-service-transition.test.ts \
+            src/main/tests/kakao-visibility-policy.test.ts
+          git commit -m "chore: 카카오게임즈 전환 레거시 주소 정리"
+          git push origin "$branch"
+
+          {
+            echo "## Summary"
+            echo
+            echo "카카오게임즈 서비스 전환 이후 TOBE URL 정상화 여부를 확인하고 ASIS Daum URL fallback 제거를 검토하기 위한 자동 PR입니다."
+            echo
+            echo "Reference:"
+            echo "- Official notice: https://poe.game.daum.net/forum/view-thread/3931700"
+            echo "- Decision: TOBE URL을 전환 후 primary로 사용하고, ASIS URL은 전환기 fallback으로만 유지합니다."
+            echo "- This PR is opened regardless of URL check pass/fail so manual Windows game-start verification can decide merge."
+            echo
+            cat kakao-transition-url-check.md
+            echo "## Manual Verification Required"
+            echo
+            echo "- PoE1 Kakao game start"
+            echo "- PoE2 Kakao game start"
+            echo "- Login-required flow"
+            echo "- Terms or identity verification flow if shown"
+            echo "- Kakao Games Starter handoff"
+            echo "- Actual game process launch"
+          } > kakao-transition-cleanup-pr-body.md
+
+          gh pr create \
+            --title "chore: 카카오게임즈 전환 레거시 주소 정리" \
+            --body-file kakao-transition-cleanup-pr-body.md \
+            --base master \
+            --head "$branch"

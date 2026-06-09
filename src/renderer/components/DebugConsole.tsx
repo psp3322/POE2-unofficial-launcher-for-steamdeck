@@ -1,10 +1,23 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import ConfigViewer, { ConfigViewerProps } from "./debug/ConfigViewer";
 import ExportModal from "./debug/ExportModal";
 import { mergeLog } from "./debug/helpers";
 import LogViewer, { LogViewerProps } from "./debug/LogViewer";
 import { LogModule, ConfigModule } from "./debug/modules";
+import {
+  getDebugLogTailSignature,
+  getVisibleDebugLogs,
+  isNearDebugScrollBottom,
+  shouldShowNewDebugLogButton,
+} from "./debug/scroll-follow";
 import { LogEntry, DebugModule } from "./debug/types";
 import { AppConfig } from "../../shared/types";
 import "./DebugConsole.css";
@@ -33,25 +46,159 @@ const DebugConsole: React.FC = () => {
 
   // --- Scrolling Logic ---
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const [isAutoScroll, setIsAutoScroll] = useState(true);
-  const prevLogCountRef = useRef(0);
+  const [followTail, setFollowTail] = useState(true);
+  const [hasUnseenLogs, setHasUnseenLogs] = useState(false);
+  const followTailRef = useRef(true);
+  const userScrollIntentRef = useRef(false);
+  const userScrollIntentResetRef = useRef<number | null>(null);
+  const programmaticScrollRef = useRef(false);
+  const programmaticScrollResetRef = useRef<number | null>(null);
   const prevFilterRef = useRef(filter);
+  const prevVisibleTailSignatureRef = useRef<string | null>(null);
 
-  const handleScroll = () => {
-    if (!scrollContainerRef.current) return;
-    const { scrollTop, scrollHeight, clientHeight } =
-      scrollContainerRef.current;
-    // Check if user is near bottom (within 50px)
-    const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
-    setIsAutoScroll(isAtBottom);
-  };
+  const isLogView = filter !== "RAW CONFIGS";
+  const visibleLogTailSignature = useMemo(() => {
+    return getDebugLogTailSignature(getVisibleDebugLogs(logState, filter));
+  }, [filter, logState]);
 
-  const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
-    if (bottomRef.current) {
-      bottomRef.current.scrollIntoView({ behavior });
-      setIsAutoScroll(true);
+  const setFollowTailIntent = useCallback((next: boolean) => {
+    followTailRef.current = next;
+    setFollowTail(next);
+  }, []);
+
+  const markUserScrollIntent = useCallback(() => {
+    userScrollIntentRef.current = true;
+
+    if (userScrollIntentResetRef.current !== null) {
+      window.clearTimeout(userScrollIntentResetRef.current);
     }
-  };
+
+    userScrollIntentResetRef.current = window.setTimeout(() => {
+      userScrollIntentRef.current = false;
+      userScrollIntentResetRef.current = null;
+    }, 350);
+  }, []);
+
+  const markProgrammaticScroll = useCallback((behavior: ScrollBehavior) => {
+    programmaticScrollRef.current = true;
+
+    if (programmaticScrollResetRef.current !== null) {
+      window.clearTimeout(programmaticScrollResetRef.current);
+    }
+
+    programmaticScrollResetRef.current = window.setTimeout(
+      () => {
+        programmaticScrollRef.current = false;
+        programmaticScrollResetRef.current = null;
+      },
+      behavior === "smooth" ? 450 : 50,
+    );
+  }, []);
+
+  const handleScroll = useCallback(() => {
+    if (!scrollContainerRef.current) return;
+    const container = scrollContainerRef.current;
+    const isNearBottom = isNearDebugScrollBottom({
+      scrollTop: container.scrollTop,
+      scrollHeight: container.scrollHeight,
+      clientHeight: container.clientHeight,
+    });
+
+    if (isNearBottom) {
+      userScrollIntentRef.current = false;
+      setFollowTailIntent(true);
+      setHasUnseenLogs(false);
+      return;
+    }
+
+    if (programmaticScrollRef.current) return;
+
+    if (userScrollIntentRef.current) {
+      setFollowTailIntent(false);
+    }
+  }, [setFollowTailIntent]);
+
+  const scrollToBottom = useCallback(
+    (behavior: ScrollBehavior = "smooth") => {
+      markProgrammaticScroll(behavior);
+
+      if (scrollContainerRef.current) {
+        const container = scrollContainerRef.current;
+        const forceScrollToBottom = () => {
+          container.scrollTop = container.scrollHeight;
+        };
+
+        if (behavior === "smooth") {
+          container.scrollTo({
+            top: container.scrollHeight,
+            behavior,
+          });
+
+          window.setTimeout(() => {
+            if (
+              followTailRef.current &&
+              !isNearDebugScrollBottom({
+                scrollTop: container.scrollTop,
+                scrollHeight: container.scrollHeight,
+                clientHeight: container.clientHeight,
+              })
+            ) {
+              forceScrollToBottom();
+            }
+          }, 350);
+        } else {
+          forceScrollToBottom();
+        }
+      } else if (bottomRef.current) {
+        bottomRef.current.scrollIntoView({ behavior });
+      }
+
+      setFollowTailIntent(true);
+      setHasUnseenLogs(false);
+    },
+    [markProgrammaticScroll, setFollowTailIntent],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (userScrollIntentResetRef.current !== null) {
+        window.clearTimeout(userScrollIntentResetRef.current);
+      }
+      if (programmaticScrollResetRef.current !== null) {
+        window.clearTimeout(programmaticScrollResetRef.current);
+      }
+    };
+  }, []);
+
+  useLayoutEffect(() => {
+    const isFilterChanged = filter !== prevFilterRef.current;
+    const hasVisibleLogChanged =
+      prevVisibleTailSignatureRef.current !== visibleLogTailSignature;
+
+    prevFilterRef.current = filter;
+    prevVisibleTailSignatureRef.current = visibleLogTailSignature;
+
+    if (isFilterChanged) {
+      scrollToBottom("auto");
+      return;
+    }
+
+    if (!hasVisibleLogChanged) return;
+
+    if (followTailRef.current) {
+      scrollToBottom("auto");
+    } else if (isLogView) {
+      const tailSignature = visibleLogTailSignature;
+      void Promise.resolve().then(() => {
+        if (
+          !followTailRef.current &&
+          prevVisibleTailSignatureRef.current === tailSignature
+        ) {
+          setHasUnseenLogs(true);
+        }
+      });
+    }
+  }, [filter, isLogView, scrollToBottom, visibleLogTailSignature]);
 
   // --- Drag-to-scroll for Tabs ---
   const tabsRef = useRef<HTMLDivElement>(null);
@@ -291,24 +438,6 @@ const DebugConsole: React.FC = () => {
     }
   }, [editValue, editingKey]);
 
-  // Handle auto-scroll on log updates or filter change
-  useEffect(() => {
-    const currentCount = logState.all.length;
-    const isNewLog = currentCount > prevLogCountRef.current;
-    const isFilterChanged = filter !== prevFilterRef.current;
-
-    prevLogCountRef.current = currentCount;
-    prevFilterRef.current = filter;
-
-    if (isFilterChanged) {
-      // Always scroll to bottom on tab change
-      scrollToBottom("auto");
-    } else if (isNewLog && isAutoScroll) {
-      // Auto-scroll only if explicitly enabled (user is at bottom)
-      scrollToBottom("auto");
-    }
-  }, [logState, filter, isAutoScroll]);
-
   const activeModule = modules.find((m) => {
     if (m.id === "log-module") {
       return (m as typeof LogModule)
@@ -360,6 +489,9 @@ const DebugConsole: React.FC = () => {
       <div
         ref={scrollContainerRef}
         onScroll={handleScroll}
+        onWheel={markUserScrollIntent}
+        onMouseDown={markUserScrollIntent}
+        onTouchStart={markUserScrollIntent}
         className="panel-container"
         style={{
           whiteSpace: filter === "RAW CONFIGS" ? "normal" : "pre-wrap",
@@ -390,7 +522,11 @@ const DebugConsole: React.FC = () => {
         )}
 
         {/* New Log Badge / Scroll to Bottom Button */}
-        {!isAutoScroll && filter !== "RAW CONFIGS" && (
+        {shouldShowNewDebugLogButton({
+          followTail,
+          hasUnseenLogs,
+          isLogView,
+        }) && (
           <button
             onClick={() => scrollToBottom("smooth")}
             className="new-log-button"

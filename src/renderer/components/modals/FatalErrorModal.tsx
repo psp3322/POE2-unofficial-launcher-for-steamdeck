@@ -22,6 +22,7 @@ interface ModalConfig {
 
 interface FatalErrorModalProps {
   errorDetails: string;
+  errorSummary?: string;
   type?: ModalType;
   launcherVersion?: string;
   onClose?: () => void;
@@ -29,6 +30,7 @@ interface FatalErrorModalProps {
 
 const FatalErrorModal: React.FC<FatalErrorModalProps> = ({
   errorDetails,
+  errorSummary,
   type = "fatal",
   launcherVersion = "Unknown",
   onClose,
@@ -108,8 +110,20 @@ const FatalErrorModal: React.FC<FatalErrorModalProps> = ({
     errorDetails && errorDetails.trim() !== ""
       ? errorDetails
       : "최근에 발생한 오류가 없습니다.";
+  const displaySummary = errorSummary?.trim() ?? "";
+  const modalWidth = config.showLogs ? "900px" : "750px";
+  const modalHeight = config.showLogs ? "min(820px, 92vh)" : "650px";
+  const userInputMinHeight = config.showLogs ? "88px" : "100px";
+  const logsMinHeight = config.showLogs ? "260px" : "150px";
 
   const handleCopy = () => {
+    const reportLogSection = config.showLogs
+      ? `${displaySummary ? `## 최근 오류 안내\n${displaySummary}\n\n` : ""}## 최근 오류 정보 (Error Trace)
+\`\`\`text
+${displayLogs}
+\`\`\``
+      : "";
+
     const report = `# [오류 보고서]
 - **보고 유형**: ${type.toUpperCase()}
 - **발생 시간**: ${timestamp}
@@ -118,14 +132,7 @@ const FatalErrorModal: React.FC<FatalErrorModalProps> = ({
 ## 상세 내용
 > ${userDescription || "(상세 내용 없음)"}
 
-${
-  config.showLogs
-    ? `## 최근 에러 로그 계보 (Error Trace)
-\`\`\`text
-${displayLogs}
-\`\`\``
-    : ""
-}
+${reportLogSection}
 `;
 
     navigator.clipboard
@@ -300,10 +307,10 @@ ${displayLogs}
       <div
         className="settings-modal"
         style={{
-          width: "750px",
-          height: "650px",
-          maxWidth: "95vw",
-          maxHeight: "95vh",
+          width: modalWidth,
+          height: modalHeight,
+          maxWidth: "96vw",
+          maxHeight: "96vh",
           display: "flex",
           flexDirection: "column",
           backgroundColor: "#111111",
@@ -506,7 +513,7 @@ ${displayLogs}
                 color: "#eee",
                 fontSize: "14px",
                 fontFamily: "inherit",
-                minHeight: "100px",
+                minHeight: userInputMinHeight,
                 flex: config.showLogs ? "0 0 auto" : "1",
                 resize: "none",
                 outline: "none",
@@ -526,8 +533,8 @@ ${displayLogs}
                 display: "flex",
                 flexDirection: "column",
                 gap: "8px",
-                flex: 1,
-                minHeight: "150px",
+                flex: "1 1 auto",
+                minHeight: logsMinHeight,
               }}
             >
               <div
@@ -540,6 +547,23 @@ ${displayLogs}
               >
                 최근 오류 정보 (Recent Error Trace):
               </div>
+              {displaySummary && (
+                <div
+                  style={{
+                    backgroundColor: "rgba(255, 183, 77, 0.08)",
+                    color: "#f0d8a8",
+                    padding: "12px 14px",
+                    borderRadius: "8px",
+                    whiteSpace: "pre-wrap",
+                    wordBreak: "keep-all",
+                    border: "1px solid rgba(255, 183, 77, 0.22)",
+                    lineHeight: "1.6",
+                    fontSize: "13px",
+                  }}
+                >
+                  {displaySummary}
+                </div>
+              )}
               <div
                 style={{
                   backgroundColor: "rgba(0, 0, 0, 0.6)",

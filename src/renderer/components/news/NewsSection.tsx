@@ -1,12 +1,13 @@
 import React from "react";
 
 import NewsItem from "./NewsItem";
-import { NewsItem as NewsItemType } from "../../../shared/types";
+import { NewsItem as NewsItemType, NewsOpenMode } from "../../../shared/types";
 
 interface NewsSectionProps {
   title: string;
   items: NewsItemType[];
   forumUrl: string;
+  openMode: NewsOpenMode;
   onRead: (id: string) => void;
   onShowModal?: (item: NewsItemType) => void;
   isDevSection?: boolean;
@@ -17,6 +18,7 @@ const NewsSection: React.FC<NewsSectionProps> = ({
   title,
   items,
   forumUrl,
+  openMode,
   onRead,
   onShowModal,
   isDevSection,
@@ -33,7 +35,11 @@ const NewsSection: React.FC<NewsSectionProps> = ({
       <div className={`news-section-header ${headerVariant || "short"}`}>
         <h3 className="news-section-title">{title}</h3>
         {forumUrl && (
-          <button className="view-more-btn" onClick={handleOpenForum}>
+          <button
+            className="view-more-btn"
+            onClick={handleOpenForum}
+            type="button"
+          >
             자세히 보기 <span className="arrow">▶</span>
           </button>
         )}
@@ -45,6 +51,7 @@ const NewsSection: React.FC<NewsSectionProps> = ({
             <NewsItem
               key={item.id}
               item={item}
+              openMode={openMode}
               onRead={onRead}
               onShowModal={onShowModal}
             />

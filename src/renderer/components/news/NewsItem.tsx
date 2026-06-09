@@ -1,29 +1,78 @@
-import DOMPurify from "dompurify";
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
-import { NewsItem as NewsItemType } from "../../../shared/types";
+import { getNewsContentClassName, renderNewsContentHtml } from "./news-content";
+import { scrollExpandedNewsItemIntoView } from "./news-scroll";
+import { NewsItem as NewsItemType, NewsOpenMode } from "../../../shared/types";
 import itemBg from "../../assets/layout/img-news-bg.png";
 import { logger } from "../../utils/logger";
 
 interface NewsItemProps {
   item: NewsItemType;
+  openMode: NewsOpenMode;
   onRead: (id: string) => void;
   onShowModal?: (item: NewsItemType) => void;
 }
 
-const NewsItem: React.FC<NewsItemProps> = ({ item, onRead, onShowModal }) => {
+const NewsItem: React.FC<NewsItemProps> = ({
+  item,
+  openMode,
+  onRead,
+  onShowModal,
+}) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [content, setContent] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const itemRef = useRef<HTMLDivElement>(null);
+  const pendingOpenScrollRef = useRef(false);
+
+  useEffect(() => {
+    if (!isExpanded || !pendingOpenScrollRef.current) return;
+
+    const frameId = window.requestAnimationFrame(() => {
+      if (itemRef.current) {
+        scrollExpandedNewsItemIntoView(itemRef.current);
+      }
+
+      if (content || !isLoading) {
+        pendingOpenScrollRef.current = false;
+      }
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [content, isExpanded, isLoading]);
+
+  useEffect(() => {
+    if (openMode !== "modal") return;
+
+    pendingOpenScrollRef.current = false;
+
+    let isCancelled = false;
+    void Promise.resolve().then(() => {
+      if (isCancelled) return;
+      setIsExpanded(false);
+      setIsLoading(false);
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [openMode]);
 
   const handleToggle = async () => {
-    if (item.type === "dev-notice" && onShowModal) {
+    if (openMode === "modal" && onShowModal) {
       onShowModal(item);
       onRead(item.id);
       return;
     }
 
     const nextExpanded = !isExpanded;
+    if (nextExpanded) {
+      pendingOpenScrollRef.current = true;
+      setIsLoading(true);
+    } else {
+      pendingOpenScrollRef.current = false;
+    }
+
     setIsExpanded(nextExpanded);
 
     if (nextExpanded) {
@@ -38,7 +87,6 @@ const NewsItem: React.FC<NewsItemProps> = ({ item, onRead, onShowModal }) => {
       }
 
       // 2. Fetch live content in background to ensure it's up to date
-      setIsLoading(true);
       try {
         const result = await window.electronAPI.getNewsContent(
           item.id,
@@ -62,6 +110,7 @@ const NewsItem: React.FC<NewsItemProps> = ({ item, onRead, onShowModal }) => {
 
   return (
     <div
+      ref={itemRef}
       className={`news-item-container ${isExpanded ? "expanded" : ""}`}
       style={{ backgroundImage: `url(${itemBg})` }}
     >
@@ -91,7 +140,7 @@ const NewsItem: React.FC<NewsItemProps> = ({ item, onRead, onShowModal }) => {
               <div className="news-content-loading">Loading content...</div>
             ) : (
               <div
-                className="news-item-content forum-content"
+                className={getNewsContentClassName(item, "inline")}
                 onClick={(e) => {
                   const target = e.target as HTMLElement;
                   const anchor = target.closest("a");
@@ -101,7 +150,7 @@ const NewsItem: React.FC<NewsItemProps> = ({ item, onRead, onShowModal }) => {
                   }
                 }}
                 dangerouslySetInnerHTML={{
-                  __html: DOMPurify.sanitize(content || ""),
+                  __html: renderNewsContentHtml(item, content || ""),
                 }}
               />
             )}

@@ -19,63 +19,33 @@ import JSZip from "jszip";
 
 import { ContextProvider } from "./context-provider";
 import { eventBus } from "./events/EventBus";
+import { registerCoreEventHandlers } from "./events/register-handlers";
 import {
   setConfigWithEvent,
   deleteConfigWithEvent,
 } from "./utils/config-utils";
 import { DEBUG_APP_CONFIG } from "../shared/config";
+import {
+  getKakaoGameStartUrlCandidates,
+  type KakaoGameId,
+  type KakaoTransitionUrlPhase,
+} from "../shared/kakao-service-transition";
 import { getGameName, getLauncherTitle, getAppName } from "../shared/naming";
 import {
   AppConfig,
-  RunStatus,
   NewsCategory,
   DebugLogPayload,
+  GameLaunchContext,
 } from "../shared/types";
 import { BASE_URLS } from "../shared/urls";
+import { syncAutoLaunch } from "./events/handlers/AutoLaunchHandler";
 import {
-  AutoLaunchHandler,
-  syncAutoLaunch,
-} from "./events/handlers/AutoLaunchHandler";
-import {
-  LogSessionHandler,
-  LogWebRootHandler,
-  LogErrorHandler,
-  AutoPatchProcessStopHandler,
-  PatchProgressHandler,
-  ProcessWillTerminateHandler,
   triggerPendingManualPatches,
   cancelPendingPatches,
 } from "./events/handlers/AutoPatchHandler";
-import { ChangelogCheckHandler } from "./events/handlers/ChangelogCheckHandler";
-import { ChangelogUISyncHandler } from "./events/handlers/ChangelogUISyncHandler";
-import { CleanupLauncherWindowHandler } from "./events/handlers/CleanupLauncherWindowHandler";
-import {
-  ConfigChangeSyncHandler,
-  ConfigDeleteSyncHandler,
-} from "./events/handlers/ConfigSyncHandler";
-import { DebugLogHandler } from "./events/handlers/DebugLogHandler";
-import { DevToolsVisibilityHandler } from "./events/handlers/DevToolsVisibilityHandler";
 import { FontIpcHandler } from "./events/handlers/FontIpcHandler";
-import { GameInstallCheckHandler } from "./events/handlers/GameInstallCheckHandler";
-import {
-  GameProcessStartHandler,
-  GameProcessStopHandler,
-  getGlobalGameStatus,
-} from "./events/handlers/GameProcessStatusHandler";
-import { GameStatusSyncHandler } from "./events/handlers/GameStatusSyncHandler";
-import { InactiveWindowVisibilityHandler } from "./events/handlers/InactiveWindowVisibilityHandler";
-import { StartPoe1KakaoHandler } from "./events/handlers/StartPoe1KakaoHandler";
-import { StartPoe2KakaoHandler } from "./events/handlers/StartPoe2KakaoHandler";
-import { StartPoeGggHandler } from "./events/handlers/StartPoeGggHandler";
-import { SystemWakeUpHandler } from "./events/handlers/SystemWakeUpHandler";
 import { ToolForceRepairHandler } from "./events/handlers/ToolHandler";
-import { UacHandler } from "./events/handlers/UacHandler";
-import {
-  UpdateCheckHandler,
-  UpdateDownloadHandler,
-  UpdateInstallHandler,
-  triggerUpdateCheck,
-} from "./events/handlers/UpdateHandler";
+import { triggerUpdateCheck } from "./events/handlers/UpdateHandler";
 import {
   AppContext,
   ConfigChangeEvent,
@@ -89,20 +59,34 @@ import {
   UpdateWindowTitleEvent,
   DebugLogEvent,
   IServiceManager,
+  UIEvent,
 } from "./events/types";
+import { GameSessionTracker, SessionContext } from "./game/GameSessionTracker";
+import { registerGameStatusIpc } from "./ipc/game-status-ipc";
+import {
+  archiveAutomationDumpSession,
+  discardAutomationDumpSession,
+  dumpAutomationPage,
+  handleAutomationDumpGameStatus,
+  scheduleAutomationDumpRetentionCleanup,
+  startAutomationDumpSession,
+  type AutomationDumpArchiveResult,
+} from "./kakao/automation-page-dump";
 import { initKakaoSession, KAKAO_PARTITION } from "./kakao/session";
+import { shouldHideReleasedAutomationWindow } from "./kakao/visibility-policy";
 import { trayManager } from "./managers/TrayManager";
 import { setupSessionSecurity } from "./security/permissions";
 import { changelogService } from "./services/ChangelogService";
 import { GameVersionScanner } from "./services/GameVersionScanner";
-import { LogWatcher } from "./services/LogWatcher";
 import { newsService } from "./services/NewsService";
 import { PatchManager } from "./services/PatchManager";
-import { PatchReservationService } from "./services/PatchReservationService";
-import { ProcessWatcher } from "./services/ProcessWatcher";
+import {
+  getPatchReservationService,
+  getProcessWatcher,
+  initializeCoreServices,
+} from "./services/register-services";
 import { serviceManager } from "./services/ServiceManager";
 import { themeCacheManager } from "./services/ThemeCacheManager";
-import { UpdateSchedulerService } from "./services/UpdateSchedulerService";
 import { getConfig, setupStoreObservers, default as store } from "./store";
 import {
   isAdmin,
@@ -163,13 +147,6 @@ async function checkLauncherVersionUpdate() {
   }
 }
 
-// --- Global State for Interruption Handling ---
-let currentSystemStatus: RunStatus = "idle";
-let currentActiveContext: {
-  gameId: AppConfig["activeGame"];
-  serviceId: AppConfig["serviceChannel"];
-} | null = null;
-
 // --- Fatal Error Handling State ---
 let fatalErrorBuffer: string | null = null;
 let isRendererReadyForFatalError = false;
@@ -216,6 +193,7 @@ let mainWindow: BrowserWindow | null;
 let gameWindow: BrowserWindow | null;
 let debugWindow: BrowserWindow | null = null; // Debug Window Reference
 let debugDestructionTimeout: NodeJS.Timeout | null = null; // [New] Delayed destruction timer
+let debugRecoveryTimeout: NodeJS.Timeout | null = null;
 
 // --- Account Validation State ---
 let validationModeActive = false;
@@ -378,7 +356,12 @@ function startAutomationTimeout(ms: number = VALIDATION_TIMEOUT_MS) {
       targetWindow.center();
       targetWindow.focus();
       targetWindow.moveTop();
-
+      await dumpAutomationPage(targetWindow, {
+        reason: "automation-timeout",
+        triggerContext: triggerContext ?? undefined,
+        mainWindow,
+        debugWindow,
+      });
       // Use native dialog to avoid blocking the renderer thread (v9)
       try {
         const displayUrl = currentUrl.includes("?")
@@ -405,15 +388,16 @@ function startAutomationTimeout(ms: number = VALIDATION_TIMEOUT_MS) {
 const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
 
 // Track the current game/service being launched to sync context to popups
-interface SessionContext {
-  gameId: AppConfig["activeGame"];
-  serviceId: AppConfig["serviceChannel"];
-}
-
-let activeSessionContext: SessionContext | null = null;
+const gameSessionTracker = new GameSessionTracker();
 
 // Reliable mapping of window IDs to their game context
 const windowContextMap = new Map<number, SessionContext>();
+
+registerGameStatusIpc({
+  getAppContext: () => appContext,
+  getActiveSessionContext: () => gameSessionTracker.getActiveSessionContext(),
+  getWindowContext: (webContentsId) => windowContextMap.get(webContentsId),
+});
 
 // --- Single Instance Lock ---
 const gotTheLock = app.requestSingleInstanceLock();
@@ -439,12 +423,36 @@ if (!gotTheLock) {
 
 // Debug Constants
 const FORCE_DEBUG = process.env.VITE_SHOW_GAME_WINDOW === "true";
+let didReportKakaoStartFailure = false;
 const DEBUG_KEYS = [
   "dev_mode",
   "debug_console",
   "show_inactive_windows",
   "show_inactive_window_console",
 ];
+
+type KakaoAutomationFailurePayload = {
+  errorCode?: string;
+  handlerName?: string;
+  message?: string;
+  name?: string;
+  stack?: string;
+  url?: string;
+  context?: {
+    gameId?: AppConfig["activeGame"];
+    serviceId?: AppConfig["serviceChannel"];
+  } | null;
+};
+
+type KakaoStartUrlFallbackPayload = {
+  handlerName?: string;
+  phase?: KakaoTransitionUrlPhase | null;
+  url?: string;
+  context?: {
+    gameId?: AppConfig["activeGame"];
+    serviceId?: AppConfig["serviceChannel"];
+  } | null;
+};
 
 /**
  * Get configuration value considering environment variable priority.
@@ -482,6 +490,102 @@ function getEffectiveConfig(
   return value;
 }
 
+function createKakaoAutomationError(payload: KakaoAutomationFailurePayload) {
+  const message =
+    payload.message || payload.errorCode || "KAKAO_AUTOMATION_FAILURE";
+  const error = new Error(message);
+  error.name = payload.name || "KakaoAutomationFailure";
+  if (payload.stack) {
+    error.stack = payload.stack;
+  }
+  return error;
+}
+
+function sanitizeKakaoFailureReason(value: string) {
+  return value.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+function isExpectedExternalProtocolAbort(error: unknown): boolean {
+  const navigationError = error as Error & { code?: number };
+  return Boolean(
+    navigationError?.message?.includes("ERR_ABORTED") ||
+    navigationError?.code === -3,
+  );
+}
+
+function formatKakaoStartFailureLog(input: {
+  errorCode: string;
+  archiveResult: AutomationDumpArchiveResult | null;
+}) {
+  const dumpLines = input.archiveResult
+    ? [
+        `진단 덤프 파일: ${input.archiveResult.archivePath}`,
+        "문의 시 위 파일을 함께 첨부해 주세요.",
+      ]
+    : [
+        "진단 덤프 파일: 생성되지 않았습니다.",
+        "문의 시 아래 오류 정보를 함께 전달해 주세요.",
+      ];
+
+  return [
+    "[KakaoStartFailure] 게임 실행 또는 로그인 절차 중 오류가 발생했습니다.",
+    `오류 코드: ${input.errorCode}`,
+    ...dumpLines,
+  ].join("\n");
+}
+
+async function finalizeKakaoStartFailure(input: {
+  gameId: AppConfig["activeGame"];
+  serviceId: AppConfig["serviceChannel"];
+  errorCode: string;
+  error: Error;
+  dumpReason: string;
+  targetWindow?: BrowserWindow | null;
+  triggerContext?: string;
+}) {
+  if (!appContext) return;
+  if (didReportKakaoStartFailure) {
+    logger.warn(
+      `[KakaoStartFailure] Ignored duplicate Kakao start failure report: ${input.errorCode}`,
+    );
+    return;
+  }
+  didReportKakaoStartFailure = true;
+
+  if (input.targetWindow && !input.targetWindow.isDestroyed()) {
+    await dumpAutomationPage(input.targetWindow, {
+      reason: input.dumpReason,
+      triggerContext: input.triggerContext,
+      mainWindow,
+      debugWindow,
+    });
+  }
+
+  const archiveResult = await archiveAutomationDumpSession(
+    `status-error-${input.errorCode}`,
+    { logResult: false },
+  );
+
+  logger.error(
+    formatKakaoStartFailureLog({
+      errorCode: input.errorCode,
+      archiveResult,
+    }),
+    input.error,
+  );
+
+  await eventBus.emit<GameStatusChangeEvent>(
+    EventType.GAME_STATUS_CHANGE,
+    appContext,
+    {
+      gameId: input.gameId,
+      serviceId: input.serviceId,
+      status: "error",
+      errorCode: input.errorCode,
+    },
+  );
+}
+
 // Security: Explicitly blocked permissions
 // Security: Permissions are now handled in src/main/security/permissions.ts
 
@@ -502,6 +606,147 @@ ipcMain.on("debug-log:send", (_event, log: DebugLogPayload) => {
     eventBus.emit<DebugLogEvent>(EventType.DEBUG_LOG, appContext, log);
   }
 });
+
+ipcMain.on(
+  "kakao:automation-failure",
+  async (event, payload: KakaoAutomationFailurePayload) => {
+    if (!appContext) return;
+
+    const senderId = event.sender.id;
+    const mappedContext = windowContextMap.get(senderId);
+    const activeSessionContext = gameSessionTracker.getActiveSessionContext();
+    const gameId =
+      payload.context?.gameId ||
+      mappedContext?.gameId ||
+      activeSessionContext?.gameId;
+    const serviceId =
+      payload.context?.serviceId ||
+      mappedContext?.serviceId ||
+      activeSessionContext?.serviceId;
+
+    if (!gameId || serviceId !== "Kakao Games") {
+      logger.warn(
+        `[KakaoStartFailure] Ignored automation failure from unknown context: ${senderId}`,
+      );
+      return;
+    }
+
+    const sourceWindow = BrowserWindow.fromWebContents(event.sender);
+    await finalizeKakaoStartFailure({
+      gameId,
+      serviceId,
+      errorCode: payload.errorCode || "KAKAO_AUTOMATION_FAILURE",
+      error: createKakaoAutomationError(payload),
+      dumpReason: `automation-failure-${sanitizeKakaoFailureReason(
+        payload.handlerName || "unknown",
+      )}`,
+      targetWindow: sourceWindow,
+      triggerContext: getNavigationTrigger(senderId) ?? undefined,
+    });
+  },
+);
+
+ipcMain.on(
+  "kakao:start-url-fallback-request",
+  async (event, payload: KakaoStartUrlFallbackPayload) => {
+    if (!appContext) return;
+
+    const senderId = event.sender.id;
+    const mappedContext = windowContextMap.get(senderId);
+    const activeSessionContext = gameSessionTracker.getActiveSessionContext();
+    const gameId =
+      payload.context?.gameId ||
+      mappedContext?.gameId ||
+      activeSessionContext?.gameId;
+    const serviceId =
+      payload.context?.serviceId ||
+      mappedContext?.serviceId ||
+      activeSessionContext?.serviceId;
+
+    if (!gameId || serviceId !== "Kakao Games") {
+      logger.warn(
+        `[KakaoTransition] Ignored start URL fallback request from unknown context: ${senderId}`,
+      );
+      return;
+    }
+
+    const sourceWindow = BrowserWindow.fromWebContents(event.sender);
+    if (!sourceWindow || sourceWindow.isDestroyed()) {
+      logger.warn(
+        "[KakaoTransition] Ignored fallback request: window missing.",
+      );
+      return;
+    }
+
+    const candidates = getKakaoGameStartUrlCandidates(gameId as KakaoGameId);
+    const currentIndex = candidates.findIndex(
+      (candidate) => candidate.phase === payload.phase,
+    );
+    const nextCandidate = candidates[currentIndex + 1];
+
+    if (!nextCandidate) {
+      await finalizeKakaoStartFailure({
+        gameId,
+        serviceId,
+        errorCode: "KAKAO_START_URL_FALLBACK_EXHAUSTED",
+        error: new Error(
+          `Kakao start URL fallback exhausted after ${payload.phase || "unknown"} phase: ${
+            payload.url || "unknown URL"
+          }`,
+        ),
+        dumpReason: `start-url-fallback-exhausted-${sanitizeKakaoFailureReason(
+          payload.handlerName || "unknown",
+        )}`,
+        targetWindow: sourceWindow,
+        triggerContext: getNavigationTrigger(senderId) ?? undefined,
+      });
+      return;
+    }
+
+    logger.warn(
+      `[KakaoTransition] ${payload.handlerName || "unknown handler"} timed out on ${
+        payload.phase || "unknown"
+      } URL. Retrying ${nextCandidate.phase.toUpperCase()} URL: ${
+        nextCandidate.url
+      }`,
+    );
+
+    if (typeof setNavigationTrigger === "function") {
+      setNavigationTrigger(sourceWindow.webContents.id, `GAME_START_${gameId}`);
+    }
+
+    try {
+      await sourceWindow.loadURL(nextCandidate.url);
+    } catch (error) {
+      if (isExpectedExternalProtocolAbort(error)) {
+        logger.log(
+          "[KakaoTransition] Fallback navigation aborted (-3) as expected for external protocol launch.",
+        );
+        return;
+      }
+
+      logger.error(
+        `[KakaoTransition] Failed to load fallback URL: ${nextCandidate.url}`,
+        error,
+      );
+      await finalizeKakaoStartFailure({
+        gameId,
+        serviceId,
+        errorCode: "KAKAO_START_URL_FALLBACK_LOAD_FAILED",
+        error: error instanceof Error ? error : new Error(String(error)),
+        dumpReason: `start-url-fallback-load-failed-${nextCandidate.phase}`,
+        targetWindow: sourceWindow,
+        triggerContext: getNavigationTrigger(senderId) ?? undefined,
+      });
+      return;
+    }
+
+    sourceWindow.webContents.send("execute-game-start", {
+      gameId,
+      serviceId,
+    });
+  },
+);
 
 ipcMain.on("app:relaunch", () => {
   app.relaunch();
@@ -524,13 +769,6 @@ ipcMain.on("app:fatal-error-ready", () => {
 ipcMain.handle("debug:get-history", () => {
   return getLogHistory();
 });
-
-ipcMain.handle(
-  "game:get-status",
-  (_event, gameId: string, serviceId: string) => {
-    return getGlobalGameStatus(gameId, serviceId);
-  },
-);
 
 // [Removed] Old session:logout handler (duplicates new partitioned one)
 
@@ -717,6 +955,22 @@ ipcMain.handle("news:get-content-cache", (_event, id: string) => {
   return newsService.getContentFromCache(id);
 });
 
+ipcMain.handle("news:refresh-all", async () => {
+  return newsService.refreshAllNews();
+});
+
+ipcMain.handle(
+  "news:get-last-updated-at",
+  (
+    _event,
+    game: AppConfig["activeGame"],
+    service: AppConfig["serviceChannel"],
+    category: NewsCategory,
+  ) => {
+    return newsService.getLastUpdatedAt({ game, service, category });
+  },
+);
+
 ipcMain.handle("news:mark-as-read", async (_event, id: string) => {
   return newsService.markAsRead(id);
 });
@@ -792,7 +1046,7 @@ ipcMain.on("admin:relaunch", () => relaunchAsAdmin());
 ipcMain.handle("session:logout", async () => {
   try {
     // 1. Reset Context
-    activeSessionContext = null;
+    gameSessionTracker.clear();
     pendingLoginUrls.delete("Kakao Games"); // Clear pending redirects for this service
 
     // 2. Close Game Window if exists (Prevents Auth Popups/Reloads)
@@ -1217,6 +1471,7 @@ ipcMain.on("window-visibility-request", async (event, isVisible: boolean) => {
   if (!window || window.isDestroyed()) return;
 
   const showInactive = getEffectiveConfig("show_inactive_windows") === true;
+  const isDebugEnv = process.env.VITE_SHOW_GAME_WINDOW === "true";
   const triggerContext = getNavigationTrigger(event.sender.id);
   const isValidation = triggerContext === "ACCOUNT_VALIDATION";
 
@@ -1241,25 +1496,34 @@ ipcMain.on("window-visibility-request", async (event, isVisible: boolean) => {
     window.center();
     window.focus();
     window.moveTop();
+    await dumpAutomationPage(window, {
+      reason: "window-visibility-request",
+      triggerContext: triggerContext ?? undefined,
+      mainWindow,
+      debugWindow,
+    });
   } else {
     if (forcedVisibleWindows.has(window.id)) {
       forcedVisibleWindows.delete(window.id);
       logger.log(`[Main] Window ${window.id} released FORCED VISIBILITY.`);
 
-      if (!showInactive) {
-        const isMainWindow =
-          context.mainWindow && context.mainWindow.id === window.id;
-        const isGameWindow =
-          context.gameWindow && context.gameWindow.id === window.id;
-        const isDebugWindow =
-          context.debugWindow && context.debugWindow.id === window.id;
+      const isMainWindow =
+        context.mainWindow && context.mainWindow.id === window.id;
+      const isDebugWindow =
+        context.debugWindow && context.debugWindow.id === window.id;
 
-        if (!isMainWindow && !isGameWindow && !isDebugWindow) {
-          logger.log(
-            `[Main] Hiding window ${window.id} (Config is OFF & Force Released)`,
-          );
-          window.hide();
-        }
+      if (
+        shouldHideReleasedAutomationWindow({
+          showInactive,
+          isDebugEnv,
+          isMainWindow: Boolean(isMainWindow),
+          isDebugWindow: Boolean(isDebugWindow),
+        })
+      ) {
+        logger.log(
+          `[Main] Hiding window ${window.id} (Visibility released & inactive display disabled)`,
+        );
+        window.hide();
       }
     }
   }
@@ -1343,71 +1607,31 @@ const context: AppContext = {
   },
 };
 
-/**
- * Resets the game status back to 'idle' if a critical window is closed
- * while the system is still in an intermediate automation state.
- */
 function resetGameStatusIfInterrupted(_win: BrowserWindow) {
-  // Only interrupt if we are in a middle-state that requires a window/session
-  const interruptibleStates: RunStatus[] = [
-    "preparing",
-    "processing",
-    "authenticating",
-  ];
+  const resetStatus = gameSessionTracker.getInterruptedResetStatus(appContext);
 
-  if (interruptibleStates.includes(currentSystemStatus)) {
-    logger.log(
-      `[Main] Critical window closed during ${currentSystemStatus}. Resetting to idle.`,
-    );
-
-    // Default to POE2/Kakao if context is missing for some reason
-    const gameId = currentActiveContext?.gameId || "POE2";
-    const serviceId = currentActiveContext?.serviceId || "Kakao Games";
-
-    eventBus.emit<GameStatusChangeEvent>(
-      EventType.GAME_STATUS_CHANGE,
-      appContext,
-      {
-        gameId,
-        serviceId,
-        status: "idle",
-      },
-    );
+  if (!resetStatus) {
+    return;
   }
+
+  logger.log(
+    `[Main] Critical window closed during ${resetStatus.interruptedStatus}. Resetting to idle.`,
+  );
+
+  eventBus.emit<GameStatusChangeEvent>(
+    EventType.GAME_STATUS_CHANGE,
+    appContext,
+    resetStatus.payload,
+  );
 }
 
 // 3. Register Global Store Observers
 setupStoreObservers(context);
 
 // 4. Register Event Handlers
-const handlers = [
-  DebugLogHandler,
-  ConfigChangeSyncHandler,
-  ConfigDeleteSyncHandler,
-  StartPoe1KakaoHandler,
-  StartPoe2KakaoHandler,
-  StartPoeGggHandler,
-  CleanupLauncherWindowHandler,
-  GameStatusSyncHandler,
-  GameProcessStartHandler,
-  GameProcessStopHandler,
-  GameInstallCheckHandler,
-  SystemWakeUpHandler,
-  UpdateCheckHandler,
-  UpdateDownloadHandler,
-  UpdateInstallHandler,
-  LogSessionHandler,
-  LogWebRootHandler,
-  LogErrorHandler,
-  AutoPatchProcessStopHandler,
-  PatchProgressHandler, // Added
-  AutoLaunchHandler, // Added
-  ProcessWillTerminateHandler,
-  DevToolsVisibilityHandler,
-  ChangelogCheckHandler,
-  ChangelogUISyncHandler,
-  UacHandler, // Added
-  InactiveWindowVisibilityHandler, // [New] Dynamic Visibility
+registerCoreEventHandlers();
+
+const mainEventHandlers = [
   {
     id: "UpdateWindowTitleHandler",
     targetEvent: EventType.UPDATE_WINDOW_TITLE,
@@ -1497,7 +1721,7 @@ ipcMain.on("ui:update-install", (_event, isSilent?: boolean) => {
   }
 });
 
-handlers.forEach((handler) => {
+mainEventHandlers.forEach((handler) => {
   eventBus.register(handler as EventHandler<AppEvent>);
 });
 
@@ -1533,7 +1757,7 @@ function initAppContext() {
 
 // Initialize Services
 newsService.init(() => {
-  mainWindow?.webContents.send("news:updated");
+  mainWindow?.webContents.send("news-updated");
 });
 
 // [Unified] DevTools Visibility Sync Logic
@@ -1708,12 +1932,25 @@ async function createWindow() {
     triggerDevToolsSync();
   };
 
+  const getNewsRefreshContext = (reason: string) => {
+    const config = getConfig() as AppConfig;
+    return {
+      game: config.activeGame,
+      service: config.serviceChannel,
+      reason,
+    };
+  };
+
   mainWindow.on("show", () => {
+    newsService.setActive(true, getNewsRefreshContext("show"));
     syncSubWindowsVisibility(true);
     mainWindow?.webContents.send("app:window-show");
     syncDebugWindow("MainShow");
   });
-  mainWindow.on("hide", () => syncSubWindowsVisibility(false));
+  mainWindow.on("hide", () => {
+    newsService.setActive(false);
+    syncSubWindowsVisibility(false);
+  });
 
   mainWindow.on("enter-full-screen", () => syncDebugWindow("FullScreenEnter"));
   mainWindow.on("leave-full-screen", () => syncDebugWindow("FullScreenLeave"));
@@ -1779,6 +2016,7 @@ async function createWindow() {
   setupMainLogger(appContext, (event) => {
     eventBus.emit(event.type, appContext, event.payload);
   });
+  scheduleAutomationDumpRetentionCleanup();
 
   // Register Handlers
   eventBus.register(ToolForceRepairHandler); // EventBus based
@@ -1850,29 +2088,20 @@ async function createWindow() {
     logger.error("[Main] Failed to sync auto-launch settings:", err);
   });
 
-  // --- Service Registration & Management (v43) ---
-  serviceManager.register(themeCacheManager);
-  serviceManager.register(new ProcessWatcher(appContext));
-  serviceManager.register(new LogWatcher(appContext));
-  serviceManager.register(new PatchReservationService(appContext));
-  serviceManager.register(new UpdateSchedulerService(appContext));
-
-  // Initialize all services
-  await serviceManager.initAll();
-
-  // Legacy field support for handlers (if needed)
-  appContext.processWatcher =
-    serviceManager.get<ProcessWatcher>("ProcessWatcher");
+  const { processWatcher } = await initializeCoreServices(appContext);
+  appContext.processWatcher = processWatcher;
 
   // --- ProcessWatcher Optimization & wake-up integrated in Class ---
   mainWindow.on("blur", () => {
     logger.log("[Main] Window blurred (Focus Lost).");
-    serviceManager.get<ProcessWatcher>("ProcessWatcher")?.scheduleSuspension();
+    newsService.setActive(false);
+    getProcessWatcher()?.scheduleSuspension();
   });
 
   mainWindow.on("focus", () => {
     logger.log("[Main] Window focused.");
-    serviceManager.get<ProcessWatcher>("ProcessWatcher")?.cancelSuspension();
+    newsService.setActive(true, getNewsRefreshContext("focus"));
+    getProcessWatcher()?.cancelSuspension();
   });
 
   // --- Main Window Loading ---
@@ -1989,6 +2218,38 @@ function syncDebugWindow(triggerSource: string = "Dynamic") {
 
 let isInitInProgress = false; // Guard against recursive/redundant calls during creation
 
+function destroyDebugWindowForRecovery(reason: string) {
+  if (debugDestructionTimeout) {
+    clearTimeout(debugDestructionTimeout);
+    debugDestructionTimeout = null;
+  }
+
+  if (debugWindow && !debugWindow.isDestroyed()) {
+    logger.warn(`[Main] Destroying Debug Window for recovery: ${reason}`);
+    debugWindow.destroy();
+  }
+
+  debugWindow = null;
+  context.debugWindow = null;
+}
+
+function scheduleDebugWindowRecovery(reason: string) {
+  if (debugRecoveryTimeout) return;
+
+  logger.warn(`[Main] Scheduling Debug Window recovery: ${reason}`);
+  destroyDebugWindowForRecovery(reason);
+
+  debugRecoveryTimeout = setTimeout(() => {
+    debugRecoveryTimeout = null;
+    if (
+      getEffectiveConfig("dev_mode") === true &&
+      getEffectiveConfig("debug_console") === true
+    ) {
+      initDebugWindow(`Recovery:${reason}`);
+    }
+  }, 250);
+}
+
 /**
  * Creates or destroys the debug window based on current configuration.
  * Can be called multiple times during runtime to toggle the window.
@@ -2027,6 +2288,7 @@ function initDebugWindow(triggerSource: string = "Dynamic") {
       logger.log(
         `[Main][${triggerSource}] Cancelled pending destruction for Debug Window.`,
       );
+      destroyDebugWindowForRecovery("Re-enabled while destruction was pending");
     }
 
     // 2. If doesn't exist or destroyed -> Create
@@ -2058,6 +2320,33 @@ function initDebugWindow(triggerSource: string = "Dynamic") {
             debugWindow.show();
             syncDebugWindow("ReadyToShow");
           }
+        });
+
+        debugWindow.webContents.on("did-finish-load", () => {
+          logger.log("[Main] Debug Window finished loading.");
+        });
+
+        debugWindow.webContents.on(
+          "did-fail-load",
+          (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+            if (!isMainFrame) return;
+            logger.error(
+              `[Main] Debug Window failed to load: ${errorCode} ${errorDescription} (${validatedURL})`,
+            );
+            scheduleDebugWindowRecovery("LoadFailed");
+          },
+        );
+
+        debugWindow.webContents.on("unresponsive", () => {
+          logger.error("[Main] Debug Window renderer became unresponsive.");
+          scheduleDebugWindowRecovery("RendererUnresponsive");
+        });
+
+        debugWindow.webContents.on("render-process-gone", (_event, details) => {
+          logger.error(
+            `[Main] Debug Window render process gone: ${details.reason}`,
+          );
+          scheduleDebugWindowRecovery("RenderProcessGone");
         });
 
         // Update Context
@@ -2162,14 +2451,33 @@ function initDebugWindow(triggerSource: string = "Dynamic") {
 }
 
 // IPC Handlers
-ipcMain.on("trigger-game-start", () => {
-  logger.log('[Main] IPC "trigger-game-start" Received from Renderer');
-  if (appContext) {
-    eventBus.emit(EventType.UI_GAME_START_CLICK, appContext, undefined);
-  } else {
-    logger.error("[Main] AppContext not initialized!");
-  }
-});
+ipcMain.on(
+  "trigger-game-start",
+  (_event, launchContext?: GameLaunchContext) => {
+    logger.log('[Main] IPC "trigger-game-start" Received from Renderer');
+    if (appContext) {
+      const config = getConfig() as AppConfig;
+      const gameId = launchContext?.gameId ?? config.activeGame;
+      const serviceId = launchContext?.serviceId ?? config.serviceChannel;
+      if (serviceId === "Kakao Games") {
+        didReportKakaoStartFailure = false;
+        startAutomationDumpSession({
+          gameId,
+          serviceId,
+          triggerContext: `GAME_START_${gameId}`,
+        });
+      }
+
+      eventBus.emit<UIEvent>(
+        EventType.UI_GAME_START_CLICK,
+        appContext,
+        launchContext,
+      );
+    } else {
+      logger.error("[Main] AppContext not initialized!");
+    }
+  },
+);
 
 // --- Patch Management IPC ---
 // Keep track of the active patch manager for cancellation
@@ -2331,10 +2639,7 @@ ipcMain.on("patch:reserve", (_event, reservation) => {
     `[Main] Patch Reservation added: ${reservation.gameId} at ${reservation.targetTime}`,
   );
   if (appContext?.serviceManager) {
-    const patchReservationService =
-      appContext.serviceManager.get<PatchReservationService>(
-        "PatchReservationService",
-      );
+    const patchReservationService = getPatchReservationService();
     if (patchReservationService) {
       patchReservationService.addReservation(reservation);
     }
@@ -2344,10 +2649,7 @@ ipcMain.on("patch:reserve", (_event, reservation) => {
 ipcMain.on("patch:delete-reservation", (_event, id: string) => {
   logger.log(`[Main] Patch Reservation deleted: ${id}`);
   if (appContext?.serviceManager) {
-    const patchReservationService =
-      appContext.serviceManager.get<PatchReservationService>(
-        "PatchReservationService",
-      );
+    const patchReservationService = getPatchReservationService();
     if (patchReservationService) {
       patchReservationService.deleteReservation(id);
     }
@@ -2383,58 +2685,6 @@ ipcMain.on("window-close", (event) => {
     }
   }
 });
-
-// Game Status Update IPC (From Game Window Preload)
-ipcMain.on(
-  "game-status-update",
-  (
-    _event,
-    status: unknown,
-    msgContext: {
-      gameId: AppConfig["activeGame"];
-      serviceId: AppConfig["serviceChannel"];
-    } | null,
-  ) => {
-    if (appContext) {
-      const senderId = _event.sender.id;
-      const mappedContext = windowContextMap.get(senderId);
-
-      // Determine context (Priority: IPC Payload > Window Map > Global Active Session > Defaults)
-      const gameId =
-        msgContext?.gameId ||
-        mappedContext?.gameId ||
-        activeSessionContext?.gameId ||
-        "POE2";
-      const serviceId =
-        msgContext?.serviceId ||
-        mappedContext?.serviceId ||
-        activeSessionContext?.serviceId ||
-        "Kakao Games";
-
-      // Only log error if we absolutely don't know the context and had to use hard-coded defaults
-      if (
-        !msgContext &&
-        !mappedContext &&
-        !activeSessionContext &&
-        (!gameId || !serviceId)
-      ) {
-        logger.error(
-          `[Main] IPC "game-status-update" received from unknown window (${senderId}) with no active session context!`,
-        );
-      }
-
-      eventBus.emit<GameStatusChangeEvent>(
-        EventType.GAME_STATUS_CHANGE,
-        appContext,
-        {
-          gameId: gameId as AppConfig["activeGame"],
-          serviceId: serviceId as AppConfig["serviceChannel"],
-          status: status as RunStatus,
-        },
-      );
-    }
-  },
-);
 
 // --- Visibility Management ---
 
@@ -2531,6 +2781,15 @@ app.on("browser-window-created", (_, window) => {
       if (!window.isVisible()) {
         logger.log(`[Main] Showing window: ${url}`);
         window.show();
+        void (async () => {
+          const triggerContext = getNavigationTrigger(window.webContents.id);
+          await dumpAutomationPage(window, {
+            reason: "check-and-show",
+            triggerContext: triggerContext ?? undefined,
+            mainWindow,
+            debugWindow,
+          });
+        })();
       }
     } else {
       if (window.isVisible()) {
@@ -2545,6 +2804,7 @@ app.on("browser-window-created", (_, window) => {
     if (!window.isDestroyed()) {
       checkAndShow();
       // Seeding context to new windows if we are in a launch session
+      const activeSessionContext = gameSessionTracker.getActiveSessionContext();
       if (activeSessionContext) {
         window.webContents.send("execute-game-start", activeSessionContext);
       }
@@ -2567,6 +2827,7 @@ app.on("browser-window-created", (_, window) => {
   }
 
   // Register context mapping for the new window (popup)
+  const activeSessionContext = gameSessionTracker.getActiveSessionContext();
   if (activeSessionContext && !window.isDestroyed()) {
     windowContextMap.set(wcId, activeSessionContext);
   }
@@ -2598,19 +2859,8 @@ eventBus.register({
   id: "ActiveSessionTracker",
   targetEvent: EventType.GAME_STATUS_CHANGE,
   handle: async (event: GameStatusChangeEvent) => {
-    const { status, gameId, serviceId } = event.payload;
-    // Sync with global tracker for interruption handling
-    currentSystemStatus = status;
-
-    // If we are prepared to launch or already launching, update active context
-    if (
-      status === "preparing" ||
-      status === "processing" ||
-      status === "authenticating"
-    ) {
-      activeSessionContext = { gameId, serviceId };
-      currentActiveContext = { gameId, serviceId };
-    }
+    gameSessionTracker.handleStatusChange(event.payload);
+    await handleAutomationDumpGameStatus(event.payload);
   },
 });
 
@@ -2661,6 +2911,12 @@ eventBus.register({
  */
 async function cleanupServices() {
   logger.log("[Main] Performing global service cleanup...");
+
+  try {
+    await discardAutomationDumpSession("app-cleanup");
+  } catch (e) {
+    logger.error("[Main] Failed to cleanup automation dump session:", e);
+  }
 
   // 1. Stop all registered services (Waiters, Watchers, Schedulers)
   try {

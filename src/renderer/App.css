@@ -214,6 +214,132 @@ img {
   overflow: hidden;
 }
 
+.news-refresh-toolbar {
+  position: absolute;
+  top: 62px;
+  right: 60px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0;
+  box-sizing: border-box;
+  z-index: 5;
+}
+
+.news-open-mode-panel,
+.news-refresh-status-panel {
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 0 10px;
+  box-sizing: border-box;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+
+.news-open-mode-label {
+  color: rgba(230, 220, 190, 0.86);
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+.news-refresh-toolbar-time {
+  color: #dfcf99;
+  font-size: 13px;
+  line-height: 1;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+.news-open-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.news-open-mode-button {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: transparent;
+  color: #8f8265;
+  cursor: pointer;
+  transition:
+    color 0.2s ease,
+    background 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.news-open-mode-button:hover,
+.news-open-mode-button.active {
+  color: #dfcf99;
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: none;
+  text-shadow: 0 0 6px rgba(223, 207, 153, 0.32);
+}
+
+.news-open-mode-button .material-symbols-outlined {
+  font-size: 18px;
+}
+
+.news-refresh-toolbar-button {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: transparent;
+  color: #dfcf99;
+  cursor: pointer;
+  transition:
+    color 0.2s ease,
+    background 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.news-refresh-toolbar-button:hover:not(:disabled) {
+  color: #f0dfaa;
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: none;
+  text-shadow: 0 0 6px rgba(223, 207, 153, 0.32);
+}
+
+.news-refresh-toolbar-button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.news-refresh-toolbar-button .material-symbols-outlined {
+  font-size: 19px;
+}
+
+.news-refresh-toolbar-button .material-symbols-outlined.spinning {
+  animation: newsRefreshToolbarSpin 0.8s linear infinite;
+}
+
+@keyframes newsRefreshToolbarSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .dev-notice-container {
   width: auto;
   margin: 100px 60px 0 20px;

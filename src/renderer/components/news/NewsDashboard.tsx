@@ -2,12 +2,13 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 
 import "./NewsDashboard.css";
 import NewsSection from "./NewsSection";
-import { NewsItem, AppConfig } from "../../../shared/types";
+import { NewsItem, AppConfig, NewsOpenMode } from "../../../shared/types";
 import { FORUM_URLS } from "../../../shared/urls";
 
 interface NewsDashboardProps {
   activeGame: AppConfig["activeGame"];
   serviceChannel: AppConfig["serviceChannel"];
+  openMode: NewsOpenMode;
   onItemClick?: (item: NewsItem) => void;
 }
 
@@ -26,6 +27,7 @@ interface NewsViewState {
 const NewsDashboard: React.FC<NewsDashboardProps> = ({
   activeGame,
   serviceChannel,
+  openMode,
   onItemClick,
 }) => {
   // Store news for all 4 combinations to allow instant switching
@@ -135,6 +137,7 @@ const NewsDashboard: React.FC<NewsDashboardProps> = ({
           Object.keys(next).forEach((key) => {
             if (!next[key]) return;
             next[key] = {
+              ...next[key],
               notices: next[key].notices.map((item) => ({
                 ...item,
                 isNew: false,
@@ -181,13 +184,12 @@ const NewsDashboard: React.FC<NewsDashboardProps> = ({
     const unlistenNews = window.electronAPI.onNewsUpdated(() => {
       // Periodic background refresh: Do NOT clear 'N' markers
       setFetchedKeys(new Set());
-      fetchCurrentNews(true);
+      loadAllCaches();
     });
 
     const unlistenShow = window.electronAPI.onWindowShow(() => {
-      // Restoration from tray: Clear 'N' markers BEFORE refreshing
+      // Restoration from tray: Clear 'N' markers. Main process handles TTL-based refresh.
       markAllViewsAsRead();
-      fetchCurrentNews(true);
     });
 
     return () => {
@@ -222,6 +224,7 @@ const NewsDashboard: React.FC<NewsDashboardProps> = ({
           const next = { ...curr };
           if (next[prevKey]) {
             next[prevKey] = {
+              ...next[prevKey],
               notices: next[prevKey].notices.map((n) => ({
                 ...n,
                 isNew: false,
@@ -251,6 +254,7 @@ const NewsDashboard: React.FC<NewsDashboardProps> = ({
       const next = { ...prev };
       Object.keys(next).forEach((key) => {
         next[key] = {
+          ...next[key],
           notices: next[key].notices.map((item) =>
             item.id === id ? { ...item, isNew: false } : item,
           ),
@@ -313,6 +317,7 @@ const NewsDashboard: React.FC<NewsDashboardProps> = ({
                 title="공지사항"
                 items={data.notices}
                 forumUrl={urls.notice}
+                openMode={openMode}
                 onRead={handleRead}
                 onShowModal={onItemClick}
                 headerVariant="short"
@@ -322,6 +327,7 @@ const NewsDashboard: React.FC<NewsDashboardProps> = ({
                 title="패치노트"
                 items={data.patchNotes}
                 forumUrl={urls.patchNotes}
+                openMode={openMode}
                 onRead={handleRead}
                 onShowModal={onItemClick}
                 headerVariant="short"

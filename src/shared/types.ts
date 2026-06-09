@@ -18,6 +18,8 @@ export interface ConfigDefinition {
   description: string;
 }
 
+export type NewsOpenMode = "inline" | "modal";
+
 export interface AppConfig {
   [key: string]: unknown;
   serviceChannel: "Kakao Games" | "GGG";
@@ -44,6 +46,7 @@ export interface AppConfig {
   closeAction: "minimize" | "close";
   quitOnGameStart: boolean;
   showOnboarding: boolean;
+  newsOpenMode: NewsOpenMode;
   /**
    * - "resource-saving": Optimization Mode (Background Scan OFF)
    * - "always-on": High Performance Mode (Background Scan ON)
@@ -93,6 +96,11 @@ export interface AppConfig {
    * 미설정이면 구버전(1)으로 간주. 설치된 폰트가 없으면 의미 없음.
    */
   fontMutationSchema?: number;
+}
+
+export interface GameLaunchContext {
+  gameId: AppConfig["activeGame"];
+  serviceId: AppConfig["serviceChannel"];
 }
 
 export interface PatchReservation {
@@ -310,7 +318,7 @@ export interface ElectronAPI {
     ) => void,
   ) => () => void;
 
-  triggerGameStart: () => void;
+  triggerGameStart: (context: GameLaunchContext) => void;
   minimizeWindow: () => void;
   closeWindow: () => void;
   getConfig: (
@@ -327,6 +335,7 @@ export interface ElectronAPI {
   onProgressMessage?: (callback: (text: string) => void) => void; // Deprecated
   onGameStatusUpdate?: (callback: (status: GameStatusState) => void) => void;
   onDebugLog?: (callback: (log: DebugLogPayload) => void) => () => void;
+  onExceptionLog?: (callback: (log: DebugLogPayload) => void) => () => void;
   onPatchProgress?: (callback: (progress: PatchProgress) => void) => () => void; // New
   getGameStatus: (
     gameId: string,
@@ -375,6 +384,12 @@ export interface ElectronAPI {
   ) => Promise<NewsItem[]>;
   getNewsContent: (id: string, link: string) => Promise<string>;
   getNewsContentCache: (id: string) => Promise<string | null>;
+  refreshAllNews: () => Promise<boolean>;
+  getNewsLastUpdatedAt: (
+    game: AppConfig["activeGame"],
+    service: AppConfig["serviceChannel"],
+    category: NewsCategory,
+  ) => Promise<number | null>;
   markNewsAsRead: (id: string) => Promise<void>;
   markMultipleNewsAsRead: (ids: string[]) => Promise<void>;
   onNewsUpdated: (callback: () => void) => () => void;
@@ -500,6 +515,7 @@ export interface NewsServiceState {
   items: Record<string, NewsItem[]>; // Key: "game-service-category"
   contents: Record<string, NewsContent>; // Key: threadId
   lastReadIds: string[]; // For 'N' marker logic
+  lastUpdatedAt: Record<string, number>; // Key: "game-service-category" or "dev-notice"
 }
 
 declare global {

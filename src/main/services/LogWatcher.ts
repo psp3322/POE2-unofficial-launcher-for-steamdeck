@@ -56,12 +56,14 @@ export class LogWatcher implements IService {
       const { name, pid } = event.payload;
       this.emitLog(`[Event:PROCESS_START] Received for ${name} (PID: ${pid})`);
 
-      const serviceId = this.context.getConfig(
-        "serviceChannel",
-      ) as AppConfig["serviceChannel"];
-      const activeGame = this.context.getConfig(
-        "activeGame",
-      ) as AppConfig["activeGame"];
+      const serviceId =
+        event.payload.serviceId ??
+        (this.context.getConfig(
+          "serviceChannel",
+        ) as AppConfig["serviceChannel"]);
+      const activeGame =
+        event.payload.gameId ??
+        (this.context.getConfig("activeGame") as AppConfig["activeGame"]);
 
       if (this.isGameProcess(name, serviceId)) {
         this.emitLog(
@@ -79,9 +81,11 @@ export class LogWatcher implements IService {
     });
 
     eventBus.on(EventType.PROCESS_STOP, (event: ProcessEvent) => {
-      const serviceId = this.context.getConfig(
-        "serviceChannel",
-      ) as AppConfig["serviceChannel"];
+      const serviceId =
+        event.payload.serviceId ??
+        (this.context.getConfig(
+          "serviceChannel",
+        ) as AppConfig["serviceChannel"]);
 
       if (this.isGameProcess(event.payload.name, serviceId)) {
         const pid = event.payload.pid;

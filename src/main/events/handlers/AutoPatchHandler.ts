@@ -429,12 +429,10 @@ export const AutoPatchProcessStopHandler: EventHandler<ProcessEvent> = {
                 context,
                 `[AutoPatch] Auto-Start enabled. Triggering Game Start for ${gameId} (${serviceId})...`,
               );
-              // Trigger Game Start (Assumes active config matches the patched game)
-              eventBus.emit<UIEvent>(
-                EventType.UI_GAME_START_CLICK,
-                context,
-                undefined,
-              );
+              eventBus.emit<UIEvent>(EventType.UI_GAME_START_CLICK, context, {
+                gameId,
+                serviceId,
+              });
             }
           }
           stateManager.clearSession(pid); // Done
