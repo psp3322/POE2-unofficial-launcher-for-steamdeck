@@ -136,6 +136,7 @@ export interface ThemesRemoteData {
 export type RunStatus =
   | "idle"
   | "uninstalled" // "게시판이나 공식 홈페이지를 통해 먼저 설치해주세요."
+  | "install_check_blocked" // "설치 경로 확인이 차단되었습니다."
   | "preparing" // "실행 절차 준비"
   | "processing" // "실행 절차 진행 중"
   | "authenticating" // "지정 PC 확인"

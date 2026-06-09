@@ -38,10 +38,11 @@ describe("GameStatusStore", () => {
     expect(getGameStatus("POE2", "Kakao Games")).toEqual(status);
   });
 
-  it("identifies launch states that keep the start button blocked", () => {
+  it("identifies statuses that keep a launch session active", () => {
     expect(isLaunchBlockingStatus("ready")).toBe(true);
     expect(isLaunchBlockingStatus("running")).toBe(true);
     expect(isLaunchBlockingStatus("stopping")).toBe(false);
+    expect(isLaunchBlockingStatus("install_check_blocked")).toBe(false);
     expect(isLaunchBlockingStatus("idle")).toBe(false);
   });
 

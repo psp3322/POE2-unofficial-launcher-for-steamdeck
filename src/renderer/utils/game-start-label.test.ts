@@ -7,6 +7,7 @@ import {
 import { RunStatus } from "../../shared/types";
 
 const launchActiveStatuses: RunStatus[] = [
+  "install_check_blocked",
   "preparing",
   "processing",
   "authenticating",

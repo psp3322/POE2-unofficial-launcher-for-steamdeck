@@ -63,6 +63,10 @@ interface StatusMessageConfig {
 const STATUS_MESSAGES: Record<RunStatus, StatusMessageConfig> = {
   idle: { message: "", timeout: 0 }, // [Updated] Clean idle state
   uninstalled: { message: "설치된 게임을 찾을 수 없습니다.", timeout: -1 }, // Sticky
+  install_check_blocked: {
+    message: "설치 경로 확인이 차단되었습니다.",
+    timeout: -1,
+  },
   preparing: { message: "실행 절차 준비 중...", timeout: 3000 },
   processing: { message: "실행 절차 진행 중...", timeout: 3000 },
   authenticating: { message: "지정 PC 확인 중...", timeout: 3000 },
@@ -627,7 +631,10 @@ function App() {
 
     // Also ignore transition from "uninstalled" to "idle" (re-install or config switch)
     // BUT we must CLEAR the sticky "uninstalled" message!
-    if (status === "idle" && prevStatus === "uninstalled") {
+    if (
+      status === "idle" &&
+      (prevStatus === "uninstalled" || prevStatus === "install_check_blocked")
+    ) {
       setTimeout(() => setActiveMessage(""), 0);
       prevStatusRef.current = status;
       return;
@@ -693,6 +700,7 @@ function App() {
     // ACTIVE: "Install" button should be ENABLED (not disabled)
     // allowing user to click and go to download page.
     if (s === "uninstalled") return false;
+    if (s === "install_check_blocked") return true;
 
     // Running states -> Disabled
     if (
@@ -712,7 +720,12 @@ function App() {
   // Whether the install needs patching: local last-seen version differs from remote latest.
   // Only meaningful when game is installed and we have both versions.
   const isUpdateNeeded = useMemo(() => {
-    if (activeGameStatus.status === "uninstalled") return false;
+    if (
+      activeGameStatus.status === "uninstalled" ||
+      activeGameStatus.status === "install_check_blocked"
+    ) {
+      return false;
+    }
     const key = `${config.activeGame}_${config.serviceChannel}`;
     const localVersion = config.knownGameVersions?.[key]?.version;
     const remoteVersion = remoteVersions?.[config.activeGame]?.version;
@@ -934,6 +947,11 @@ function App() {
           `[App] No download URL found for ${config.activeGame} / ${config.serviceChannel}`,
         );
       }
+      return;
+    }
+
+    if (activeGameStatus.status === "install_check_blocked") {
+      logger.warn("[App] Game start blocked because install check failed.");
       return;
     }
 
@@ -1375,6 +1393,7 @@ function App() {
                 <GameStartButton
                   onClick={handleGameStart}
                   label={gameStartButtonLabel}
+                  disabled={isButtonDisabled}
                   className={isButtonDisabled ? "disabled" : ""}
                   style={
                     isButtonDisabled

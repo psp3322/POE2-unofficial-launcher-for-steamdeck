@@ -12,6 +12,62 @@ export class UACDeniedException extends Error {
   }
 }
 
+const POWERSHELL_BLOCKED_GUIDANCE =
+  "PowerShell 실행이 Windows에 의해 거부되었거나 명령이 보안 정책으로 차단되었습니다. 백신/EDR 또는 Windows 보안 정책(AppLocker, WDAC, 그룹 정책, Defender ASR 등)이 원인일 수 있습니다.";
+
+type ProcessError = Error & {
+  code?: string | number;
+};
+
+export class PowerShellBlockedException extends Error {
+  constructor(reason: string, cause?: unknown) {
+    super(`${POWERSHELL_BLOCKED_GUIDANCE} 원본 오류: ${reason}`);
+    this.name = "PowerShellBlockedException";
+    if (cause !== undefined) {
+      (this as Error & { cause?: unknown }).cause = cause;
+    }
+  }
+}
+
+const formatUnknownError = (error: unknown): string => {
+  if (error instanceof Error) return error.message;
+  return String(error);
+};
+
+export const isPowerShellBlockedReason = (reason: unknown): boolean => {
+  const code =
+    typeof reason === "object" && reason !== null && "code" in reason
+      ? String((reason as ProcessError).code).toUpperCase()
+      : "";
+  if (code === "EPERM" || code === "EACCES") return true;
+
+  const text = formatUnknownError(reason).toLowerCase();
+  return (
+    text.includes("eperm") ||
+    text.includes("eacces") ||
+    text.includes("access is denied") ||
+    text.includes("access denied") ||
+    text.includes("permission denied") ||
+    text.includes("operation not permitted") ||
+    text.includes("blocked by group policy") ||
+    text.includes("blocked by your system administrator") ||
+    text.includes("disabled on this system") ||
+    text.includes("running scripts is disabled") ||
+    text.includes("unauthorizedaccessexception") ||
+    text.includes("액세스가 거부") ||
+    text.includes("그룹 정책") ||
+    text.includes("시스템 관리자") ||
+    text.includes("스크립트를 실행할 수 없")
+  );
+};
+
+const createPowerShellBlockedException = (
+  reason: unknown,
+  cause?: unknown,
+): PowerShellBlockedException => {
+  return new PowerShellBlockedException(formatUnknownError(reason), cause);
+};
+
 interface PSResult {
   stdout: string;
   stderr: string;
@@ -128,6 +184,10 @@ export class PowerShellManager {
         // 이미 child exit handler에서 warn을 남겼지만 호출부에서도 명확히 에러로 처리
         throw err;
       }
+      if (err instanceof PowerShellBlockedException) {
+        logger.error(err.message);
+        throw err;
+      }
       const msg = `Failed to establish connection to PowerShell session: ${err instanceof Error ? err.message : String(err)}`;
       logger.error(msg);
       return { stdout: "", stderr: msg, code: 1 };
@@ -147,7 +207,7 @@ export class PowerShellManager {
     const id = randomUUID();
     const request: IPCRequest = { id, command };
 
-    return new Promise<PSResult>((resolve) => {
+    return new Promise<PSResult>((resolve, reject) => {
       const timeoutMs = isAdmin ? 30000 : 10000;
       const timeout = setTimeout(() => {
         if (session.pendingRequests.has(id)) {
@@ -164,6 +224,14 @@ export class PowerShellManager {
 
       session.pendingRequests.set(id, (res) => {
         clearTimeout(timeout);
+        if (isPowerShellBlockedReason(res.stderr || res.stdout)) {
+          const blockedError = createPowerShellBlockedException(
+            res.stderr || res.stdout,
+          );
+          logger.error(blockedError.message);
+          reject(blockedError);
+          return;
+        }
         // Log Result
         if (silent) {
           if (res.stdout) logger.silent().log(res.stdout.trim());
@@ -280,32 +348,35 @@ export class PowerShellManager {
 
           // Initialization Complete
           session.initializing = null;
+          session.rejectInit = undefined;
           resolve();
         });
 
         session.server.listen(session.pipePath, () => {
           this.spawnProcess(session, isAdmin, pipeName).catch((err) => {
             this.cleanupSession(session);
-            // Ensure promise rejects and clears initializing
-            session.initializing = null;
-            if (session.rejectInit) session.rejectInit(err);
-            else reject(err);
+            this.rejectSessionInitialization(session, err);
           });
         });
 
         session.server.on("error", (err) => {
-          session.initializing = null;
-          if (session.rejectInit) session.rejectInit(err);
-          else reject(err);
+          this.rejectSessionInitialization(session, err);
         });
       } catch (e) {
-        session.initializing = null;
-        if (session.rejectInit) session.rejectInit(e);
-        else reject(e);
+        this.rejectSessionInitialization(session, e);
       }
     });
 
     return session.initializing;
+  }
+
+  private rejectSessionInitialization(session: SessionState, reason: unknown) {
+    const rejectInit = session.rejectInit;
+    session.initializing = null;
+    session.rejectInit = undefined;
+    if (rejectInit) {
+      rejectInit(reason);
+    }
   }
 
   private async spawnProcess(
@@ -426,10 +497,22 @@ try {
     session.process = child;
 
     child.on("error", (err) => {
-      logger.error(
-        `Failed to spawn ${isAdmin ? "Admin" : "Normal"} process:`,
-        err,
-      );
+      const reason = `Failed to spawn ${isAdmin ? "Admin" : "Normal"} PowerShell process: ${formatUnknownError(err)}`;
+      const error = isPowerShellBlockedReason(err)
+        ? createPowerShellBlockedException(reason, err)
+        : new Error(reason);
+      const wasInitializing = !!session.initializing;
+
+      if (session.server) {
+        session.server.close();
+        session.server = null;
+      }
+      session.process = null;
+      this.rejectSessionInitialization(session, error);
+      if (!wasInitializing) {
+        logger.error(error.message);
+      }
+      this.failAllPendingRequests(session, isAdmin, formatUnknownError(error));
     });
 
     child.on("exit", (code) => {
@@ -447,17 +530,13 @@ try {
       if (isAdmin && code === 1223) {
         logger.warn("UAC prompt was canceled by the user.");
         const uacErr = new UACDeniedException();
-        if (session.rejectInit) {
-          session.rejectInit(uacErr);
-        }
+        this.rejectSessionInitialization(session, uacErr);
         this.failAllPendingRequests(session, isAdmin, uacErr.message);
         return;
       }
 
       const errMsg = `Process exited with code ${code}`;
-      if (session.rejectInit) {
-        session.rejectInit(new Error(errMsg));
-      }
+      this.rejectSessionInitialization(session, new Error(errMsg));
       this.failAllPendingRequests(session, isAdmin, errMsg);
     });
   }

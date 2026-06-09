@@ -1,6 +1,6 @@
 import { AppConfig } from "../../../shared/types";
 import { logger } from "../../utils/logger";
-import { isGameInstalled } from "../../utils/registry";
+import { getGameInstallationStatus } from "../../utils/registry";
 import { eventBus } from "../EventBus";
 import {
   AppContext,
@@ -32,7 +32,10 @@ export const GameInstallCheckHandler: EventHandler<ConfigChangeEvent> = {
       `[GameInstallCheckHandler] Checking installation for ${activeGame} (${serviceChannel})...`,
     );
 
-    const installed = await isGameInstalled(serviceChannel, activeGame);
+    const installationStatus = await getGameInstallationStatus(
+      serviceChannel,
+      activeGame,
+    );
 
     // [Fix] Check if the game is already RUNNING before resetting to 'idle'
     // This prevents status flickering or resetting when switching tabs while game is open.
@@ -92,7 +95,15 @@ export const GameInstallCheckHandler: EventHandler<ConfigChangeEvent> = {
       {
         gameId: activeGame,
         serviceId: serviceChannel,
-        status: installed ? "idle" : "uninstalled",
+        status:
+          installationStatus === "uninstalled"
+            ? "uninstalled"
+            : installationStatus === "unknown"
+              ? "install_check_blocked"
+              : "idle",
+        ...(installationStatus === "unknown"
+          ? { errorCode: "INSTALL_CHECK_UNKNOWN" }
+          : {}),
       },
     );
   },

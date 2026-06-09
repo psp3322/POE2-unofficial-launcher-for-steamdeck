@@ -50,7 +50,10 @@ export class GameSessionTracker {
 
     if (
       isCurrentContext &&
-      (status === "idle" || status === "error" || status === "uninstalled")
+      (status === "idle" ||
+        status === "error" ||
+        status === "uninstalled" ||
+        status === "install_check_blocked")
     ) {
       this.clear();
     }
