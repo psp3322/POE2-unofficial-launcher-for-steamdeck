@@ -1,5 +1,41 @@
 # Changelog
 
+## [1.3.0](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/compare/1.2.6...1.3.0) (2026-06-09)
+
+
+### Features
+
+* **main:** 버전 확인 관련 로직 통합 및 고도화 ([#185](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/issues/185)) ([19fce75](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/19fce759254e64bfc1815aa19e2c9d7ea4d0edde))
+* 게시글 확인 방식을 자연스럽게 개선 ([ddc683b](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/ddc683b9de35dacf7dd67162f513c05ea052c022))
+
+
+### Bug Fixes
+
+* 개발 중 런처 화면 확인을 안정화 ([0bcd705](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/0bcd7058d35be58fa5b08a22802c992d8e86df8e))
+* 개발자 콘솔이 흰 화면으로 남지 않도록 개선 ([9b490e2](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/9b490e2f2c0d826cc61190d4843ad577bf8243df))
+* 게시판 새 소식을 자동과 수동으로 확인하도록 개선 ([71f3ea1](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/71f3ea1734ea35b7c211cd9798ed438695adb6a8))
+* 게임 실행 상태가 다른 게임에 표시되지 않도록 수정 ([0632634](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/06326348717f8385a9a13a90fdd95343e0d47abd))
+* 게임 실행 중 업데이트 표시가 남지 않게 수정 ([37b8fdf](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/37b8fdfa1512d50aa39092bec08151d4dddc7a02))
+* 게임 종료 후 시작 버튼 상태를 안정화 ([8459b89](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/8459b89e25b3c36ec40c12febbcaf089d652e28d))
+* 디버그 콘솔 새 로그 이동을 안정화 ([0933aa2](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/0933aa294f4102e22532ac770e50c80c231e2b33))
+* 빌드 중 불필요한 경고 정리 ([a6c7cb8](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/a6c7cb839bb144fd59cb5ca7d9ffc887fb9e7b34))
+* 오류 발생 시 진단과 제보 흐름을 개선 ([6a75e65](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/6a75e654bbb4e7ac3b236f60312f723dbd3109b6))
+* 카카오 실행 중 불필요한 창 노출을 줄임 ([afe9458](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/afe9458d90e3ff09f5a6b4bf552c861c51d4a2ed))
+* 카카오게임즈 서비스 전환 후 실행을 안정화 ([b4ecfd2](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/b4ecfd27ae6d04fd87946ef92052c93edb70164f))
+
+
+### Code Refactoring
+
+* 게임 상태 동기화 구조 정리 ([4262d17](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/4262d175cb5a6454dcaa99a7f25ab64b86d20f08))
+* 게임 실행 상태 관리 구조 정리 ([123c4f2](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/123c4f290ceeec9ab2055b1b64ea1aa0b3983e3f))
+* 백그라운드 서비스 관리 구조 정리 ([c06a607](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/c06a60773c393fbbcc1d8a52c2d755bf36c7913c))
+* 실행 이벤트 등록 구조 정리 ([ca9df20](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/ca9df20c0605de2c219fc3cd9b7266c247390384))
+
+
+### Documentation
+
+* add Codex agent instructions ([67412ae](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/67412ae2b9f5e03313437615caf87dee99ee914a))
+
 ## [1.2.6](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/compare/1.2.5...1.2.6) (2026-05-24)
 
 
