@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.3.1](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/compare/1.3.0...1.3.1) (2026-06-10)
+
+
+### Bug Fixes
+
+* 백신/보안 등의 이유로 설치 경로 확인에 실패할 경우 시작 버튼이 "설치하기" 대신 버튼 비활성화 및 상태 메시지를 업데이트 하도록 개선 ([9b4a3e8](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/9b4a3e8dc5ec42d6ac2f249079f7cfce4674f40f))
+* 새로 추가된 새로고침 UI의 시간이 마지막 변경시간이 아닌 마지막 확인시간으로 표기되도록 수정 ([c90b7cf](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/c90b7cfd3cf8e4986851d780c645d283a15c3816))
+
+
+### Documentation
+
+* 런처 미리보기 GIF 업데이트 ([dec29fd](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/dec29fd301c1bb687c1b98b26a30bea3fd390ecd))
+
 ## [1.3.0](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/compare/1.2.6...1.3.0) (2026-06-09)
 
 
