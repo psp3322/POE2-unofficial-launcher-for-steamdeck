@@ -113,7 +113,11 @@ export async function handleAutomationDumpGameStatus(status: GameStatusState) {
     return;
   }
 
-  if (status.status === "idle" || status.status === "uninstalled") {
+  if (
+    status.status === "idle" ||
+    status.status === "uninstalled" ||
+    status.status === "install_check_blocked"
+  ) {
     await discardAutomationDumpSession(`status-${status.status}`);
   }
 }

@@ -162,13 +162,15 @@ describe("NewsService", () => {
     expect(onUpdated).not.toHaveBeenCalled();
 
     vi.setSystemTime(new Date(Date.now() + NEWS_REFRESH_INTERVAL));
-    await service.refreshDue({
+    const unchangedDueRefresh = await service.refreshDue({
       game: "POE2",
       service: "GGG",
       reason: "due-again",
     });
 
+    expect(unchangedDueRefresh).toBe(false);
     expect(globalThis.fetch).toHaveBeenCalledTimes(3);
+    expect(onUpdated).toHaveBeenCalledTimes(1);
     expect(service.getLastUpdatedAt("GGG-POE2-notice")).toBe(Date.now());
   });
 

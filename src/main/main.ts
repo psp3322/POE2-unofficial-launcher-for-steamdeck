@@ -102,8 +102,11 @@ import {
 } from "./utils/logger";
 import { LogParser } from "./utils/LogParser";
 import { PowerShellManager } from "./utils/powershell";
-import { getGameInstallPath, isGameInstalled } from "./utils/registry";
-import { syncInstallLocation } from "./utils/registry";
+import {
+  getGameInstallPath,
+  getGameInstallationStatus,
+  syncInstallLocation,
+} from "./utils/registry";
 import { RemoteVersionResolver } from "./utils/RemoteVersionResolver";
 import { LegacyUacManager, SimpleUacBypass } from "./utils/uac/uac-migration";
 import {
@@ -2063,7 +2066,7 @@ async function createWindow() {
     logger.log("[Main] Checking initial status for all game contexts...");
 
     for (const combo of combinations) {
-      const installed = await isGameInstalled(
+      const installationStatus = await getGameInstallationStatus(
         combo.service as AppConfig["serviceChannel"],
         combo.game as AppConfig["activeGame"],
       );
@@ -2074,7 +2077,15 @@ async function createWindow() {
         {
           gameId: combo.game as AppConfig["activeGame"],
           serviceId: combo.service as AppConfig["serviceChannel"],
-          status: installed ? "idle" : "uninstalled",
+          status:
+            installationStatus === "uninstalled"
+              ? "uninstalled"
+              : installationStatus === "unknown"
+                ? "install_check_blocked"
+                : "idle",
+          ...(installationStatus === "unknown"
+            ? { errorCode: "INSTALL_CHECK_UNKNOWN" }
+            : {}),
         },
       );
     }

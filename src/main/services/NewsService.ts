@@ -44,6 +44,7 @@ type NewsRefreshSource =
 type FetchResult = {
   items: NewsItem[];
   changed: boolean;
+  refreshed: boolean;
 };
 
 const DEV_NOTICE_KEY = "dev-notice";
@@ -149,9 +150,10 @@ export class NewsService {
       dueSources.map((source) => this.refreshSource(source)),
     );
     const changed = results.some((result) => result.changed);
+    const refreshed = results.some((result) => result.refreshed);
 
     this.hasPendingRefresh = false;
-    if (changed) {
+    if (refreshed) {
       this.emitUpdated();
     }
 
@@ -347,11 +349,15 @@ export class NewsService {
     const key = this.getForumKey(game, service, category);
     const url = NEWS_URL_MAP[key];
 
-    if (!url) return { items: [], changed: false };
+    if (!url) return { items: [], changed: false, refreshed: false };
 
     if (this.fetchLock.has(key)) {
       this.logger.log(`Fetch already in progress for ${key}. Skipping.`);
-      return { items: this.getCacheItems(key), changed: false };
+      return {
+        items: this.getCacheItems(key),
+        changed: false,
+        refreshed: false,
+      };
     }
 
     this.fetchLock.add(key);
@@ -435,10 +441,14 @@ export class NewsService {
         `Successfully fetched ${category} for ${service}-${game}.`,
       );
       this.markRefreshed(key);
-      return { items, changed: isChanged };
+      return { items, changed: isChanged, refreshed: true };
     } catch (error) {
       this.logger.error(`Failed to fetch news list for ${key}:`, error);
-      return { items: this.getCacheItems(key), changed: false };
+      return {
+        items: this.getCacheItems(key),
+        changed: false,
+        refreshed: false,
+      };
     } finally {
       this.fetchLock.delete(key);
     }
@@ -454,11 +464,15 @@ export class NewsService {
   ): Promise<FetchResult> {
     const notify = options.notify ?? true;
     const url = NEWS_URL_MAP["dev-notice"];
-    if (!url) return { items: [], changed: false };
+    if (!url) return { items: [], changed: false, refreshed: false };
 
     if (this.fetchLock.has(DEV_NOTICE_KEY)) {
       this.logger.log("Fetch already in progress for dev-notice. Skipping.");
-      return { items: this.getCacheItems(DEV_NOTICE_KEY), changed: false };
+      return {
+        items: this.getCacheItems(DEV_NOTICE_KEY),
+        changed: false,
+        refreshed: false,
+      };
     }
 
     this.fetchLock.add(DEV_NOTICE_KEY);
@@ -472,7 +486,11 @@ export class NewsService {
 
       if (!Array.isArray(data)) {
         this.logger.warn("Dev notices data is not an array.");
-        return { items: this.getCacheItems(DEV_NOTICE_KEY), changed: false };
+        return {
+          items: this.getCacheItems(DEV_NOTICE_KEY),
+          changed: false,
+          refreshed: false,
+        };
       }
 
       const items: NewsItem[] = data.map(
@@ -523,10 +541,14 @@ export class NewsService {
         if (notify) this.emitUpdated();
       }
 
-      return { items: sortedItems, changed: isChanged };
+      return { items: sortedItems, changed: isChanged, refreshed: true };
     } catch (error) {
       this.logger.error("Failed to fetch dev notices:", error);
-      return { items: this.getCacheItems(DEV_NOTICE_KEY), changed: false };
+      return {
+        items: this.getCacheItems(DEV_NOTICE_KEY),
+        changed: false,
+        refreshed: false,
+      };
     } finally {
       this.fetchLock.delete(DEV_NOTICE_KEY);
     }

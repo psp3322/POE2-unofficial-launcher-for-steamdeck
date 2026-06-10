@@ -6,6 +6,7 @@ interface GameStartButtonProps {
   label?: string;
   style?: React.CSSProperties;
   className?: string; // Allow external class injection
+  disabled?: boolean;
 }
 
 const GameStartButton: React.FC<GameStartButtonProps> = ({
@@ -13,12 +14,14 @@ const GameStartButton: React.FC<GameStartButtonProps> = ({
   label = "게임 시작",
   style,
   className = "",
+  disabled = false,
 }) => {
   return (
     <button
       className={`main-start__link ${className}`}
       onClick={onClick}
       style={style}
+      disabled={disabled}
     >
       {/* Defined SVG Filter for Chiseled 3D Effect */}
       <svg

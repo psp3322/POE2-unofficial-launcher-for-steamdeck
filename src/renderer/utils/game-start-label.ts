@@ -1,6 +1,7 @@
 import { RunStatus } from "../../shared/types";
 
 const UPDATE_LABEL_SUPPRESSED_STATUSES: RunStatus[] = [
+  "install_check_blocked",
   "preparing",
   "processing",
   "authenticating",

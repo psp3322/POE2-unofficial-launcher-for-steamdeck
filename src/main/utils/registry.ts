@@ -1,3 +1,4 @@
+import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -6,6 +7,18 @@ import { app } from "electron";
 import { PowerShellManager } from "./powershell";
 import { AppConfig } from "../../shared/types";
 import { logger } from "../utils/logger";
+
+type RegistryReadResult =
+  | { ok: true; value: string | null }
+  | { ok: false; error: string };
+
+export type GameInstallationStatus = "installed" | "uninstalled" | "unknown";
+
+type ExecFileError = Error & {
+  code?: number | string;
+  stdout?: string | Buffer;
+  stderr?: string | Buffer;
+};
 
 /**
  * Registry Mapping for Game Installation Paths
@@ -58,6 +71,23 @@ const standardizeRegPath = (path: string): string => {
   return path;
 };
 
+const toRegExePath = (regPath: string): string | null => {
+  const finalPath = standardizeRegPath(regPath);
+  const prefixMap: Array<[string, string]> = [
+    ["Registry::HKEY_CURRENT_USER\\", "HKCU\\"],
+    ["Registry::HKEY_LOCAL_MACHINE\\", "HKLM\\"],
+    ["Registry::HKEY_CLASSES_ROOT\\", "HKCR\\"],
+  ];
+
+  for (const [powershellPrefix, regExePrefix] of prefixMap) {
+    if (finalPath.startsWith(powershellPrefix)) {
+      return finalPath.replace(powershellPrefix, regExePrefix);
+    }
+  }
+
+  return null;
+};
+
 /**
  * Normalize installation path by removing trailing slashes and ensuring consistent separators
  */
@@ -84,17 +114,89 @@ export const runPowerShell = async (
   return PowerShellManager.getInstance().execute(psCommand, useAdmin);
 };
 
-/**
- * Reads a single registry value
- */
-export const readRegistryValue = async (
+const toOutputString = (value: string | Buffer | undefined): string => {
+  if (Buffer.isBuffer(value)) return value.toString("utf8");
+  return value ?? "";
+};
+
+const formatError = (error: unknown): string => {
+  if (error instanceof Error) return error.message;
+  return String(error);
+};
+
+const isMissingPathError = (error: unknown): boolean => {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    ((error as NodeJS.ErrnoException).code === "ENOENT" ||
+      (error as NodeJS.ErrnoException).code === "ENOTDIR")
+  );
+};
+
+const parseRegQueryValue = (stdout: string, key: string): string | null => {
+  const lowerKey = key.toLowerCase();
+
+  for (const line of stdout.split(/\r?\n/)) {
+    const match = line.trimStart().match(/^(.*?)\s+REG_\S+\s*(.*)$/i);
+    if (!match) continue;
+
+    if (match[1].trim().toLowerCase() === lowerKey) {
+      const value = match[2].trim();
+      return value || null;
+    }
+  }
+
+  return null;
+};
+
+const queryRegistryWithRegExe = async (
   regPath: string,
   key: string,
-): Promise<string | null> => {
-  try {
-    const finalPath = standardizeRegPath(regPath);
-    // Safer retrieval: Get-ItemProperty directly
-    const psCommand = `
+): Promise<RegistryReadResult> => {
+  const queryPath = toRegExePath(regPath);
+  if (!queryPath) {
+    return { ok: false, error: `Unsupported registry path: ${regPath}` };
+  }
+
+  return new Promise<RegistryReadResult>((resolve) => {
+    execFile(
+      "reg.exe",
+      ["query", queryPath, "/v", key],
+      { windowsHide: true, timeout: 5000 },
+      (error, stdout, stderr) => {
+        if (!error) {
+          resolve({
+            ok: true,
+            value: parseRegQueryValue(toOutputString(stdout), key),
+          });
+          return;
+        }
+
+        const execError = error as ExecFileError;
+        if (execError.code === 1 || execError.code === "1") {
+          resolve({ ok: true, value: null });
+          return;
+        }
+
+        resolve({
+          ok: false,
+          error:
+            toOutputString(execError.stderr) ||
+            toOutputString(stderr) ||
+            formatError(execError),
+        });
+      },
+    );
+  });
+};
+
+const readRegistryValueDetailed = async (
+  regPath: string,
+  key: string,
+): Promise<RegistryReadResult> => {
+  const finalPath = standardizeRegPath(regPath);
+  const psCommand = `
       if (Test-Path "${finalPath}") {
         $prop = Get-ItemProperty -Path "${finalPath}" -Name "${key}" -ErrorAction SilentlyContinue
         if ($prop) {
@@ -103,15 +205,41 @@ export const readRegistryValue = async (
       }
     `.trim();
 
-    const { stdout, code } = await runPowerShell(psCommand);
+  try {
+    const { stdout, stderr, code } = await runPowerShell(psCommand);
 
-    if (code === 0 && stdout && stdout.trim()) {
-      return stdout.trim();
+    if (code === 0) {
+      const value = stdout.trim();
+      return { ok: true, value: value || null };
     }
-    return null;
-  } catch (_e) {
-    return null;
+
+    const fallback = await queryRegistryWithRegExe(regPath, key);
+    if (fallback.ok) return fallback;
+
+    return {
+      ok: false,
+      error: `PowerShell failed (${stderr || `exit code ${code}`}); reg.exe failed (${fallback.error})`,
+    };
+  } catch (error) {
+    const fallback = await queryRegistryWithRegExe(regPath, key);
+    if (fallback.ok) return fallback;
+
+    return {
+      ok: false,
+      error: `PowerShell threw (${formatError(error)}); reg.exe failed (${fallback.error})`,
+    };
   }
+};
+
+/**
+ * Reads a single registry value
+ */
+export const readRegistryValue = async (
+  regPath: string,
+  key: string,
+): Promise<string | null> => {
+  const result = await readRegistryValueDetailed(regPath, key);
+  return result.ok ? result.value : null;
 };
 
 /**
@@ -214,20 +342,49 @@ export const setDaumGameStarterCommand = async (
 /**
  * Checks if the game is actually installed by verifying registry path and folder presence
  */
+export const getGameInstallationStatus = async (
+  serviceId: AppConfig["serviceChannel"],
+  gameId: AppConfig["activeGame"],
+): Promise<GameInstallationStatus> => {
+  const registryInfo = REGISTRY_MAP[serviceId]?.[gameId];
+  if (!registryInfo) return "unknown";
+
+  const registryResult = await readRegistryValueDetailed(
+    registryInfo.path,
+    registryInfo.key,
+  );
+
+  if (!registryResult.ok) {
+    logger.warn(
+      `[Registry] Could not determine installation status for ${gameId} (${serviceId}): ${registryResult.error}`,
+    );
+    return "unknown";
+  }
+
+  if (!registryResult.value) return "uninstalled";
+
+  const installPath = normalizePath(registryResult.value);
+  if (!installPath) return "uninstalled";
+
+  try {
+    // Check if directory exists
+    const stats = await fs.stat(installPath);
+    return stats.isDirectory() ? "installed" : "uninstalled";
+  } catch (error) {
+    if (isMissingPathError(error)) return "uninstalled";
+
+    logger.warn(
+      `[Registry] Could not verify installation path for ${gameId} (${serviceId}): ${formatError(error)}`,
+    );
+    return "unknown";
+  }
+};
+
 export const isGameInstalled = async (
   serviceId: AppConfig["serviceChannel"],
   gameId: AppConfig["activeGame"],
 ): Promise<boolean> => {
-  try {
-    const installPath = await getGameInstallPath(serviceId, gameId);
-    if (!installPath) return false;
-
-    // Check if directory exists
-    const stats = await fs.stat(installPath);
-    return stats.isDirectory();
-  } catch (_e) {
-    return false;
-  }
+  return (await getGameInstallationStatus(serviceId, gameId)) === "installed";
 };
 
 /**
