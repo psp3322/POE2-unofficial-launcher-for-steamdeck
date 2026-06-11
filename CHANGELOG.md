@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.3.3](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/compare/1.3.2...1.3.3) (2026-06-11)
+
+
+### Bug Fixes
+
+* dev 서버 Electron reload 실패 복구 ([fc9225d](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/fc9225ddfe8257a547f7c0c944ae97b063d06374))
+* Windows가 폰트 파일을 사용 중일 때도 폰트 업데이트가 중단되지 않도록 개선 ([6bd8fc4](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/6bd8fc44f4dbf74a5397f81b9720e6428b9a1ee8))
+* 게임 실행 중 런처가 시작 혹은 재시작되면 실행 상태가 반영되지 않는 문제 수정 ([50fd974](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/50fd974abd2c74534db5d916f2826ba6908d295f))
+* 게임 실행 중 폰트 업데이트 안내가 뜰 때 재적용을 막도록 개선 ([6f2144e](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/6f2144e349bc4dc0765c81df830e33ef53e286ec))
+* 저해상도에서 일부 커스텀 폰트가 계단져 보이는 문제 개선 ([d732f0f](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/d732f0f71c258c969bbcb198237bf688892e1942))
+
 ## [1.3.2](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/compare/1.3.1...1.3.2) (2026-06-10)
 
 
