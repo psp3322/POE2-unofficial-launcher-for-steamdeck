@@ -43,6 +43,10 @@ export const isLaunchBlockingStatus = (status: RunStatus): boolean =>
   status === "ready" ||
   status === "running";
 
+export const shouldPreserveRuntimeGameStatus = (
+  statusState: GameStatusState,
+): boolean => isLaunchBlockingStatus(statusState.status);
+
 export const isProcessExpectedStatus = (status: RunStatus): boolean =>
   status === "ready" || status === "running";
 

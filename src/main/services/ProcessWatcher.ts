@@ -23,6 +23,7 @@ import * as processUtils from "../utils/process";
 import type { AppConfig } from "../../shared/types";
 
 const TARGET_PROCESSES = SUPPORTED_PROCESS_NAMES;
+const DEFAULT_WATCH_INTERVAL_MS = 3000;
 const SUSPEND_DELAY_MS = 60 * 1000;
 const PROCESS_EXPECTED_GRACE_MS = 30 * 1000;
 
@@ -58,7 +59,8 @@ export class ProcessWatcher implements IService {
 
   public async init(): Promise<void> {
     this.registerLaunchIntentListener();
-    this.startWatching();
+    this.startWatching(DEFAULT_WATCH_INTERVAL_MS, false);
+    await this.checkNow();
   }
 
   public async stop(): Promise<void> {
@@ -69,16 +71,21 @@ export class ProcessWatcher implements IService {
     this.stopWatching();
   }
 
-  public startWatching(intervalMs: number = 3000) {
+  public startWatching(
+    intervalMs: number = DEFAULT_WATCH_INTERVAL_MS,
+    runInitialCheck = true,
+  ) {
     if (this.timer) {
       // Already running (Idempotent)
       return;
     }
     this.logger.log("Starting Watcher Service (PID-based)...");
-    this.runCheck(); // Initial check
+    if (runInitialCheck) {
+      void this.checkNow();
+    }
 
     this.timer = setInterval(() => {
-      this.runCheck();
+      void this.checkNow();
     }, intervalMs);
   }
 
@@ -88,6 +95,10 @@ export class ProcessWatcher implements IService {
       this.timer = null;
       this.logger.log("Watcher Service Stopped.");
     }
+  }
+
+  public async checkNow(): Promise<void> {
+    await this.runCheck();
   }
 
   /**
@@ -255,13 +266,17 @@ export class ProcessWatcher implements IService {
             `Process Started: ${p.name} (PID: ${p.pid}, Path: ${p.path || "Unknown"}, Game: ${identity.gameId || "Unknown"}, Service: ${identity.serviceId || "Unknown"})`,
           );
 
-          eventBus.emit<ProcessEvent>(EventType.PROCESS_START, this.context, {
-            name: p.name,
-            path: p.path,
-            pid: p.pid,
-            gameId: identity.gameId,
-            serviceId: identity.serviceId,
-          });
+          await eventBus.emit<ProcessEvent>(
+            EventType.PROCESS_START,
+            this.context,
+            {
+              name: p.name,
+              path: p.path,
+              pid: p.pid,
+              gameId: identity.gameId,
+              serviceId: identity.serviceId,
+            },
+          );
         }
       }
 
@@ -278,19 +293,23 @@ export class ProcessWatcher implements IService {
           // Process Stopped
           this.logger.log(`Process Stopped: ${info.name} (PID: ${pid})`);
 
-          eventBus.emit<ProcessEvent>(EventType.PROCESS_STOP, this.context, {
-            name: info.name,
-            path: info.path,
-            pid: pid, // Using the key from valid iteration
-            gameId: info.gameId,
-            serviceId: info.serviceId,
-          });
+          await eventBus.emit<ProcessEvent>(
+            EventType.PROCESS_STOP,
+            this.context,
+            {
+              name: info.name,
+              path: info.path,
+              pid: pid, // Using the key from valid iteration
+              gameId: info.gameId,
+              serviceId: info.serviceId,
+            },
+          );
 
           this.activePids.delete(pid);
         }
       }
 
-      this.reconcileStaleActiveStatuses();
+      await this.reconcileStaleActiveStatuses();
     } catch (e) {
       this.logger.error(`Error during runCheck:`, e);
     } finally {
@@ -298,7 +317,7 @@ export class ProcessWatcher implements IService {
     }
   }
 
-  private reconcileStaleActiveStatuses() {
+  private async reconcileStaleActiveStatuses() {
     const now = Date.now();
 
     for (const statusState of getAllGameStatuses()) {
@@ -325,7 +344,7 @@ export class ProcessWatcher implements IService {
         `[ProcessWatcher] Reconciled stale ${statusState.status} status to idle: ${statusState.gameId} / ${statusState.serviceId}`,
       );
 
-      eventBus.emit<GameStatusChangeEvent>(
+      await eventBus.emit<GameStatusChangeEvent>(
         EventType.GAME_STATUS_CHANGE,
         this.context,
         payload,

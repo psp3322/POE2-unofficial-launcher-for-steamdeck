@@ -4,6 +4,7 @@ import {
   getGameStatus,
   isLaunchBlockingStatus,
   resetGameStatusCacheForTests,
+  shouldPreserveRuntimeGameStatus,
   shouldResetStatusOnAutomationWindowClosed,
   updateGameStatusCache,
 } from "../state/GameStatusStore";
@@ -44,6 +45,30 @@ describe("GameStatusStore", () => {
     expect(isLaunchBlockingStatus("stopping")).toBe(false);
     expect(isLaunchBlockingStatus("install_check_blocked")).toBe(false);
     expect(isLaunchBlockingStatus("idle")).toBe(false);
+  });
+
+  it("preserves active runtime statuses during install reconciliation", () => {
+    expect(
+      shouldPreserveRuntimeGameStatus({
+        gameId: "POE2",
+        serviceId: "Kakao Games",
+        status: "running",
+      }),
+    ).toBe(true);
+    expect(
+      shouldPreserveRuntimeGameStatus({
+        gameId: "POE2",
+        serviceId: "Kakao Games",
+        status: "processing",
+      }),
+    ).toBe(true);
+    expect(
+      shouldPreserveRuntimeGameStatus({
+        gameId: "POE2",
+        serviceId: "Kakao Games",
+        status: "idle",
+      }),
+    ).toBe(false);
   });
 
   it("resets an interrupted automation window only when the game is not already tracked", () => {
