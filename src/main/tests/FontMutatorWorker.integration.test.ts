@@ -6,9 +6,9 @@ import { Font } from "fonteditor-core";
 import { describe, it, expect } from "vitest";
 
 /**
- * 회귀 가설: FontMutatorWorker는 Font.create(buf, { type: "ttf" })로 고정 파싱한다.
- * 사용자가 IPC pick-file 다이얼로그에서 .otf를 골랐을 경우(현재 허용됨),
- * 이 경로에서 "ttf file damaged" 또는 유사 에러가 발생해야 한다 (=현재 버그 재현).
+ * 회귀 배경: 구버전 FontMutatorWorker는 Font.create(buf, { type: "ttf" })로
+ * 고정 파싱했다. 사용자가 IPC pick-file 다이얼로그에서 .otf를 골랐을 경우,
+ * 이 경로에서 "ttf file damaged" 또는 유사 에러가 발생했다.
  *
  * 샘플 폰트 경로: D:\project_poe2\POE2-unofficial-launcher-gh-pages\fonts
  * (gh-pages 리포 체크아웃 필요. 없으면 테스트는 skip 처리.)
@@ -52,7 +52,7 @@ describe.skipIf(!hasSamples)(
       const buf = fs.readFileSync(otfFile);
       expect(readFontType(otfFile)).toBe("otf");
 
-      // 현재 FontMutatorWorker.ts:52 와 동일한 호출
+      // 구버전 FontMutatorWorker의 고정 TTF 파싱 경로와 동일한 호출
       expect(() => Font.create(buf, { type: "ttf" })).toThrow();
     });
 

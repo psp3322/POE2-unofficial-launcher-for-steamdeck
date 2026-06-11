@@ -126,6 +126,34 @@ describe("ProcessWatcher suspension", () => {
     watcher.stopWatching();
   });
 
+  it("waits for the initial process scan during init", async () => {
+    vi.mocked(processUtils.getProcessesInfo).mockResolvedValueOnce([
+      {
+        pid: 88,
+        name: "POE2_Launcher.exe",
+        path: "",
+      },
+    ]);
+
+    const watcher = new ProcessWatcher(createContext());
+
+    await watcher.init();
+
+    expect(watcher.isProcessRunning("POE2_Launcher.exe")).toBe(true);
+    expect(eventBus.emit).toHaveBeenCalledWith(
+      EventType.PROCESS_START,
+      expect.anything(),
+      expect.objectContaining({
+        pid: 88,
+        name: "POE2_Launcher.exe",
+        gameId: "POE2",
+        serviceId: "Kakao Games",
+      }),
+    );
+
+    await watcher.stop();
+  });
+
   it("keeps inferred context on process stop events", async () => {
     vi.mocked(processUtils.getProcessesInfo)
       .mockResolvedValueOnce([

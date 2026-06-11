@@ -87,6 +87,10 @@ import {
 } from "./services/register-services";
 import { serviceManager } from "./services/ServiceManager";
 import { themeCacheManager } from "./services/ThemeCacheManager";
+import {
+  getGameStatus,
+  shouldPreserveRuntimeGameStatus,
+} from "./state/GameStatusStore";
 import { getConfig, setupStoreObservers, default as store } from "./store";
 import {
   isAdmin,
@@ -2066,12 +2070,28 @@ async function createWindow() {
     logger.log("[Main] Checking initial status for all game contexts...");
 
     for (const combo of combinations) {
+      const currentStatus = getGameStatus(combo.game, combo.service);
+      if (shouldPreserveRuntimeGameStatus(currentStatus)) {
+        logger.log(
+          `[Main] Preserving active runtime status for ${combo.game} (${combo.service}): ${currentStatus.status}`,
+        );
+        continue;
+      }
+
       const installationStatus = await getGameInstallationStatus(
         combo.service as AppConfig["serviceChannel"],
         combo.game as AppConfig["activeGame"],
       );
 
-      eventBus.emit<GameStatusChangeEvent>(
+      const latestStatus = getGameStatus(combo.game, combo.service);
+      if (shouldPreserveRuntimeGameStatus(latestStatus)) {
+        logger.log(
+          `[Main] Preserving active runtime status after install check for ${combo.game} (${combo.service}): ${latestStatus.status}`,
+        );
+        continue;
+      }
+
+      await eventBus.emit<GameStatusChangeEvent>(
         EventType.GAME_STATUS_CHANGE,
         appContext,
         {
@@ -2090,7 +2110,6 @@ async function createWindow() {
       );
     }
   };
-  checkAllGameStatuses();
 
   // Sync Auto Launch Status
   // Sync Auto Launch Status
@@ -2101,6 +2120,7 @@ async function createWindow() {
 
   const { processWatcher } = await initializeCoreServices(appContext);
   appContext.processWatcher = processWatcher;
+  await checkAllGameStatuses();
 
   // --- ProcessWatcher Optimization & wake-up integrated in Class ---
   mainWindow.on("blur", () => {

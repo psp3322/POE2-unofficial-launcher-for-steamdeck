@@ -41,6 +41,15 @@ Before any repo-local `gh` command or GitHub HTTPS push, use the
 It defines the repo-local `GH_TOKEN` injection pattern and avoids mutating
 global GitHub CLI auth state.
 
+## Architecture management
+
+When a task adds or changes lifecycle phases, service startup/shutdown,
+EventBus/IPC boundaries, shared state ownership, process watching, updater/font
+migration, or cross-module workflows, use
+`.agents/skills/architecture-management/SKILL.md` before implementation. Pair it
+with `config-management`, `settings-management`, `event-ipc-integration`, or
+`windows-electron-debugging` when their triggers also apply.
+
 ## WSL execution rules
 
 Detect WSL at session start. If `uname -r` contains `microsoft` or `WSL`, this is WSL.

@@ -2,6 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
@@ -46,8 +47,12 @@ type ElectronStartupOptions = {
   reload: () => void;
 };
 
+type ManagedElectronProcess = ChildProcess & {
+  __poe2IpcErrorHandlerAttached?: boolean;
+};
+
 type ElectronProcess = NodeJS.Process & {
-  electronApp?: unknown;
+  electronApp?: ManagedElectronProcess;
 };
 
 type ExecError = Error & {
@@ -66,7 +71,9 @@ const getElectronStartupArgs = () => {
 
 const startElectronApp = async (options: ElectronStartupOptions) => {
   try {
-    return await options.startup(getElectronStartupArgs());
+    const result = await options.startup(getElectronStartupArgs());
+    attachElectronProcessErrorHandler();
+    return result;
   } catch (error) {
     if (!isMissingTaskkillProcessError(error)) {
       throw error;
@@ -77,18 +84,66 @@ const startElectronApp = async (options: ElectronStartupOptions) => {
       "[vite] Ignoring stale Electron PID cleanup failure and retrying startup.",
     );
     electronProcess.electronApp = undefined;
-    return options.startup(getElectronStartupArgs());
+    const result = await options.startup(getElectronStartupArgs());
+    attachElectronProcessErrorHandler();
+    return result;
   }
 };
 
 const reloadElectronRenderer = (options: ElectronStartupOptions) => {
-  if ((process as ElectronProcess).electronApp) {
-    options.reload();
-    return;
+  const electronProcess = process as ElectronProcess;
+
+  if (isElectronAppReloadable(electronProcess.electronApp)) {
+    try {
+      options.reload();
+      return;
+    } catch (error) {
+      if (!isClosedIpcError(error)) {
+        throw error;
+      }
+
+      console.warn(
+        "[vite] Electron IPC channel was closed during reload. Restarting app.",
+      );
+    }
+  } else if (electronProcess.electronApp) {
+    console.warn("[vite] Electron app handle is stale. Restarting app.");
   }
 
+  electronProcess.electronApp = undefined;
   return startElectronApp(options);
 };
+
+function isElectronAppReloadable(electronApp?: ManagedElectronProcess) {
+  return (
+    !!electronApp && !electronApp.killed && electronApp.connected !== false
+  );
+}
+
+function attachElectronProcessErrorHandler() {
+  const electronApp = (process as ElectronProcess).electronApp;
+  if (!electronApp || electronApp.__poe2IpcErrorHandlerAttached) return;
+
+  electronApp.__poe2IpcErrorHandlerAttached = true;
+  electronApp.on("error", (error) => {
+    if (isClosedIpcError(error)) {
+      console.warn("[vite] Ignoring closed Electron IPC channel.");
+      (process as ElectronProcess).electronApp = undefined;
+      return;
+    }
+
+    console.error("[vite] Electron process error:", error);
+  });
+}
+
+function isClosedIpcError(error: unknown) {
+  if (!(error instanceof Error)) return false;
+
+  const code = (error as Error & { code?: string }).code;
+  return (
+    code === "ERR_IPC_CHANNEL_CLOSED" || error.message === "Channel closed"
+  );
+}
 
 function isMissingTaskkillProcessError(error: unknown) {
   if (!(error instanceof Error)) return false;

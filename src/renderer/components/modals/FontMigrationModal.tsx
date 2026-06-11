@@ -6,6 +6,7 @@ interface FontMigrationModalProps {
   /** 재적용 실행. 성공 시 resolve, 실패 시 reject. */
   onConfirm: () => Promise<void>;
   onCancel: () => void;
+  isGameRunning?: boolean;
 }
 
 /**
@@ -18,6 +19,7 @@ const FontMigrationModal: React.FC<FontMigrationModalProps> = ({
   isOpen,
   onConfirm,
   onCancel,
+  isGameRunning = false,
 }) => {
   const [applying, setApplying] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
@@ -25,6 +27,10 @@ const FontMigrationModal: React.FC<FontMigrationModalProps> = ({
   if (!isOpen) return null;
 
   const handleConfirm = async () => {
+    if (isGameRunning) {
+      setErrorMsg("게임 실행 중에는 폰트를 업데이트할 수 없습니다.");
+      return;
+    }
     setErrorMsg("");
     setApplying(true);
     try {
@@ -61,7 +67,9 @@ const FontMigrationModal: React.FC<FontMigrationModalProps> = ({
               폰트 적용 방식이 개선되었습니다. 현재 설치된 커스텀 폰트는 이전
               방식으로 만들어져 게임에서 글자 크기가 어긋날 수 있습니다.
               {"\n\n"}
-              지금 새 방식으로 다시 설치하시겠습니까?
+              {isGameRunning
+                ? "현재 게임이 실행 중입니다. 게임을 먼저 종료한 뒤 다시 업데이트해 주세요."
+                : "지금 새 방식으로 다시 설치하시겠습니까?"}
               {errorMsg && (
                 <>
                   {"\n\n"}
@@ -84,9 +92,13 @@ const FontMigrationModal: React.FC<FontMigrationModalProps> = ({
           <button
             className="btn-confirm-primary btn-primary"
             onClick={handleConfirm}
-            disabled={applying}
+            disabled={applying || isGameRunning}
           >
-            {applying ? "적용 중…" : "지금 업데이트 (권장)"}
+            {applying
+              ? "적용 중…"
+              : isGameRunning
+                ? "게임 종료 후 업데이트"
+                : "지금 업데이트 (권장)"}
           </button>
         </div>
       </div>

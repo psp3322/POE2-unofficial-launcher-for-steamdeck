@@ -25,10 +25,24 @@ import {
   DetectedExternalFont,
   ImportSelection,
 } from "../../shared/types";
+import {
+  getAllGameStatuses,
+  isLaunchBlockingStatus,
+} from "../state/GameStatusStore";
 import { getConfig } from "../store";
 import { setConfigWithEvent } from "../utils/config-utils";
 import { Logger } from "../utils/logger";
 import { PowerShellManager } from "../utils/powershell";
+import { getProcessesInfo } from "../utils/process";
+
+const FONT_UPDATE_BLOCKING_PROCESSES = [
+  "POE2_Launcher.exe",
+  "POE_Launcher.exe",
+  "PathOfExile_KG.exe",
+  "PathOfExile_x64_KG.exe",
+  "PathOfExile.exe",
+  "PathOfExile_x64.exe",
+] as const;
 
 export interface AddFontOptions {
   filePath: string;
@@ -46,6 +60,7 @@ export class FontManager {
   private fontsMap: Map<string, CustomFontData> = new Map();
   private remoteCatalog: RemoteFontItem[] = [];
   private initPromise: Promise<void>;
+  private systemFontCleanupPromise: Promise<void> | null = null;
 
   private constructor() {
     this.customFontsDir = path.join(app.getPath("userData"), "CustomFonts");
@@ -500,6 +515,60 @@ if (Get-ItemProperty -Path $p1 -Name "${name}" -ErrorAction SilentlyContinue) {
     );
   }
 
+  private cleanupOrphanedManagedSystemFonts(): void {
+    if (this.systemFontCleanupPromise) return;
+
+    this.systemFontCleanupPromise = this.runOrphanedManagedSystemFontCleanup()
+      .catch((err) => {
+        logger.warn(`Managed system font cleanup skipped: ${err}`);
+      })
+      .finally(() => {
+        this.systemFontCleanupPromise = null;
+      });
+  }
+
+  private async runOrphanedManagedSystemFontCleanup(): Promise<void> {
+    const managedTargetNames = Array.from(
+      new Set(Object.values(TARGET_SERVICES_CONFIG).flat()),
+    );
+    const registryTargetNames = Array.from(
+      new Set(expandTargetNames(managedTargetNames)),
+    );
+    const ttfFileNames = managedTargetNames.map(
+      (targetName) => `${targetName.replace(/\s+/g, "")}.ttf`,
+    );
+
+    await PowerShellManager.getInstance().cleanupOrphanedManagedFontFiles(
+      ttfFileNames,
+      registryTargetNames,
+    );
+  }
+
+  private async assertNoGameBlockingFontUpdate(): Promise<void> {
+    const blockingStatus = getAllGameStatuses().find((statusState) =>
+      isLaunchBlockingStatus(statusState.status),
+    );
+    if (blockingStatus) {
+      throw new Error(
+        `게임 실행 중에는 폰트를 업데이트할 수 없습니다. 먼저 게임을 종료해 주세요. (${blockingStatus.gameId} / ${blockingStatus.serviceId})`,
+      );
+    }
+
+    const processes = await getProcessesInfo([
+      ...FONT_UPDATE_BLOCKING_PROCESSES,
+    ]);
+    const blockingProcess = processes.find((process) =>
+      FONT_UPDATE_BLOCKING_PROCESSES.some(
+        (name) => name.toLowerCase() === process.name.toLowerCase(),
+      ),
+    );
+    if (!blockingProcess) return;
+
+    throw new Error(
+      `게임 프로세스가 실행 중이라 폰트를 업데이트할 수 없습니다. 먼저 게임을 완전히 종료해 주세요. (${blockingProcess.name}, PID ${blockingProcess.pid})`,
+    );
+  }
+
   /**
    * 부팅 시 호출. 폰트 변조 스키마 마이그레이션 상태를 판정한다.
    *
@@ -510,6 +579,8 @@ if (Get-ItemProperty -Path $p1 -Name "${name}" -ErrorAction SilentlyContinue) {
    */
   public async checkFontMigration(): Promise<{ prompt: boolean }> {
     await this.initPromise;
+    this.cleanupOrphanedManagedSystemFonts();
+
     const hasCustom = Object.keys(this.getActiveCustomAssignments()).length > 0;
 
     if (!hasCustom) {
@@ -544,6 +615,7 @@ if (Get-ItemProperty -Path $p1 -Name "${name}" -ErrorAction SilentlyContinue) {
     options?: { force?: boolean },
   ): Promise<void> {
     await this.initPromise;
+    await this.assertNoGameBlockingFontUpdate();
     const pm = PowerShellManager.getInstance();
     const currentApplied =
       (getConfig("appliedFonts") as Record<string, string>) || {};
@@ -1043,9 +1115,9 @@ if (Get-ItemProperty -Path $p1 -Name "${name}" -ErrorAction SilentlyContinue) {
     rule: FontMutationRule,
     scale: number,
   ): Promise<ArrayBuffer> {
-    // sfnt scaler가 OTTO이면 CFF 컨테이너 → OtfMutatorWorker(SFNT 바이트 패치).
-    // 그 외(0x00010000 등)는 TrueType → FontMutatorWorker(fonteditor-core).
-    // fonteditor-core는 CFF→glyf 변환에서 한글 글리프를 손실시키므로 OTF는 따로 다룬다.
+    // sfnt scaler가 OTTO이면 CFF 컨테이너 → OtfMutatorWorker.
+    // 그 외(0x00010000 등)는 TrueType → FontMutatorWorker.
+    // 두 워커 모두 SFNT 패치 방식으로 glyph/레이아웃 보조 테이블을 보존한다.
     const headHandle = await fs.open(filePath, "r");
     let isOTF: boolean;
     try {

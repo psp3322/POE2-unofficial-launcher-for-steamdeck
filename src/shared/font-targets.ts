@@ -153,6 +153,7 @@ export const FONT_SCALE_DEFAULT = 100;
  * 폰트 변조 스키마 버전. 변조 로직(name table/metrics 규칙)이 바뀔 때마다 올린다.
  * - 1: 구버전 (name table 6필드, metrics 미변조) — 명시 저장 안 됨, 미설정=1로 간주
  * - 2: 본체 metrics 주입 + name table 결함 정정 (STEP 2)
+ * - 3: TTF도 SFNT 패치 방식으로 변조해 gasp/GPOS/GSUB/kern/힌팅 테이블 보존
  * 설치된 폰트의 schema < 현재값이면 재적용 마이그레이션이 필요하다.
  */
-export const FONT_MUTATION_SCHEMA = 2;
+export const FONT_MUTATION_SCHEMA = 3;

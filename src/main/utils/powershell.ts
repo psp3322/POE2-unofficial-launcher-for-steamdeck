@@ -19,6 +19,8 @@ type ProcessError = Error & {
   code?: string | number;
 };
 
+type PowerShellBlockedReasonContext = "spawn" | "command";
+
 export class PowerShellBlockedException extends Error {
   constructor(reason: string, cause?: unknown) {
     super(`${POWERSHELL_BLOCKED_GUIDANCE} 원본 오류: ${reason}`);
@@ -34,7 +36,10 @@ const formatUnknownError = (error: unknown): string => {
   return String(error);
 };
 
-export const isPowerShellBlockedReason = (reason: unknown): boolean => {
+export const isPowerShellBlockedReason = (
+  reason: unknown,
+  context: PowerShellBlockedReasonContext = "spawn",
+): boolean => {
   const code =
     typeof reason === "object" && reason !== null && "code" in reason
       ? String((reason as ProcessError).code).toUpperCase()
@@ -42,6 +47,18 @@ export const isPowerShellBlockedReason = (reason: unknown): boolean => {
   if (code === "EPERM" || code === "EACCES") return true;
 
   const text = formatUnknownError(reason).toLowerCase();
+  const isExplicitPolicyBlock =
+    text.includes("blocked by group policy") ||
+    text.includes("blocked by your system administrator") ||
+    text.includes("disabled on this system") ||
+    text.includes("running scripts is disabled") ||
+    text.includes("그룹 정책") ||
+    text.includes("시스템 관리자") ||
+    text.includes("스크립트를 실행할 수 없");
+  if (isExplicitPolicyBlock) return true;
+
+  if (context === "command") return false;
+
   return (
     text.includes("eperm") ||
     text.includes("eacces") ||
@@ -49,15 +66,8 @@ export const isPowerShellBlockedReason = (reason: unknown): boolean => {
     text.includes("access denied") ||
     text.includes("permission denied") ||
     text.includes("operation not permitted") ||
-    text.includes("blocked by group policy") ||
-    text.includes("blocked by your system administrator") ||
-    text.includes("disabled on this system") ||
-    text.includes("running scripts is disabled") ||
     text.includes("unauthorizedaccessexception") ||
-    text.includes("액세스가 거부") ||
-    text.includes("그룹 정책") ||
-    text.includes("시스템 관리자") ||
-    text.includes("스크립트를 실행할 수 없")
+    text.includes("액세스가 거부")
   );
 };
 
@@ -83,6 +93,7 @@ interface IPCResponse {
   id: string;
   stdout: string;
   stderr: string;
+  code?: number | null;
   error?: string;
 }
 
@@ -95,6 +106,324 @@ interface SessionState {
   initializing: Promise<void> | null;
   rejectInit?: (reason: unknown) => void;
 }
+
+const quotePowerShellString = (value: string): string =>
+  `'${value.replace(/'/g, "''")}'`;
+
+const quotePowerShellArray = (values: string[]): string =>
+  `@(${values.map(quotePowerShellString).join(", ")})`;
+
+const buildDeferredFontCleanupFunctions = (): string => `
+  function Remove-Or-DeferFontFile([string]$fontPath) {
+    if ([string]::IsNullOrWhiteSpace($fontPath) -or -not (Test-Path $fontPath)) { return }
+    try {
+      Remove-Item -LiteralPath $fontPath -Force -ErrorAction Stop
+    } catch {
+      $MOVEFILE_DELAY_UNTIL_REBOOT = 0x4
+      $scheduled = $Win32API::MoveFileEx($fontPath, $null, $MOVEFILE_DELAY_UNTIL_REBOOT)
+      if ($scheduled) {
+        Write-Output "Scheduled font cleanup after reboot: $fontPath"
+        return
+      }
+
+      $nativeError = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+      try {
+        Add-PendingDeleteRegistry $fontPath $nativeError
+      } catch {
+        Write-Output "Failed to schedule font cleanup after reboot: $fontPath (MoveFileEx=$nativeError, Registry=$($_.Exception.Message))"
+      }
+    }
+  }
+
+  function Add-PendingDeleteRegistry([string]$fontPath, [int]$moveFileError) {
+    $sessionManagerPath = "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Session Manager"
+    $pendingName = "PendingFileRenameOperations"
+    $deletePath = if ($fontPath.StartsWith("\\??\\")) { $fontPath } else { "\\??\\$fontPath" }
+
+    $prop = Get-ItemProperty -Path $sessionManagerPath -Name $pendingName -ErrorAction SilentlyContinue
+    $pending = @()
+    if ($prop -and $null -ne $prop.$pendingName) {
+      $pending = @($prop.$pendingName)
+    }
+
+    $alreadyScheduled = $false
+    for ($i = 0; $i -lt $pending.Count; $i += 2) {
+      $source = $pending[$i]
+      $destination = if ($i + 1 -lt $pending.Count) { $pending[$i + 1] } else { "" }
+      if ($source -ieq $deletePath -and [string]::IsNullOrEmpty($destination)) {
+        $alreadyScheduled = $true
+        break
+      }
+    }
+
+    if (-not $alreadyScheduled) {
+      $pending = @($pending) + $deletePath + ""
+    }
+
+    if ($prop) {
+      Set-ItemProperty -Path $sessionManagerPath -Name $pendingName -Value ([string[]]$pending)
+    } else {
+      New-ItemProperty -Path $sessionManagerPath -Name $pendingName -PropertyType MultiString -Value ([string[]]$pending) -Force | Out-Null
+    }
+
+    Write-Output "Scheduled font cleanup after reboot via registry fallback: $fontPath (MoveFileEx=$moveFileError)"
+  }
+`;
+
+export const buildInstallSystemFontScript = (
+  ttfFilePath: string,
+  targetFontName: string,
+  ttfFileName: string,
+): string => {
+  const apiClassName = `Win32FontAPIInstall${randomUUID().replace(/-/g, "")}`;
+
+  return `
+try {
+  $sourcePath = ${quotePowerShellString(ttfFilePath)}
+  $targetFontName = ${quotePowerShellString(targetFontName)}
+  $requestedFileName = ${quotePowerShellString(ttfFileName)}
+  $fontDir = Join-Path $env:windir "Fonts"
+  $baseName = [System.IO.Path]::GetFileNameWithoutExtension($requestedFileName)
+  $extension = [System.IO.Path]::GetExtension($requestedFileName)
+  $sourceHash = (Get-FileHash -Algorithm SHA256 -Path $sourcePath).Hash.Substring(0, 12).ToLowerInvariant()
+  $destFileName = "$baseName-$sourceHash$extension"
+  $destPath = Join-Path $fontDir $destFileName
+  $legacyPath = Join-Path $fontDir $requestedFileName
+
+  $Signature = @'
+    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
+    public static extern int AddFontResource(string lpszFilename);
+
+    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
+    public static extern bool RemoveFontResource(string lpFileName);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool MoveFileEx(string lpExistingFileName, string lpNewFileName, int dwFlags);
+'@
+  $Win32API = Add-Type -MemberDefinition $Signature -Name ${quotePowerShellString(apiClassName)} -Namespace "Win32Functions" -PassThru
+
+  function Resolve-FontPath([string]$fontValue) {
+    if ([string]::IsNullOrWhiteSpace($fontValue)) { return $null }
+    if ($fontValue -match '[\\\\/:]') { return $fontValue }
+    return Join-Path $fontDir $fontValue
+  }
+
+  function Unregister-FontPath([string]$fontPath) {
+    if ([string]::IsNullOrWhiteSpace($fontPath) -or -not (Test-Path $fontPath)) { return }
+    for ($i = 0; $i -lt 10; $i++) {
+      if (-not $Win32API::RemoveFontResource($fontPath)) { break }
+    }
+  }
+
+${buildDeferredFontCleanupFunctions()}
+
+  $regPath = "HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts"
+  $regName = "$targetFontName (TrueType)"
+  $oldPaths = New-Object System.Collections.Generic.List[string]
+
+  $prop = Get-ItemProperty -Path $regPath -Name $regName -ErrorAction SilentlyContinue
+  if ($prop) {
+    $oldPath = Resolve-FontPath $prop."$regName"
+    if ($oldPath) { [void]$oldPaths.Add($oldPath) }
+  }
+  if (Test-Path $legacyPath) { [void]$oldPaths.Add($legacyPath) }
+
+  Get-ChildItem -LiteralPath $fontDir -Filter "$baseName-*$extension" -ErrorAction SilentlyContinue |
+    ForEach-Object { [void]$oldPaths.Add($_.FullName) }
+
+  $uniqueOldPaths = $oldPaths |
+    Where-Object { $_ -and ([System.String]::Compare($_, $destPath, $true) -ne 0) } |
+    Select-Object -Unique
+
+  foreach ($oldPath in $uniqueOldPaths) {
+    Unregister-FontPath $oldPath
+  }
+  [void]$Win32API::PostMessage(0xffff, 0x001D, [IntPtr]::Zero, [IntPtr]::Zero)
+  Start-Sleep -Milliseconds 200
+
+  Unblock-File -Path $sourcePath
+  if (-not (Test-Path $destPath)) {
+    Copy-Item -Path $sourcePath -Destination $destPath -Force
+  }
+
+  Set-ItemProperty -Path $regPath -Name $regName -Value $destFileName
+
+  $added = $Win32API::AddFontResource($destPath)
+  if ($added -le 0) {
+    throw "AddFontResource failed for $destPath"
+  }
+  [void]$Win32API::PostMessage(0xffff, 0x001D, [IntPtr]::Zero, [IntPtr]::Zero)
+
+  foreach ($oldPath in $uniqueOldPaths) {
+    Remove-Or-DeferFontFile $oldPath
+  }
+
+  Write-Output "Successfully installed: $targetFontName ($destFileName)"
+} catch {
+  Write-Error $_.Exception.Message
+  exit 1
+}
+    `;
+};
+
+export const buildCleanupManagedFontFilesScript = (
+  ttfFileNames: string[],
+  targetFontNames: string[],
+  dryRun: boolean,
+): string => {
+  const apiClassName = `Win32FontAPICleanup${randomUUID().replace(/-/g, "")}`;
+  const actionScript = dryRun
+    ? `
+  foreach ($fontPath in $uniqueCandidates) {
+    Write-Output "ORPHAN:$fontPath"
+  }
+`
+    : `
+  if (@($uniqueCandidates).Count -eq 0) {
+    Write-Output "Managed font cleanup candidates: 0"
+    return
+  }
+
+  $Signature = @'
+    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
+    public static extern bool RemoveFontResource(string lpFileName);
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool MoveFileEx(string lpExistingFileName, string lpNewFileName, int dwFlags);
+'@
+  $Win32API = Add-Type -MemberDefinition $Signature -Name ${quotePowerShellString(apiClassName)} -Namespace "Win32Functions" -PassThru
+
+${buildDeferredFontCleanupFunctions()}
+
+  foreach ($fontPath in $uniqueCandidates) {
+    [void]$Win32API::RemoveFontResource($fontPath)
+    Remove-Or-DeferFontFile $fontPath
+  }
+
+  Write-Output "Managed font cleanup candidates: $(@($uniqueCandidates).Count)"
+`;
+
+  return `
+try {
+  $requestedFileNames = ${quotePowerShellArray(ttfFileNames)}
+  $targetFontNames = ${quotePowerShellArray(targetFontNames)}
+  $dryRun = ${dryRun ? "$true" : "$false"}
+  $fontDir = Join-Path $env:windir "Fonts"
+  $localFontDir = Join-Path $env:LOCALAPPDATA "Microsoft\\Windows\\Fonts"
+  $usedPaths = New-Object 'System.Collections.Generic.HashSet[string]' -ArgumentList ([System.StringComparer]::OrdinalIgnoreCase)
+
+  function Add-UsedFontPath([string]$fontValue, [string]$baseDir) {
+    if ([string]::IsNullOrWhiteSpace($fontValue)) { return }
+    $resolved = if ($fontValue -match '[\\\\/:]') { $fontValue } else { Join-Path $baseDir $fontValue }
+    if (-not [string]::IsNullOrWhiteSpace($resolved)) {
+      [void]$usedPaths.Add($resolved)
+    }
+  }
+
+  foreach ($targetFontName in $targetFontNames) {
+    $regName = "$targetFontName (TrueType)"
+    $registries = @(
+      @{ Path = "HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts"; FontDir = $fontDir },
+      @{ Path = "HKCU:\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Fonts"; FontDir = $localFontDir }
+    )
+    foreach ($regInfo in $registries) {
+      $prop = Get-ItemProperty -Path $regInfo.Path -Name $regName -ErrorAction SilentlyContinue
+      if ($prop) {
+        Add-UsedFontPath $prop."$regName" $regInfo.FontDir
+      }
+    }
+  }
+
+  $candidates = New-Object System.Collections.Generic.List[string]
+  foreach ($requestedFileName in $requestedFileNames) {
+    $baseName = [System.IO.Path]::GetFileNameWithoutExtension($requestedFileName)
+    $extension = [System.IO.Path]::GetExtension($requestedFileName)
+    $pattern = "^" + [regex]::Escape($baseName) + "-[0-9a-fA-F]{12}" + [regex]::Escape($extension) + "$"
+    Get-ChildItem -LiteralPath $fontDir -File -ErrorAction SilentlyContinue |
+      Where-Object { $_.Name -match $pattern -and -not $usedPaths.Contains($_.FullName) } |
+      ForEach-Object { [void]$candidates.Add($_.FullName) }
+  }
+
+  $uniqueCandidates = $candidates | Select-Object -Unique
+${actionScript}
+} catch {
+  Write-Error $_.Exception.Message
+  exit 1
+}
+    `;
+};
+
+export const buildRemoveSystemFontScript = (
+  targetFontName: string,
+  ttfFileName: string,
+  hive: "HKLM" | "HKCU",
+): string => {
+  const regPath =
+    hive === "HKLM"
+      ? "HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts"
+      : "HKCU:\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Fonts";
+  const fontDirExpression =
+    hive === "HKLM"
+      ? 'Join-Path $env:windir "Fonts"'
+      : 'Join-Path $env:LOCALAPPDATA "Microsoft\\Windows\\Fonts"';
+  const className = `Win32FontAPIRemove${hive}${randomUUID().replace(/-/g, "")}`;
+
+  return `
+try {
+  $regPath = ${quotePowerShellString(regPath)}
+  $regName = ${quotePowerShellString(`${targetFontName} (TrueType)`)}
+  $fontDir = ${fontDirExpression}
+  $fallbackPath = Join-Path $fontDir ${quotePowerShellString(ttfFileName)}
+
+  $Signature = @'
+    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
+    public static extern bool RemoveFontResource(string lpFileName);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool MoveFileEx(string lpExistingFileName, string lpNewFileName, int dwFlags);
+'@
+  $Win32API = Add-Type -MemberDefinition $Signature -Name ${quotePowerShellString(className)} -Namespace "Win32Functions" -PassThru
+
+${buildDeferredFontCleanupFunctions()}
+
+  # --- 1차: 레지스트리 이름 기반 (임의 파일명 잔재) ---
+  $prop = Get-ItemProperty -Path $regPath -Name $regName -ErrorAction SilentlyContinue
+  if ($prop) {
+    $regVal = $prop."$regName"
+    # 값이 절대경로면 그대로, 파일명만이면 폰트 디렉터리와 결합
+    if ($regVal -match '[\\\\/:]') { $target = $regVal } else { $target = Join-Path $fontDir $regVal }
+    if (Test-Path $target) {
+      [void]$Win32API::RemoveFontResource($target)
+      Remove-Or-DeferFontFile $target
+    }
+    Remove-ItemProperty -Path $regPath -Name $regName -Force -ErrorAction SilentlyContinue
+  }
+
+  # --- 2차: 런처 규칙 파일명 폴백 (레지스트리 깨진 런처 잔재) ---
+  if (Test-Path $fallbackPath) {
+    [void]$Win32API::RemoveFontResource($fallbackPath)
+    Remove-Or-DeferFontFile $fallbackPath
+  }
+
+  # 변경 전파
+  [void]$Win32API::PostMessage(0xffff, 0x001D, [IntPtr]::Zero, [IntPtr]::Zero) # HWND_BROADCAST, WM_FONTCHANGE
+
+  Write-Output "Removed (${hive}): ${targetFontName}"
+} catch {
+  Write-Error $_.Exception.Message
+  exit 1
+}
+    `;
+};
 
 export class PowerShellManager {
   private static instance: PowerShellManager;
@@ -224,7 +553,7 @@ export class PowerShellManager {
 
       session.pendingRequests.set(id, (res) => {
         clearTimeout(timeout);
-        if (isPowerShellBlockedReason(res.stderr || res.stdout)) {
+        if (isPowerShellBlockedReason(res.stderr || res.stdout, "command")) {
           const blockedError = createPowerShellBlockedException(
             res.stderr || res.stdout,
           );
@@ -327,7 +656,7 @@ export class PowerShellManager {
                     callback({
                       stdout: response.stdout,
                       stderr: response.stderr,
-                      code: 0,
+                      code: response.code ?? 0,
                     });
                   }
                 }
@@ -412,6 +741,7 @@ try {
 
             $outData = @()
             $errData = @()
+            $exitCode = 0
             
             try {
                 $results = Invoke-Expression $cmd 2>&1 | ForEach-Object {
@@ -421,14 +751,19 @@ try {
                         $outData += $_.ToString()
                     }
                 }
+                if ($errData.Count -gt 0) {
+                    $exitCode = 1
+                }
             } catch {
                 $errData += $_.Exception.Message
+                $exitCode = 1
             }
             
             $res = @{
                 id = $id
                 stdout = ($outData -join "\`n")
                 stderr = ($errData -join "\`n")
+                code = $exitCode
             }
             
             $jsonRes = $res | ConvertTo-Json -Compress
@@ -546,56 +881,60 @@ try {
     targetFontName: string,
     ttfFileName: string,
   ): Promise<boolean> {
-    const script = `
-try {
-  $sourcePath = "${ttfFilePath}"
-  $destPath = "$env:windir\\Fonts\\${ttfFileName}"
-
-  $Signature = @'
-    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
-    public static extern int AddFontResource(string lpszFilename);
-
-    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
-    public static extern bool RemoveFontResource(string lpFileName);
-
-    [DllImport("user32.dll", CharSet = CharSet.Auto)]
-    public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
-'@
-  $Win32API = Add-Type -MemberDefinition $Signature -Name "Win32FontAPI_Install" -Namespace "Win32Functions" -PassThru
-
-  # 1. 같은 경로 폰트가 이미 GDI에 매핑돼 있으면 ref count 0까지 unregister.
-  #    같은 파일명 in-place 갱신 시 AddFontResource가 새 데이터를 reload하지
-  #    않는 문제(재부팅 전까지 stale metrics 사용) 회피. 최대 10회 반복.
-  if (Test-Path $destPath) {
-    for ($i = 0; $i -lt 10; $i++) {
-      if (-not $Win32API::RemoveFontResource($destPath)) { break }
+    const script = buildInstallSystemFontScript(
+      ttfFilePath,
+      targetFontName,
+      ttfFileName,
+    );
+    const result = await this.execute(script, true);
+    if (result.code !== 0) {
+      const reason =
+        result.stderr || result.stdout || `PowerShell exit code ${result.code}`;
+      throw new Error(
+        `Failed to install system font '${targetFontName}': ${reason}`,
+      );
     }
-    [void]$Win32API::PostMessage(0xffff, 0x001D, [IntPtr]::Zero, [IntPtr]::Zero)
-    Start-Sleep -Milliseconds 200
-    Remove-Item $destPath -Force
+    return true;
   }
 
-  # 2. 보안 차단 해제 및 Fonts 경로로 복사
-  Unblock-File -Path $sourcePath
-  Copy-Item -Path $sourcePath -Destination $destPath -Force
+  public async cleanupOrphanedManagedFontFiles(
+    ttfFileNames: string[],
+    targetFontNames: string[],
+  ): Promise<boolean> {
+    const scanScript = buildCleanupManagedFontFilesScript(
+      ttfFileNames,
+      targetFontNames,
+      true,
+    );
+    const scanResult = await this.execute(scanScript, false, true);
+    if (scanResult.code !== 0) {
+      const reason =
+        scanResult.stderr ||
+        scanResult.stdout ||
+        `PowerShell exit code ${scanResult.code}`;
+      throw new Error(`Failed to scan managed font cleanup targets: ${reason}`);
+    }
 
-  # 3. 레지스트리 등록
-  $regPath = "HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts"
-  $regName = "${targetFontName} (TrueType)"
-  Set-ItemProperty -Path $regPath -Name $regName -Value "${ttfFileName}"
+    const hasOrphan = scanResult.stdout
+      .split(/\r?\n/)
+      .some((line) => line.trim().startsWith("ORPHAN:"));
+    if (!hasOrphan) return true;
 
-  # 4. GDI 등록 + 변경 전파
-  [void]$Win32API::AddFontResource($destPath)
-  [void]$Win32API::PostMessage(0xffff, 0x001D, [IntPtr]::Zero, [IntPtr]::Zero) # HWND_BROADCAST, WM_FONTCHANGE
+    const cleanupScript = buildCleanupManagedFontFilesScript(
+      ttfFileNames,
+      targetFontNames,
+      false,
+    );
+    const cleanupResult = await this.execute(cleanupScript, true, true);
+    if (cleanupResult.code !== 0) {
+      const reason =
+        cleanupResult.stderr ||
+        cleanupResult.stdout ||
+        `PowerShell exit code ${cleanupResult.code}`;
+      throw new Error(`Failed to cleanup managed font files: ${reason}`);
+    }
 
-  Write-Output "Successfully installed: ${targetFontName}"
-} catch {
-  Write-Error $_.Exception.Message
-  exit 1
-}
-    `;
-    const result = await this.execute(script, true);
-    return result.code === 0;
+    return true;
   }
 
   /**
@@ -640,61 +979,11 @@ try {
     hive: "HKLM" | "HKCU",
     useAdmin: boolean,
   ): Promise<boolean> {
-    const regPath =
-      hive === "HKLM"
-        ? "HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts"
-        : "HKCU:\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Fonts";
-    // 하이브별 기본 폰트 디렉터리 (레지스트리 값이 파일명만일 때 결합 + 폴백)
-    const fontDir =
-      hive === "HKLM"
-        ? "$env:windir\\Fonts"
-        : "$env:LOCALAPPDATA\\Microsoft\\Windows\\Fonts";
-    const className = `Win32FontAPI_Remove_${hive}`;
-
-    const script = `
-try {
-  $regPath = "${regPath}"
-  $regName = "${targetFontName} (TrueType)"
-  $fontDir = "${fontDir}"
-  $fallbackPath = Join-Path $fontDir "${ttfFileName}"
-
-  $Signature = @'
-    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
-    public static extern bool RemoveFontResource(string lpFileName);
-
-    [DllImport("user32.dll", CharSet = CharSet.Auto)]
-    public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
-'@
-  $Win32API = Add-Type -MemberDefinition $Signature -Name "${className}" -Namespace "Win32Functions" -PassThru
-
-  # --- 1차: 레지스트리 이름 기반 (임의 파일명 잔재) ---
-  $prop = Get-ItemProperty -Path $regPath -Name $regName -ErrorAction SilentlyContinue
-  if ($prop) {
-    $regVal = $prop."$regName"
-    # 값이 절대경로면 그대로, 파일명만이면 폰트 디렉터리와 결합
-    if ($regVal -match '[\\\\/:]') { $target = $regVal } else { $target = Join-Path $fontDir $regVal }
-    if (Test-Path $target) {
-      [void]$Win32API::RemoveFontResource($target)
-      Remove-Item -Path $target -Force -ErrorAction SilentlyContinue
-    }
-    Remove-ItemProperty -Path $regPath -Name $regName -Force -ErrorAction SilentlyContinue
-  }
-
-  # --- 2차: 런처 규칙 파일명 폴백 (레지스트리 깨진 런처 잔재) ---
-  if (Test-Path $fallbackPath) {
-    [void]$Win32API::RemoveFontResource($fallbackPath)
-    Remove-Item -Path $fallbackPath -Force -ErrorAction SilentlyContinue
-  }
-
-  # 변경 전파
-  [void]$Win32API::PostMessage(0xffff, 0x001D, [IntPtr]::Zero, [IntPtr]::Zero) # HWND_BROADCAST, WM_FONTCHANGE
-
-  Write-Output "Removed (${hive}): ${targetFontName}"
-} catch {
-  Write-Error $_.Exception.Message
-  exit 1
-}
-    `;
+    const script = buildRemoveSystemFontScript(
+      targetFontName,
+      ttfFileName,
+      hive,
+    );
     const result = await this.execute(script, useAdmin, true);
     return result.code === 0;
   }
