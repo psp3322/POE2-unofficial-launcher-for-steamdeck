@@ -60,6 +60,7 @@ export class FontManager {
   private fontsMap: Map<string, CustomFontData> = new Map();
   private remoteCatalog: RemoteFontItem[] = [];
   private initPromise: Promise<void>;
+  private systemFontCleanupPromise: Promise<void> | null = null;
 
   private constructor() {
     this.customFontsDir = path.join(app.getPath("userData"), "CustomFonts");
@@ -514,6 +515,35 @@ if (Get-ItemProperty -Path $p1 -Name "${name}" -ErrorAction SilentlyContinue) {
     );
   }
 
+  private cleanupOrphanedManagedSystemFonts(): void {
+    if (this.systemFontCleanupPromise) return;
+
+    this.systemFontCleanupPromise = this.runOrphanedManagedSystemFontCleanup()
+      .catch((err) => {
+        logger.warn(`Managed system font cleanup skipped: ${err}`);
+      })
+      .finally(() => {
+        this.systemFontCleanupPromise = null;
+      });
+  }
+
+  private async runOrphanedManagedSystemFontCleanup(): Promise<void> {
+    const managedTargetNames = Array.from(
+      new Set(Object.values(TARGET_SERVICES_CONFIG).flat()),
+    );
+    const registryTargetNames = Array.from(
+      new Set(expandTargetNames(managedTargetNames)),
+    );
+    const ttfFileNames = managedTargetNames.map(
+      (targetName) => `${targetName.replace(/\s+/g, "")}.ttf`,
+    );
+
+    await PowerShellManager.getInstance().cleanupOrphanedManagedFontFiles(
+      ttfFileNames,
+      registryTargetNames,
+    );
+  }
+
   private async assertNoGameBlockingFontUpdate(): Promise<void> {
     const blockingStatus = getAllGameStatuses().find((statusState) =>
       isLaunchBlockingStatus(statusState.status),
@@ -549,6 +579,8 @@ if (Get-ItemProperty -Path $p1 -Name "${name}" -ErrorAction SilentlyContinue) {
    */
   public async checkFontMigration(): Promise<{ prompt: boolean }> {
     await this.initPromise;
+    this.cleanupOrphanedManagedSystemFonts();
+
     const hasCustom = Object.keys(this.getActiveCustomAssignments()).length > 0;
 
     if (!hasCustom) {
