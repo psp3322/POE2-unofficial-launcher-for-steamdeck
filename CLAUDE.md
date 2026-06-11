@@ -33,6 +33,15 @@ Before any repo-local `gh` command or GitHub HTTPS push, use the
 It defines the repo-local `GH_TOKEN` injection pattern and avoids mutating
 global GitHub CLI auth state.
 
+## Architecture management
+
+When a task adds or changes lifecycle phases, service startup/shutdown,
+EventBus/IPC boundaries, shared state ownership, process watching, updater/font
+migration, or cross-module workflows, use
+`.agents/skills/architecture-management/SKILL.md` before implementation. Pair it
+with `config-management`, `settings-management`, `event-ipc-integration`, or
+`windows-electron-debugging` when their triggers also apply.
+
 ### WSL execution rules (detect at session start)
 
 If `uname -r` contains `microsoft`/`WSL`, this is WSL — WSL is the development primary (edit/git/lint/rtk) and Windows is the build/run primary (Electron + actual POE / POE2 game test, which Linux cannot run). Both OSes share the same `node_modules` under `D:\project_poe2\POE2-unofficial-launcher\`.
