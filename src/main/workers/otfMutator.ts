@@ -1,12 +1,11 @@
 import type { FontMutationRule } from "../../shared/font-targets";
 
 /**
- * OTF(CFF) 전용 SFNT 레벨 변조 로직.
+ * SFNT 레벨 폰트 변조 로직.
  *
- * fonteditor-core는 OTF write를 지원하지 않고, type:'ttf'로 write하면
- * CFF→glyf 변환 단계에서 한글 음절 대부분의 outline이 손실된다.
- * → CFF 컨테이너는 절대 손대지 않고 SFNT 레벨에서 name/OS-2/hhea/head 4개
- *   테이블만 교체·패치한다. 결과 파일은 OTTO scaler를 유지한 OpenType.
+ * fonteditor-core로 폰트를 다시 쓰면 OTF(CFF)는 한글 outline이 손실되고,
+ * 일부 TTF는 gasp/GPOS/GSUB/kern 같은 렌더링 보조 테이블이 사라진다.
+ * → glyph/레이아웃 테이블은 원본 그대로 두고 name/OS-2/hhea/head만 패치한다.
  *
  * 워커 IPC와 분리되어 있어 vitest 등에서 직접 import해 단위 검증 가능.
  */
@@ -30,35 +29,101 @@ function readTableDirectory(buf: Buffer): {
   return { scaler: buf.slice(0, 4), tables };
 }
 
-function buildNameTable(names: Record<number, string>): Buffer {
-  const order = [1, 2, 3, 4, 5, 6];
-  const records: { nameID: number; length: number; offset: number }[] = [];
-  const storage: Buffer[] = [];
-  let storageOffset = 0;
-  for (const nameID of order) {
-    const str = names[nameID];
-    const utf16 = Buffer.from(str, "utf16le");
+type NameRecord = {
+  platformID: number;
+  encodingID: number;
+  languageID: number;
+  nameID: number;
+  data: Buffer;
+};
+
+type WritableNameRecord = NameRecord & {
+  length: number;
+  offset: number;
+};
+
+function decodeUtf16BE(buf: Buffer): string {
+  const le = Buffer.alloc(buf.length);
+  for (let i = 0; i < buf.length; i += 2) {
+    le[i] = buf[i + 1];
+    le[i + 1] = buf[i];
+  }
+  return le.toString("utf16le");
+}
+
+function encodeNameValue(record: NameRecord, value: string): Buffer {
+  if (record.platformID === 0 || record.platformID === 3) {
+    const utf16 = Buffer.from(value, "utf16le");
     const be = Buffer.alloc(utf16.length);
     for (let i = 0; i < utf16.length; i += 2) {
       be[i] = utf16[i + 1];
       be[i + 1] = utf16[i];
     }
-    records.push({ nameID, length: be.length, offset: storageOffset });
-    storage.push(be);
-    storageOffset += be.length;
+    return be;
   }
-  const stringOffset = 6 + records.length * 12;
+
+  return Buffer.from(value, "latin1");
+}
+
+function readNameRecords(nameTable: Buffer): NameRecord[] {
+  const count = nameTable.readUInt16BE(2);
+  const stringOffset = nameTable.readUInt16BE(4);
+  const records: NameRecord[] = [];
+  for (let i = 0; i < count; i++) {
+    const off = 6 + i * 12;
+    const length = nameTable.readUInt16BE(off + 8);
+    const offset = nameTable.readUInt16BE(off + 10);
+    const start = stringOffset + offset;
+    records.push({
+      platformID: nameTable.readUInt16BE(off),
+      encodingID: nameTable.readUInt16BE(off + 2),
+      languageID: nameTable.readUInt16BE(off + 4),
+      nameID: nameTable.readUInt16BE(off + 6),
+      data: Buffer.from(nameTable.subarray(start, start + length)),
+    });
+  }
+  return records;
+}
+
+function readNameValue(nameTable: Buffer, nameID: number): string | undefined {
+  const records = readNameRecords(nameTable).filter((r) => r.nameID === nameID);
+  const preferred =
+    records.find((r) => r.platformID === 3 && r.languageID === 0x0409) ||
+    records.find((r) => r.platformID === 3) ||
+    records[0];
+  if (!preferred) return undefined;
+  if (preferred.platformID === 0 || preferred.platformID === 3) {
+    return decodeUtf16BE(preferred.data);
+  }
+  return preferred.data.toString("latin1");
+}
+
+function buildNameTable(records: NameRecord[]): Buffer {
+  const writableRecords: WritableNameRecord[] = [];
+  const storage: Buffer[] = [];
+  let storageOffset = 0;
+  for (const record of records) {
+    writableRecords.push({
+      ...record,
+      length: record.data.length,
+      offset: storageOffset,
+    });
+    storage.push(record.data);
+    storageOffset += record.data.length;
+  }
+
+  const stringOffset = 6 + writableRecords.length * 12;
   const out = Buffer.alloc(stringOffset + storageOffset);
   out.writeUInt16BE(0, 0); // format 0
-  out.writeUInt16BE(records.length, 2);
+  out.writeUInt16BE(writableRecords.length, 2);
   out.writeUInt16BE(stringOffset, 4);
   let p = 6;
-  for (const r of records) {
-    out.writeUInt16BE(3, p); // platformID Windows
+  for (const r of writableRecords) {
+    out.writeUInt16BE(r.platformID, p);
     p += 2;
-    out.writeUInt16BE(1, p); // encodingID Unicode BMP
+    out.writeUInt16BE(r.encodingID, p);
     p += 2;
-    out.writeUInt16BE(0x0409, p); // languageID en-US
+    out.writeUInt16BE(r.languageID, p);
     p += 2;
     out.writeUInt16BE(r.nameID, p);
     p += 2;
@@ -73,6 +138,48 @@ function buildNameTable(names: Record<number, string>): Buffer {
     sp += s.length;
   }
   return out;
+}
+
+function patchNameTable(
+  nameTable: Buffer,
+  replacements: Record<number, string>,
+): Buffer {
+  const replaceIds = new Set(Object.keys(replacements).map(Number));
+  const removeIds = new Set([16, 17]);
+  const sourceRecords = readNameRecords(nameTable);
+  const patchedRecords: NameRecord[] = [];
+  const seenReplaceIds = new Set<number>();
+
+  for (const record of sourceRecords) {
+    if (removeIds.has(record.nameID)) continue;
+    const replacement = replacements[record.nameID];
+    if (replacement !== undefined) {
+      patchedRecords.push({
+        ...record,
+        data: encodeNameValue(record, replacement),
+      });
+      seenReplaceIds.add(record.nameID);
+    } else {
+      patchedRecords.push(record);
+    }
+  }
+
+  for (const nameID of replaceIds) {
+    if (seenReplaceIds.has(nameID)) continue;
+    const record: NameRecord = {
+      platformID: 3,
+      encodingID: 1,
+      languageID: 0x0409,
+      nameID,
+      data: Buffer.alloc(0),
+    };
+    patchedRecords.push({
+      ...record,
+      data: encodeNameValue(record, replacements[nameID]),
+    });
+  }
+
+  return buildNameTable(patchedRecords);
 }
 
 function pad4(n: number): number {
@@ -189,7 +296,25 @@ export function mutateOtfSfnt(
   if (buffer.slice(0, 4).toString("ascii") !== "OTTO") {
     throw new Error("OtfMutator: 입력이 OTTO scaler가 아님");
   }
+  return mutateSfnt(buffer, rule, scale);
+}
 
+export function mutateTtfSfnt(
+  buffer: Buffer,
+  rule: FontMutationRule,
+  scale: number,
+): Buffer {
+  if (buffer.slice(0, 4).toString("ascii") === "OTTO") {
+    throw new Error("TtfMutator: 입력이 TrueType scaler가 아님");
+  }
+  return mutateSfnt(buffer, rule, scale);
+}
+
+export function mutateSfnt(
+  buffer: Buffer,
+  rule: FontMutationRule,
+  scale: number,
+): Buffer {
   const { scaler, tables } = readTableDirectory(buffer);
   const m = rule.metrics;
   const newTables: Record<string, Buffer> = { ...tables };
@@ -197,9 +322,12 @@ export function mutateOtfSfnt(
   // === name table 교체 ===
   // ID 3(uniqueSubFamily)/5(version)는 metrics가 있을 때만 본체 원문, 없으면 합성
   // (FontMutatorWorker의 분기와 동일).
-  const uniqueSubFamily = m ? m.uniqueSubFamily : `${rule.postScript};1.000`;
-  const version = m ? m.version : "Version 1.000";
-  newTables["name"] = buildNameTable({
+  const sourceVersion = readNameValue(tables["name"], 5) || "1.000";
+  const uniqueSubFamily = m
+    ? m.uniqueSubFamily
+    : `${rule.postScript};${sourceVersion}`;
+  const version = m ? m.version : sourceVersion;
+  newTables["name"] = patchNameTable(tables["name"], {
     1: rule.family,
     2: rule.subfamily,
     3: uniqueSubFamily,

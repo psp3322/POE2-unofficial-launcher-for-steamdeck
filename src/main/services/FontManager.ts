@@ -1043,9 +1043,9 @@ if (Get-ItemProperty -Path $p1 -Name "${name}" -ErrorAction SilentlyContinue) {
     rule: FontMutationRule,
     scale: number,
   ): Promise<ArrayBuffer> {
-    // sfnt scaler가 OTTO이면 CFF 컨테이너 → OtfMutatorWorker(SFNT 바이트 패치).
-    // 그 외(0x00010000 등)는 TrueType → FontMutatorWorker(fonteditor-core).
-    // fonteditor-core는 CFF→glyf 변환에서 한글 글리프를 손실시키므로 OTF는 따로 다룬다.
+    // sfnt scaler가 OTTO이면 CFF 컨테이너 → OtfMutatorWorker.
+    // 그 외(0x00010000 등)는 TrueType → FontMutatorWorker.
+    // 두 워커 모두 SFNT 패치 방식으로 glyph/레이아웃 보조 테이블을 보존한다.
     const headHandle = await fs.open(filePath, "r");
     let isOTF: boolean;
     try {
