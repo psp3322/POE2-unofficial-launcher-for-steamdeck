@@ -25,10 +25,24 @@ import {
   DetectedExternalFont,
   ImportSelection,
 } from "../../shared/types";
+import {
+  getAllGameStatuses,
+  isLaunchBlockingStatus,
+} from "../state/GameStatusStore";
 import { getConfig } from "../store";
 import { setConfigWithEvent } from "../utils/config-utils";
 import { Logger } from "../utils/logger";
 import { PowerShellManager } from "../utils/powershell";
+import { getProcessesInfo } from "../utils/process";
+
+const FONT_UPDATE_BLOCKING_PROCESSES = [
+  "POE2_Launcher.exe",
+  "POE_Launcher.exe",
+  "PathOfExile_KG.exe",
+  "PathOfExile_x64_KG.exe",
+  "PathOfExile.exe",
+  "PathOfExile_x64.exe",
+] as const;
 
 export interface AddFontOptions {
   filePath: string;
@@ -500,6 +514,31 @@ if (Get-ItemProperty -Path $p1 -Name "${name}" -ErrorAction SilentlyContinue) {
     );
   }
 
+  private async assertNoGameBlockingFontUpdate(): Promise<void> {
+    const blockingStatus = getAllGameStatuses().find((statusState) =>
+      isLaunchBlockingStatus(statusState.status),
+    );
+    if (blockingStatus) {
+      throw new Error(
+        `게임 실행 중에는 폰트를 업데이트할 수 없습니다. 먼저 게임을 종료해 주세요. (${blockingStatus.gameId} / ${blockingStatus.serviceId})`,
+      );
+    }
+
+    const processes = await getProcessesInfo([
+      ...FONT_UPDATE_BLOCKING_PROCESSES,
+    ]);
+    const blockingProcess = processes.find((process) =>
+      FONT_UPDATE_BLOCKING_PROCESSES.some(
+        (name) => name.toLowerCase() === process.name.toLowerCase(),
+      ),
+    );
+    if (!blockingProcess) return;
+
+    throw new Error(
+      `게임 프로세스가 실행 중이라 폰트를 업데이트할 수 없습니다. 먼저 게임을 완전히 종료해 주세요. (${blockingProcess.name}, PID ${blockingProcess.pid})`,
+    );
+  }
+
   /**
    * 부팅 시 호출. 폰트 변조 스키마 마이그레이션 상태를 판정한다.
    *
@@ -544,6 +583,7 @@ if (Get-ItemProperty -Path $p1 -Name "${name}" -ErrorAction SilentlyContinue) {
     options?: { force?: boolean },
   ): Promise<void> {
     await this.initPromise;
+    await this.assertNoGameBlockingFontUpdate();
     const pm = PowerShellManager.getInstance();
     const currentApplied =
       (getConfig("appliedFonts") as Record<string, string>) || {};

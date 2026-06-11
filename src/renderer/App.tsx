@@ -207,6 +207,10 @@ function App() {
   // [New] Theme Settings Version to trigger Effects
   const [themeVersion, setThemeVersion] = useState(0);
 
+  const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
+  const [isMigrationModalOpen, setIsMigrationModalOpen] = useState(false); // [UAC Migration]
+  const [isFontMigrationOpen, setIsFontMigrationOpen] = useState(false);
+
   // --- Global Game State ---
   const { getActiveGameState, syncGameState } = useGameState();
 
@@ -214,11 +218,24 @@ function App() {
   const activeGameStatus = useMemo(() => {
     return getActiveGameState(config.activeGame, config.serviceChannel);
   }, [config.activeGame, config.serviceChannel, getActiveGameState]);
+  const isFontMigrationBlockedByRunningGame = useMemo(() => {
+    return (
+      getActiveGameState(config.activeGame, "Kakao Games").status ===
+        "running" ||
+      getActiveGameState(config.activeGame, "GGG").status === "running"
+    );
+  }, [config.activeGame, getActiveGameState]);
 
   // Sync initial and switched state
   useEffect(() => {
     syncGameState(config.activeGame, config.serviceChannel);
   }, [config.activeGame, config.serviceChannel, syncGameState]);
+
+  useEffect(() => {
+    if (!isFontMigrationOpen) return;
+    syncGameState(config.activeGame, "Kakao Games");
+    syncGameState(config.activeGame, "GGG");
+  }, [config.activeGame, isFontMigrationOpen, syncGameState]);
 
   // Active Status Message State
   const [activeMessage, setActiveMessage] = useState<string>("");
@@ -282,10 +299,6 @@ function App() {
       );
     };
   }, []);
-
-  const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
-  const [isMigrationModalOpen, setIsMigrationModalOpen] = useState(false); // [UAC Migration]
-  const [isFontMigrationOpen, setIsFontMigrationOpen] = useState(false);
 
   // Forced Repair Modal State
   const [isForcedRepairOpen, setIsForcedRepairOpen] = useState(false);
@@ -1165,6 +1178,7 @@ function App() {
         isOpen={isFontMigrationOpen}
         onConfirm={handleFontMigrationConfirm}
         onCancel={() => setIsFontMigrationOpen(false)}
+        isGameRunning={isFontMigrationBlockedByRunningGame}
       />
 
       {isChangelogOpen && (
