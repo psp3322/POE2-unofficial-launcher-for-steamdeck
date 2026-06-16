@@ -7,6 +7,7 @@ import {
   DebugLogPayload,
   ChangelogItem,
   GameLaunchContext,
+  KakaoMaintenanceInfo,
 } from "../../shared/types";
 
 // Event Enums
@@ -49,6 +50,9 @@ export enum EventType {
 
   // Remote version (master socket / gh-pages)
   REMOTE_VERSION_UPDATED = "REMOTE:VERSION_UPDATED",
+
+  // Kakao Games maintenance
+  KAKAO_MAINTENANCE_DETECTED = "KAKAO:MAINTENANCE_DETECTED",
 }
 
 export interface ToolForceRepairEvent {
@@ -270,6 +274,15 @@ export interface ShowChangelogEvent {
   timestamp?: number;
 }
 
+export interface KakaoMaintenanceDetectedEvent {
+  type: EventType.KAKAO_MAINTENANCE_DETECTED;
+  payload: KakaoMaintenanceInfo & {
+    gameId: AppConfig["activeGame"];
+    serviceId: Extract<AppConfig["serviceChannel"], "Kakao Games">;
+  };
+  timestamp?: number;
+}
+
 // --- Discriminated Union ---
 export type AppEvent =
   | ConfigChangeEvent
@@ -299,7 +312,8 @@ export type AppEvent =
   | PatchReservationFailedEvent
   | PatchReservationSuccessEvent
   | PatchUiTitleTickEvent
-  | RemoteVersionUpdatedEvent;
+  | RemoteVersionUpdatedEvent
+  | KakaoMaintenanceDetectedEvent;
 
 export interface RemoteVersionUpdatedEvent {
   type: EventType.REMOTE_VERSION_UPDATED;
@@ -416,6 +430,7 @@ export interface AppContext {
   ensureGameWindow: (options?: { service: string }) => BrowserWindow;
   getConfig: (key?: string) => unknown;
   isForcedVisible?: (windowId: number) => boolean;
+  hideAutomationWindow?: (window: BrowserWindow, reason: string) => void;
   disableValidationMode: () => void;
   getActiveAutomationWindow: () => BrowserWindow | null;
 }

@@ -15,6 +15,7 @@ import {
   RemoteFontItem,
   ImportSelection,
   GameLaunchContext,
+  KakaoMaintenanceInfo,
 } from "../shared/types";
 
 const logger = new PreloadLogger({ type: "PRELOAD", typeColor: "#8BE9FD" });
@@ -258,6 +259,24 @@ contextBridge.exposeInMainWorld("electronAPI", {
       callback(hovered);
     ipcRenderer.on("app:top-center-titlebar-hover", handler);
     return () => ipcRenderer.off("app:top-center-titlebar-hover", handler);
+  },
+  onKakaoMaintenanceDetected: (
+    callback: (
+      info: KakaoMaintenanceInfo & {
+        gameId: AppConfig["activeGame"];
+        serviceId: "Kakao Games";
+      },
+    ) => void,
+  ) => {
+    const handler = (
+      _event: IpcRendererEvent,
+      info: KakaoMaintenanceInfo & {
+        gameId: AppConfig["activeGame"];
+        serviceId: "Kakao Games";
+      },
+    ) => callback(info);
+    ipcRenderer.on("kakao:maintenance-detected", handler);
+    return () => ipcRenderer.off("kakao:maintenance-detected", handler);
   },
   requestTitleUpdate: () => ipcRenderer.send("app:request-title"),
 

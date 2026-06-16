@@ -1499,6 +1499,31 @@ const createHandleWindowOpen =
 // --- Visibility Control State ---
 const forcedVisibleWindows = new Set<number>();
 
+function hideAutomationWindow(window: BrowserWindow, reason: string) {
+  if (!window || window.isDestroyed()) return;
+
+  const isMainWindow =
+    context.mainWindow && context.mainWindow.id === window.id;
+  const isDebugWindow =
+    context.debugWindow && context.debugWindow.id === window.id;
+
+  if (isMainWindow || isDebugWindow) return;
+
+  if (forcedVisibleWindows.delete(window.id)) {
+    logger.log(
+      `[Main] Window ${window.id} released FORCED VISIBILITY (${reason}).`,
+    );
+  }
+
+  if (window.isVisible()) {
+    const url = window.webContents.getURL();
+    logger.log(
+      `[Main] Hiding automation window ${window.id} (${reason}): ${url}`,
+    );
+    window.hide();
+  }
+}
+
 // [IPC] Dynamic Visibility Request from Preload
 ipcMain.on("window-visibility-request", async (event, isVisible: boolean) => {
   const window = BrowserWindow.fromWebContents(event.sender);
@@ -1622,6 +1647,7 @@ const context: AppContext = {
   store,
   serviceManager: serviceManager as IServiceManager,
   isForcedVisible: (windowId: number) => forcedVisibleWindows.has(windowId),
+  hideAutomationWindow,
   ensureGameWindow: ensureGameWindow,
   getConfig: (key?: string) => getEffectiveConfig(key),
   disableValidationMode: () => {

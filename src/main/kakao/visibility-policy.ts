@@ -1,4 +1,7 @@
-import { isKakaoGameLoginRedirectUrl } from "../../shared/kakao-service-transition";
+import {
+  isKakaoGameLoginRedirectUrl,
+  isKakaoInspectionUrlString,
+} from "../../shared/kakao-service-transition";
 
 export const USER_REQUIRED_PAGE_REVEAL_DELAY_MS = 1200;
 export const UNHANDLED_PAGE_REVEAL_DELAY_MS = 1200;
@@ -112,7 +115,8 @@ export function shouldRevealUnhandledAutomatedPage(
   return (
     (triggerContext === "GAME_START_POE1" ||
       triggerContext === "GAME_START_POE2") &&
-    href !== "about:blank"
+    href !== "about:blank" &&
+    !isKakaoInspectionUrlString(href)
   );
 }
 

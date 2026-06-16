@@ -3,6 +3,7 @@ import {
   type KakaoTransitionUrlCandidate,
 } from "../../../shared/kakao-service-transition";
 import { AppConfig } from "../../../shared/types";
+import { extractKakaoMaintenanceInfoFromWebContents } from "../../kakao/maintenance-info";
 import { logger } from "../../utils/logger";
 import { eventBus } from "../EventBus";
 import {
@@ -10,6 +11,7 @@ import {
   EventHandler,
   EventType,
   GameStatusChangeEvent,
+  KakaoMaintenanceDetectedEvent,
   UIEvent,
 } from "../types";
 
@@ -93,6 +95,36 @@ export const StartPoe2KakaoHandler: EventHandler<UIEvent> = {
           serviceId: "Kakao Games",
           status: "error",
           errorCode: "URL_LOAD_FAILED",
+        },
+      );
+      return;
+    }
+
+    const maintenanceInfo = await extractKakaoMaintenanceInfoFromWebContents(
+      gameWindow.webContents,
+    );
+
+    if (maintenanceInfo) {
+      logger.log(
+        `[StartPoe2KakaoHandler] Kakao maintenance detected: ${maintenanceInfo.url}`,
+      );
+      context.hideAutomationWindow?.(gameWindow, "kakao-maintenance-detected");
+      await eventBus.emit<KakaoMaintenanceDetectedEvent>(
+        EventType.KAKAO_MAINTENANCE_DETECTED,
+        context,
+        {
+          ...maintenanceInfo,
+          gameId: "POE2",
+          serviceId: "Kakao Games",
+        },
+      );
+      eventBus.emit<GameStatusChangeEvent>(
+        EventType.GAME_STATUS_CHANGE,
+        context,
+        {
+          gameId: "POE2",
+          serviceId: "Kakao Games",
+          status: "idle",
         },
       );
       return;

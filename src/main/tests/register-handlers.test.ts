@@ -68,6 +68,7 @@ const CORE_HANDLER_IDS = [
   "ChangelogUISyncHandler",
   "UacHandler",
   "InactiveWindowVisibilityHandler",
+  "KakaoMaintenanceUISyncHandler",
 ] as const;
 
 describe("CORE_EVENT_HANDLERS", () => {

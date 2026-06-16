@@ -18,6 +18,7 @@ import {
   UpdateStatus,
   PatchProgress,
   ThemeDefinition,
+  KakaoMaintenanceInfo,
 } from "../shared/types";
 import { DOWNLOAD_URLS, SUPPORT_URLS } from "../shared/urls";
 
@@ -33,6 +34,7 @@ import FontCatalogModal from "./components/modals/FontCatalogModal";
 import FontManagerModal from "./components/modals/FontManagerModal";
 import FontMigrationModal from "./components/modals/FontMigrationModal";
 import { ForcedRepairModal } from "./components/modals/ForcedRepairModal";
+import KakaoMaintenanceModal from "./components/modals/KakaoMaintenanceModal";
 import KakaoStarterUacModal from "./components/modals/KakaoStarterUacModal";
 import MigrationModal from "./components/modals/MigrationModal";
 import NoticeModal from "./components/modals/NoticeModal";
@@ -59,6 +61,11 @@ interface StatusMessageConfig {
   message: string;
   timeout: number; // -1 for infinite (sticky), otherwise duration in ms
 }
+
+type KakaoMaintenanceModalInfo = KakaoMaintenanceInfo & {
+  gameId: AppConfig["activeGame"];
+  serviceId: "Kakao Games";
+};
 
 // Status Message Mapping (Configuration)
 const STATUS_MESSAGES: Record<RunStatus, StatusMessageConfig> = {
@@ -212,6 +219,8 @@ function App() {
   const [isMigrationModalOpen, setIsMigrationModalOpen] = useState(false); // [UAC Migration]
   const [isKakaoStarterUacModalOpen, setIsKakaoStarterUacModalOpen] =
     useState(false);
+  const [kakaoMaintenanceInfo, setKakaoMaintenanceInfo] =
+    useState<KakaoMaintenanceModalInfo | null>(null);
   const [isFontMigrationOpen, setIsFontMigrationOpen] = useState(false);
 
   // --- Global Game State ---
@@ -408,6 +417,14 @@ function App() {
         cleanups.push(
           window.electronAPI.onKakaoStarterUacRequest(() => {
             setIsKakaoStarterUacModalOpen(true);
+          }),
+        );
+      }
+
+      if (window.electronAPI.onKakaoMaintenanceDetected) {
+        cleanups.push(
+          window.electronAPI.onKakaoMaintenanceDetected((info) => {
+            setKakaoMaintenanceInfo(info);
           }),
         );
       }
@@ -1219,6 +1236,11 @@ function App() {
         isOpen={isKakaoStarterUacModalOpen}
         onConfirm={handleKakaoStarterUacConfirm}
         onDecline={handleKakaoStarterUacDecline}
+      />
+
+      <KakaoMaintenanceModal
+        info={kakaoMaintenanceInfo}
+        onClose={() => setKakaoMaintenanceInfo(null)}
       />
 
       <FontMigrationModal
