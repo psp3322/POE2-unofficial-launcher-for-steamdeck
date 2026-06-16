@@ -8,6 +8,7 @@ import {
   isKakaoMemberUrl,
   isKakaoPoeHomeUrl,
   isKakaoSecurityCenterUrl,
+  isKakaoStarterInstallPopupUrl,
   KAKAO_SERVICE_TRANSITION_CLEANUP_PR_AFTER,
   KAKAO_SERVICE_TRANSITION_EFFECTIVE_AT,
   KAKAO_SERVICE_TRANSITION_NOTICE_URL,
@@ -102,6 +103,30 @@ describe("kakao service transition policy", () => {
     expect(isKakaoMemberUrl(new URL("https://member.kakaogames.com"))).toBe(
       true,
     );
+  });
+
+  it("recognizes Daum and Kakao Games starter install popups", () => {
+    expect(
+      isKakaoStarterInstallPopupUrl(
+        new URL(
+          "https://security-center.game.daum.net/popup/install_daumstarter",
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      isKakaoStarterInstallPopupUrl(
+        new URL(
+          "https://security-center.kakaogames.com/popup/install_kakaogamesstarter",
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      isKakaoStarterInstallPopupUrl(
+        new URL(
+          "https://member.kakaogames.com/popup/install_kakaogamesstarter",
+        ),
+      ),
+    ).toBe(false);
   });
 });
 

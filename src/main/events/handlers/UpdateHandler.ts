@@ -24,6 +24,97 @@ let isListenerAttached = false;
 let currentCheckIsSilent = false;
 let lastEmittedPercent = -1; // For throttling progress updates
 
+const TRANSIENT_UPDATE_HTTP_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
+const UPDATE_NETWORK_ERROR_CODES = new Set([
+  "ECONNABORTED",
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "EHOSTUNREACH",
+  "EAI_AGAIN",
+  "ENETUNREACH",
+  "ENOTFOUND",
+  "ERR_NETWORK",
+  "ETIMEDOUT",
+]);
+const UPDATE_NETWORK_MESSAGE_PATTERNS = [
+  /timeout/i,
+  /timed out/i,
+  /network/i,
+  /internet.*disconnected/i,
+  /net::ERR_/i,
+] as const;
+
+const isExpectedUpdateNetworkError = (error: unknown): boolean => {
+  const httpStatus = getUpdateErrorHttpStatus(error);
+  if (
+    httpStatus !== undefined &&
+    TRANSIENT_UPDATE_HTTP_STATUSES.has(httpStatus)
+  ) {
+    return true;
+  }
+
+  const code = getUpdateErrorCode(error);
+  if (code && UPDATE_NETWORK_ERROR_CODES.has(code)) {
+    return true;
+  }
+
+  const message = getUpdateErrorMessage(error);
+  return UPDATE_NETWORK_MESSAGE_PATTERNS.some((pattern) =>
+    pattern.test(message),
+  );
+};
+
+const isGitHubRateLimitError = (error: unknown): boolean =>
+  getUpdateErrorHttpStatus(error) === 403;
+
+const describeUpdateError = (error: unknown): string => {
+  const code = getUpdateErrorCode(error);
+  const httpStatus = getUpdateErrorHttpStatus(error);
+  const message = getUpdateErrorMessage(error);
+  const parts: string[] = [];
+
+  if (code) parts.push(code);
+  if (httpStatus !== undefined) parts.push(`HTTP ${httpStatus}`);
+  if (message) parts.push(message);
+
+  return parts.length > 0 ? parts.join(": ") : "unknown network error";
+};
+
+const warnExpectedUpdateNetworkError = (
+  phase: string,
+  error: unknown,
+  suffix: string,
+) => {
+  logger.warn(
+    `[UpdateHandler] ${phase} could not reach update server (${describeUpdateError(error)}). ${suffix}`,
+  );
+};
+
+function getUpdateErrorCode(error: unknown): string | undefined {
+  if (!isRecord(error)) return undefined;
+  const code = error.code;
+  return typeof code === "string" ? code : undefined;
+}
+
+function getUpdateErrorHttpStatus(error: unknown): number | undefined {
+  if (!isRecord(error)) return undefined;
+  const response = error.response;
+  if (!isRecord(response)) return undefined;
+  return typeof response.status === "number" ? response.status : undefined;
+}
+
+function getUpdateErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (isRecord(error) && typeof error.message === "string") {
+    return error.message;
+  }
+  return String(error);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
 const sendStatus = (context: AppContext, status: UpdateStatus) => {
   const win = context.mainWindow;
   if (win && !win.isDestroyed()) {
@@ -71,7 +162,15 @@ const attachUpdateListeners = (context: AppContext) => {
   });
 
   autoUpdater.on("error", (err) => {
-    logger.error("[UpdateHandler] Update error:", err);
+    if (isExpectedUpdateNetworkError(err)) {
+      warnExpectedUpdateNetworkError(
+        "Update check",
+        err,
+        "Will retry on the next check.",
+      );
+    } else {
+      logger.error("[UpdateHandler] Update error:", err);
+    }
     sendStatus(context, { state: "idle" });
   });
 
@@ -149,9 +248,15 @@ const checkForUpdatesSmart = async () => {
       );
     }
   } catch (e: unknown) {
-    if (axios.isAxiosError(e) && e.response?.status === 403) {
+    if (isGitHubRateLimitError(e)) {
       logger.warn(
         "[UpdateHandler] GitHub API Rate Limit exceeded (403). Falling back to standard check.",
+      );
+    } else if (isExpectedUpdateNetworkError(e)) {
+      warnExpectedUpdateNetworkError(
+        "Smart Check",
+        e,
+        "Falling back to standard check.",
       );
     } else {
       logger.error(
@@ -188,7 +293,15 @@ export const triggerUpdateCheck = async (
   try {
     await checkForUpdatesSmart();
   } catch (e) {
-    logger.error("[UpdateHandler] Failed check:", e);
+    if (isExpectedUpdateNetworkError(e)) {
+      warnExpectedUpdateNetworkError(
+        "Update check",
+        e,
+        "Will retry on the next check.",
+      );
+    } else {
+      logger.error("[UpdateHandler] Failed check:", e);
+    }
   }
 };
 

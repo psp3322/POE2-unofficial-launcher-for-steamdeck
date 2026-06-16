@@ -159,6 +159,13 @@ export function isKakaoGameLoginRedirectUrl(url: URL): boolean {
   return isKakaoPoeHomeUrl(url) && url.pathname.includes("/login");
 }
 
+export function isKakaoStarterInstallPopupUrl(url: URL): boolean {
+  if (!isKakaoSecurityCenterUrl(url)) return false;
+
+  const pathname = url.pathname.toLowerCase();
+  return pathname.includes("/popup/") && pathname.includes("starter");
+}
+
 function createUrlCandidate(
   gameId: KakaoGameId,
   phase: KakaoTransitionUrlPhase,

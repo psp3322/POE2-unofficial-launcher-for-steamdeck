@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 
 import "./OnboardingModal.css";
+import { KAKAO_GAMES_STARTER_DOWNLOAD_URL } from "../../../shared/urls";
 import gifHowToUse from "../../assets/settings/how-to-use-tooltip.gif";
 import imgUacTooltip from "../../assets/settings/uac-tooltip.png";
 
@@ -94,7 +95,7 @@ export const OnboardingModal: React.FC<Props> = ({ isOpen, onFinish }) => {
               {step === 1
                 ? "런처 시작 안내 및 고지"
                 : step === 2
-                  ? "DaumGameStarter 권한 설정"
+                  ? "카카오게임즈 스타터 권한 설정"
                   : step === 3
                     ? "패치 복구 설정"
                     : "설정 완료"}
@@ -180,10 +181,7 @@ export const OnboardingModal: React.FC<Props> = ({ isOpen, onFinish }) => {
                     gap: "8px",
                   }}
                   onClick={() =>
-                    window.open(
-                      "https://gcdn.pcpf.kakaogames.com/static/daum/starter/download.html",
-                      "_blank",
-                    )
+                    window.open(KAKAO_GAMES_STARTER_DOWNLOAD_URL, "_blank")
                   }
                 >
                   <span
@@ -201,8 +199,8 @@ export const OnboardingModal: React.FC<Props> = ({ isOpen, onFinish }) => {
                       textUnderlineOffset: "2px",
                     }}
                   >
-                    활성화가 되지 않을 경우, 여기를 클릭하여 DaumGameStarter를
-                    재설치하고 다시 시도해 주세요.
+                    활성화가 되지 않을 경우, 여기를 클릭하여 카카오게임즈
+                    스타터를 재설치하고 다시 시도해 주세요.
                   </p>
                 </div>
               )}
@@ -220,7 +218,7 @@ export const OnboardingModal: React.FC<Props> = ({ isOpen, onFinish }) => {
                   </span>
                   <div className="uac-card-text">
                     <div className="uac-card-title">
-                      DaumGameStarter UAC 우회
+                      카카오게임즈 스타터 UAC 우회
                     </div>
                     <div className="uac-card-desc">
                       {uacBypass

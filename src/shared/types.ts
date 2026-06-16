@@ -443,8 +443,11 @@ export interface ElectronAPI {
 
   // [UAC Migration]
   onUacMigrationRequest: (callback: () => void) => () => void;
+  onKakaoStarterUacRequest: (callback: () => void) => () => void;
   reportUacMigrationReady: () => void;
   confirmUacMigration: () => void;
+  confirmKakaoStarterUacBypass: () => Promise<boolean>;
+  declineKakaoStarterUacBypass: () => Promise<boolean>;
 
   // [Fatal Error Handling]
   onFatalError: (callback: (errorDetails: string) => void) => () => void;
