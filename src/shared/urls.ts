@@ -30,6 +30,9 @@ export const DOWNLOAD_URLS: ServiceGameMap = {
   },
 };
 
+export const KAKAO_GAMES_STARTER_DOWNLOAD_URL =
+  "https://common.gdn.gamecdn.net/live/KakaogamesStarterSetup.exe";
+
 // 3. News & Forum Base URLs
 // Forums bases are per-service (GGG shares domain, Kakao shares domain)
 export const FORUM_URLS: Record<AppConfig["serviceChannel"], string> = {

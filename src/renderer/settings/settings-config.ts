@@ -47,7 +47,7 @@ const updateAggressiveModeDescription = (
   resetDescription();
   if (aggressiveModeEnabled && !uacBypassEnabled) {
     addDescription(
-      "[주의] DaumGameStarter UAC 우회가 꺼져있을 경우, 강제 종료 시 관리자 권한 요청(UAC)이 발생할 수 있습니다.",
+      "[주의] 카카오게임즈 스타터 UAC 우회가 꺼져있을 경우, 강제 종료 시 관리자 권한 요청(UAC)이 발생할 수 있습니다.",
       "warning",
     );
   }
@@ -728,7 +728,7 @@ export const SETTINGS_CONFIG: SettingsCategory[] = [
           {
             id: "skipDaumGameStarterUac",
             type: "check",
-            label: "DaumGameStarter UAC 우회",
+            label: "카카오게임즈 스타터 UAC 우회",
             description:
               "카카오게임즈 서비스로 게임 실행 시 발생하는 '사용자 계정 컨트롤' 팝업을 제거합니다. (관리자 권한 불필요)",
             icon: "speed",

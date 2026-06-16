@@ -5,6 +5,14 @@ import { app } from "electron";
 
 import { logger } from "../logger";
 import { PowerShellManager } from "../powershell";
+import {
+  isAnyStarterRunAsInvokerEnabled,
+  isStarterMissingRunAsInvoker,
+  resolveInstalledKakaoGameStarters,
+  type KakaoGameStarterId,
+  type KakaoGameStarterUacStatus,
+  type ResolvedKakaoGameStarter,
+} from "./kakao-game-starter";
 
 // --- Constants ---
 const REG_PROTOCOL_KEY =
@@ -12,6 +20,7 @@ const REG_PROTOCOL_KEY =
 const REG_LAYERS_KEY =
   "HKCU:\\Software\\Microsoft\\Windows NT\\CurrentVersion\\AppCompatFlags\\Layers";
 const TASK_NAME = "SkipDaumGameStarterUAC";
+const RUNASINVOKER_LAYER = "RUNASINVOKER";
 
 // New Work Dir for Migration (Temporary storage if needed)
 /**
@@ -38,21 +47,6 @@ function getUacCleanerDirectory(): string {
   }
   return workDir;
 }
-
-// --- Helper: Extract Exe Path ---
-const extractExePath = (cmd: string): string | null => {
-  if (!cmd) return null;
-  // Match pattern: "C:\Path\To\Exe" "%1" or C:\Path\To\Exe "%1"
-  const match = cmd.match(/^"([^"]+)"/);
-  if (match && match[1]) return match[1];
-
-  // Fallback: Split by space and take first part if it ends with .exe and exists
-  const parts = cmd.split(" ");
-  if (parts.length > 0 && parts[0].toLowerCase().endsWith(".exe")) {
-    return parts[0];
-  }
-  return null;
-};
 
 // --- Helper: Get Registry Value ---
 async function getRegValue(
@@ -226,116 +220,170 @@ export const LegacyUacManager = {
 // 2. New RUNASINVOKER Bypass
 // ==========================================
 
-// --- Helper: Get Actual DaumGameStarter Path ---
-async function getDaumStarterPath(): Promise<string | null> {
-  let exePath: string | null = null;
-  const daumStarterCmd = await getRegValue(REG_PROTOCOL_KEY);
-
-  if (daumStarterCmd) {
-    exePath = extractExePath(daumStarterCmd);
-  }
-
-  // If path found and valid (not proxy), return it
-  if (exePath && !exePath.toLowerCase().includes("wscript.exe")) {
-    return exePath;
-  }
-
-  // Fallback Logic
-  logger.warn(
-    "[SimpleUac] Registry path detection failed or returned proxy. Checking specific fallback...",
-  );
-
-  // User Specification: Only check this specific path if registry fails.
-  // [IMPORTANT] DaumGamesStarter is forced to be installed in C:\Users\Default path
-  // which is why this bypass is required in the first place.
-  const fallbackPath =
-    "C:\\Users\\Default\\AppData\\Roaming\\DaumGames\\DaumGameStarter.exe";
-
-  if (existsSync(fallbackPath)) {
-    logger.log(
-      `[SimpleUac] Found DaumGameStarter at fallback: ${fallbackPath}`,
-    );
-    return fallbackPath;
-  }
-
-  logger.warn(
-    "[SimpleUac] Could not find DaumGameStarter.exe in registry or default fallback.",
-  );
-  return null;
-}
-
 export const SimpleUacBypass = {
   /**
-   * Apply or Remove RUNASINVOKER layer for DaumGameStarter.
+   * Apply or remove RUNASINVOKER for every installed Kakao Games starter.
    */
   async setRunAsInvoker(enable: boolean): Promise<boolean> {
-    const exePath = await getDaumStarterPath();
+    const starters = await resolveInstalledKakaoGameStarters(getRegValue);
+    return setRunAsInvokerForStarters(starters, enable);
+  },
 
-    if (!exePath) {
-      logger.error(
-        "[SimpleUac] Aborting RUNASINVOKER configuration: Executable path not found.",
-      );
-      return false;
-    }
+  async setKakaoGamesStarterRunAsInvoker(enable: boolean): Promise<boolean> {
+    const starters = await getInstalledStartersById(["kakaogames"]);
+    return setRunAsInvokerForStarters(starters, enable);
+  },
 
-    if (!existsSync(exePath)) {
-      logger.error(`[SimpleUac] DaumGameStarter.exe not found at: ${exePath}`);
-      return false;
-    }
-
-    try {
-      const regName = exePath; // Registry Value Name must be the full path
-      const regValue = "RUNASINVOKER";
-      const cleanerDir = getUacCleanerDirectory();
-      const uninstallBatPath = join(cleanerDir, "uninstall_uac.bat");
-
-      if (enable) {
-        // Ensure Key Exists
-        const ensureKeyCmd = `if (-not (Test-Path "${REG_LAYERS_KEY}")) { New-Item -Path "${REG_LAYERS_KEY}" -Force }`;
-        await PowerShellManager.getInstance().execute(ensureKeyCmd, false);
-
-        // Add Value
-        const cmd = `Set-ItemProperty -Path "${REG_LAYERS_KEY}" -Name "${regName}" -Value "${regValue}" -Force`;
-        await PowerShellManager.getInstance().execute(cmd, false);
-        logger.log(`[SimpleUac] Applied RUNASINVOKER to ${exePath}`);
-
-        // Generate uninstall script for NSIS uninstaller
-        // We use batch file so NSIS can run it easily without JS environment
-        const batKey = REG_LAYERS_KEY.replace("HKCU:\\", "HKCU\\");
-        const batContent = `@echo off\r\nreg delete "${batKey}" /v "${exePath}" /f\r\n`;
-        writeFileSync(uninstallBatPath, batContent, "utf8");
-        logger.log(
-          `[SimpleUac] Generated uninstall script: ${uninstallBatPath}`,
-        );
-      } else {
-        // Remove
-        const cmd = `Remove-ItemProperty -Path "${REG_LAYERS_KEY}" -Name "${regName}" -ErrorAction SilentlyContinue`;
-        await PowerShellManager.getInstance().execute(cmd, false);
-        logger.log(`[SimpleUac] Removed RUNASINVOKER from ${exePath}`);
-
-        // Cleanup uninstall script
-        if (existsSync(uninstallBatPath)) {
-          rmSync(uninstallBatPath, { force: true });
-          logger.log("[SimpleUac] Removed uninstall script.");
-        }
-      }
-      return true;
-    } catch (e) {
-      logger.error("[SimpleUac] Failed to set registry:", e);
-      return false;
-    }
+  async setDaumGameStarterRunAsInvoker(enable: boolean): Promise<boolean> {
+    const starters = await getInstalledStartersById(["daum"]);
+    return setRunAsInvokerForStarters(starters, enable);
   },
 
   async isRunAsInvokerEnabled(): Promise<boolean> {
-    // Dynamic Path Detection
-    const exePath = await getDaumStarterPath();
-    if (!exePath) return false;
+    const statuses = await getStarterUacStatuses();
+    const isEnabled = isAnyStarterRunAsInvokerEnabled(statuses);
 
-    // Check Registry
-    const value = await getRegValue(REG_LAYERS_KEY, exePath);
-    const isEnabled = value?.includes("RUNASINVOKER") ?? false;
+    logger.log(
+      `[SimpleUac] Check Status: ${isEnabled} (${formatStarterStatuses(
+        statuses,
+      )})`,
+    );
 
-    logger.log(`[SimpleUac] Check Status: ${isEnabled} (Path: ${exePath})`);
     return isEnabled;
   },
+
+  async isKakaoGamesStarterMissingRunAsInvoker(): Promise<boolean> {
+    return isInstalledStarterMissingRunAsInvoker("kakaogames");
+  },
+
+  async isDaumGameStarterMissingRunAsInvoker(): Promise<boolean> {
+    return isInstalledStarterMissingRunAsInvoker("daum");
+  },
 };
+
+async function setRunAsInvokerForStarters(
+  starters: ResolvedKakaoGameStarter[],
+  enable: boolean,
+): Promise<boolean> {
+  if (starters.length === 0) {
+    logger.error(
+      "[SimpleUac] Aborting RUNASINVOKER configuration: no matching Kakao Games starter executable found.",
+    );
+    return false;
+  }
+
+  try {
+    const cleanerDir = getUacCleanerDirectory();
+    const uninstallBatPath = join(cleanerDir, "uninstall_uac.bat");
+
+    if (enable) {
+      // Ensure Key Exists
+      const ensureKeyCmd = `if (-not (Test-Path "${REG_LAYERS_KEY}")) { New-Item -Path "${REG_LAYERS_KEY}" -Force }`;
+      await PowerShellManager.getInstance().execute(ensureKeyCmd, false);
+
+      for (const starter of starters) {
+        const cmd = `Set-ItemProperty -Path "${REG_LAYERS_KEY}" -Name "${starter.exePath}" -Value "${RUNASINVOKER_LAYER}" -Force`;
+        const result = await PowerShellManager.getInstance().execute(
+          cmd,
+          false,
+        );
+        if (result.code !== 0) {
+          logger.error(
+            `[SimpleUac] Failed to apply RUNASINVOKER to ${starter.label}: ${result.stderr}`,
+          );
+          return false;
+        }
+
+        logger.log(
+          `[SimpleUac] Applied RUNASINVOKER to ${starter.label}: ${starter.exePath}`,
+        );
+      }
+
+      // Generate uninstall script for NSIS uninstaller
+      // We use batch file so NSIS can run it easily without JS environment
+      const allInstalledStarters =
+        await resolveInstalledKakaoGameStarters(getRegValue);
+      const batKey = REG_LAYERS_KEY.replace("HKCU:\\", "HKCU\\");
+      const batContent = [
+        "@echo off",
+        ...allInstalledStarters.map(
+          (starter) => `reg delete "${batKey}" /v "${starter.exePath}" /f`,
+        ),
+        "",
+      ].join("\r\n");
+      writeFileSync(uninstallBatPath, batContent, "utf8");
+      logger.log(`[SimpleUac] Generated uninstall script: ${uninstallBatPath}`);
+    } else {
+      for (const starter of starters) {
+        const cmd = `Remove-ItemProperty -Path "${REG_LAYERS_KEY}" -Name "${starter.exePath}" -ErrorAction SilentlyContinue`;
+        const result = await PowerShellManager.getInstance().execute(
+          cmd,
+          false,
+        );
+        if (result.code !== 0) {
+          logger.error(
+            `[SimpleUac] Failed to remove RUNASINVOKER from ${starter.label}: ${result.stderr}`,
+          );
+          return false;
+        }
+
+        logger.log(
+          `[SimpleUac] Removed RUNASINVOKER from ${starter.label}: ${starter.exePath}`,
+        );
+      }
+
+      // Cleanup uninstall script
+      if (existsSync(uninstallBatPath)) {
+        rmSync(uninstallBatPath, { force: true });
+        logger.log("[SimpleUac] Removed uninstall script.");
+      }
+    }
+    return true;
+  } catch (e) {
+    logger.error("[SimpleUac] Failed to set registry:", e);
+    return false;
+  }
+}
+
+async function getInstalledStartersById(
+  ids: KakaoGameStarterId[],
+): Promise<ResolvedKakaoGameStarter[]> {
+  const idSet = new Set(ids);
+  const starters = await resolveInstalledKakaoGameStarters(getRegValue);
+  return starters.filter((starter) => idSet.has(starter.id));
+}
+
+async function getStarterUacStatuses(): Promise<KakaoGameStarterUacStatus[]> {
+  const starters = await resolveInstalledKakaoGameStarters(getRegValue);
+  const statuses: KakaoGameStarterUacStatus[] = [];
+
+  for (const starter of starters) {
+    const value = await getRegValue(REG_LAYERS_KEY, starter.exePath);
+    statuses.push({
+      ...starter,
+      runAsInvokerEnabled: value?.includes(RUNASINVOKER_LAYER) ?? false,
+    });
+  }
+
+  return statuses;
+}
+
+async function isInstalledStarterMissingRunAsInvoker(
+  id: KakaoGameStarterId,
+): Promise<boolean> {
+  const statuses = await getStarterUacStatuses();
+  return isStarterMissingRunAsInvoker(statuses, id);
+}
+
+function formatStarterStatuses(statuses: KakaoGameStarterUacStatus[]): string {
+  if (statuses.length === 0) return "no installed starter";
+
+  return statuses
+    .map(
+      (starter) =>
+        `${starter.label}: ${
+          starter.runAsInvokerEnabled ? "RUNASINVOKER" : "missing"
+        } (${starter.exePath})`,
+    )
+    .join(", ");
+}

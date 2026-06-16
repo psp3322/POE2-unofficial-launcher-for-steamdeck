@@ -33,6 +33,7 @@ import FontCatalogModal from "./components/modals/FontCatalogModal";
 import FontManagerModal from "./components/modals/FontManagerModal";
 import FontMigrationModal from "./components/modals/FontMigrationModal";
 import { ForcedRepairModal } from "./components/modals/ForcedRepairModal";
+import KakaoStarterUacModal from "./components/modals/KakaoStarterUacModal";
 import MigrationModal from "./components/modals/MigrationModal";
 import NoticeModal from "./components/modals/NoticeModal";
 import { OnboardingModal } from "./components/modals/OnboardingModal";
@@ -209,6 +210,8 @@ function App() {
 
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
   const [isMigrationModalOpen, setIsMigrationModalOpen] = useState(false); // [UAC Migration]
+  const [isKakaoStarterUacModalOpen, setIsKakaoStarterUacModalOpen] =
+    useState(false);
   const [isFontMigrationOpen, setIsFontMigrationOpen] = useState(false);
 
   // --- Global Game State ---
@@ -390,15 +393,31 @@ function App() {
 
   // [UAC Migration] Listener
   useEffect(() => {
-    if (window.electronAPI?.onUacMigrationRequest) {
-      const cleanup = window.electronAPI.onUacMigrationRequest(() => {
-        setIsMigrationModalOpen(true);
-      });
+    if (window.electronAPI) {
+      const cleanups: Array<() => void> = [];
+
+      if (window.electronAPI.onUacMigrationRequest) {
+        cleanups.push(
+          window.electronAPI.onUacMigrationRequest(() => {
+            setIsMigrationModalOpen(true);
+          }),
+        );
+      }
+
+      if (window.electronAPI.onKakaoStarterUacRequest) {
+        cleanups.push(
+          window.electronAPI.onKakaoStarterUacRequest(() => {
+            setIsKakaoStarterUacModalOpen(true);
+          }),
+        );
+      }
 
       // Signal to Main that Renderer is ready to receive UAC migration requests
       window.electronAPI.reportUacMigrationReady();
 
-      return cleanup;
+      return () => {
+        cleanups.forEach((cleanup) => cleanup());
+      };
     }
   }, []);
 
@@ -431,6 +450,20 @@ function App() {
 
   const handleMigrationCancel = () => {
     setIsMigrationModalOpen(false);
+  };
+
+  const handleKakaoStarterUacConfirm = async () => {
+    const success =
+      (await window.electronAPI?.confirmKakaoStarterUacBypass()) === true;
+    if (success) {
+      setIsKakaoStarterUacModalOpen(false);
+    }
+    return success;
+  };
+
+  const handleKakaoStarterUacDecline = async () => {
+    await window.electronAPI?.declineKakaoStarterUacBypass();
+    setIsKakaoStarterUacModalOpen(false);
   };
 
   // Launcher Title State (Managed by Main Process via Events)
@@ -1172,6 +1205,12 @@ function App() {
         isOpen={isMigrationModalOpen}
         onConfirm={handleMigrationConfirm}
         onCancel={handleMigrationCancel}
+      />
+
+      <KakaoStarterUacModal
+        isOpen={isKakaoStarterUacModalOpen}
+        onConfirm={handleKakaoStarterUacConfirm}
+        onDecline={handleKakaoStarterUacDecline}
       />
 
       <FontMigrationModal

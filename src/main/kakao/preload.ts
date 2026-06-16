@@ -19,6 +19,7 @@ import {
   isKakaoLauncherUrl,
   isKakaoMemberUrl,
   isKakaoPoeHomeUrl,
+  isKakaoStarterInstallPopupUrl,
   isKakaoSecurityCenterUrl,
 } from "../../shared/kakao-service-transition";
 import { AppConfig } from "../../shared/types";
@@ -1032,17 +1033,15 @@ const LauncherCompletionHandler: PageHandler = {
   },
 };
 
-const DaumStarterPopupHandler: PageHandler = {
-  name: "DaumStarterPopupHandler",
-  description: "Daum Starter Install Popup",
-  match: (url) =>
-    isKakaoSecurityCenterUrl(url) &&
-    url.pathname.includes("/popup/install_daumstarter"),
+const StarterInstallPopupHandler: PageHandler = {
+  name: "StarterInstallPopupHandler",
+  description: "Kakao Games Starter Install Popup",
+  match: (url) => isKakaoStarterInstallPopupUrl(url),
   visibility: "user-required",
   timeoutMs: -1, // Installation takes time
   triggeredBy: ["GAME_START_POE1", "GAME_START_POE2"],
   execute: () => {
-    logger.log(`[Handler] Executing ${DaumStarterPopupHandler.name}`);
+    logger.log(`[Handler] Executing ${StarterInstallPopupHandler.name}`);
   },
 };
 
@@ -1150,7 +1149,7 @@ const HANDLERS: PageHandler[] = [
   KakaoLoginHandler,
   SecurityCenterHandler,
   LauncherCompletionHandler,
-  DaumStarterPopupHandler,
+  StarterInstallPopupHandler,
   DaumMemberCertHandler,
   KCBAuthHandler,
   KCBCardAuthHandler,

@@ -1017,7 +1017,10 @@ ipcMain.on("uac-migration:ready", async () => {
   if (await LegacyUacManager.detectLegacy()) {
     logger.log("[Main] Legacy UAC detected. Requesting migration modal...");
     context.mainWindow?.webContents.send("uac-migration:request");
+    return;
   }
+
+  await requestKakaoGamesStarterUacRepairIfNeeded();
 });
 
 // [Fix] Register Missing UAC Handlers
@@ -1036,6 +1039,30 @@ ipcMain.handle("uac:disable", async () => {
   setConfigWithEvent("skipDaumGameStarterUac", false);
   return true; // Optimistic success
 });
+
+ipcMain.handle("kakao-starter-uac:confirm", async () => {
+  logger.log("[Main] User confirmed KakaoGamesStarter UAC bypass repair.");
+  return await SimpleUacBypass.setKakaoGamesStarterRunAsInvoker(true);
+});
+
+ipcMain.handle("kakao-starter-uac:decline", async () => {
+  logger.log("[Main] User declined KakaoGamesStarter UAC bypass repair.");
+  setConfigWithEvent("skipDaumGameStarterUac", false);
+  return true;
+});
+
+async function requestKakaoGamesStarterUacRepairIfNeeded(): Promise<void> {
+  if (getEffectiveConfig("skipDaumGameStarterUac") !== true) return;
+
+  if (!(await SimpleUacBypass.isKakaoGamesStarterMissingRunAsInvoker())) {
+    return;
+  }
+
+  logger.log(
+    "[Main] KakaoGamesStarter is installed but RUNASINVOKER is missing. Requesting UAC repair modal...",
+  );
+  context.mainWindow?.webContents.send("kakao-starter-uac:request");
+}
 
 // --- Constants ---
 const PARTITIONS = {
@@ -3045,9 +3072,11 @@ app.whenReady().then(async () => {
 
   // [UAC Sync] Ensure RUNASINVOKER is applied if config is set
   if (getEffectiveConfig("skipDaumGameStarterUac") === true) {
-    if (!(await SimpleUacBypass.isRunAsInvokerEnabled())) {
-      logger.log("[Main] Re-applying RUNASINVOKER from config...");
-      await SimpleUacBypass.setRunAsInvoker(true);
+    if (await SimpleUacBypass.isDaumGameStarterMissingRunAsInvoker()) {
+      logger.log(
+        "[Main] Re-applying DaumGameStarter RUNASINVOKER from config...",
+      );
+      await SimpleUacBypass.setDaumGameStarterRunAsInvoker(true);
     }
   }
 

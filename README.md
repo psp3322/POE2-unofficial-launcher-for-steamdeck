@@ -30,7 +30,7 @@ A Windows desktop launcher that takes the friction out of starting **Path of Exi
 
 - **One-click start for PoE 1 & PoE 2** on both **Kakao Games** and the **Grinding Gear Games standalone client**. (Steam is not supported.)
 - **Kakao automation**: confirms the "Designated PC" (지정 PC) prompt, the login pop-up, and the intro modal for you. The automation runs in a hidden, sandboxed browser window so you never see the web UI.
-- **No more UAC pop-ups**. The launcher uses Windows' `RUNASINVOKER` compatibility flag to start `DaumGameStarter.exe` without elevation, so launching no longer triggers the User Account Control prompt. (This replaces the older Task Scheduler / `proxy.vbs` workaround; the legacy setup is detected and cleaned up automatically.)
+- **No more UAC pop-ups**. The launcher uses Windows' `RUNASINVOKER` compatibility flag to start the Kakao Games starter (`KakaogamesStarter.exe` / `DaumGameStarter.exe`) without elevation, so launching no longer triggers the User Account Control prompt. (This replaces the older Task Scheduler / `proxy.vbs` workaround; the legacy setup is detected and cleaned up automatically.)
 
 ### Customization
 

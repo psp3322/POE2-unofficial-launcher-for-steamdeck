@@ -261,8 +261,17 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.on("uac-migration:request", handler);
     return () => ipcRenderer.off("uac-migration:request", handler);
   },
+  onKakaoStarterUacRequest: (callback: () => void) => {
+    const handler = () => callback();
+    ipcRenderer.on("kakao-starter-uac:request", handler);
+    return () => ipcRenderer.off("kakao-starter-uac:request", handler);
+  },
   reportUacMigrationReady: () => ipcRenderer.send("uac-migration:ready"),
   confirmUacMigration: () => ipcRenderer.send("uac-migration:confirm"),
+  confirmKakaoStarterUacBypass: () =>
+    ipcRenderer.invoke("kakao-starter-uac:confirm"),
+  declineKakaoStarterUacBypass: () =>
+    ipcRenderer.invoke("kakao-starter-uac:decline"),
 
   initialGameName: getGameName(
     ipcRenderer.sendSync("config:get-sync", "activeGame"),
