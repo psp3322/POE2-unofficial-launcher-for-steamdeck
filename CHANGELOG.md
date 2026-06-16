@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.3.4](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/compare/1.3.3...1.3.4) (2026-06-16)
+
+
+### Bug Fixes
+
+* 업데이트 연결 확인 로그 레벨 조정 ([f923657](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/f9236570df303805a6dd42c0e160b825a9a7885d))
+* 카카오게임즈 스타터 전환 대응 ([1be685e](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/1be685e02606618fffb4e6412de971b9c357b3ba))
+* 카카오게임즈 스타터 전환 대응 ([ec88bb0](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/ec88bb0b45d0181e8e5429d1ff76ba87de1d9a03))
+
 ## [1.3.3](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/compare/1.3.2...1.3.3) (2026-06-11)
 
 
