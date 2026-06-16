@@ -433,6 +433,17 @@ export interface ElectronAPI {
   openPath: (path: string) => Promise<void>;
   setWindowTitle: (title: string) => void;
   onTitleUpdated: (callback: (title: string) => void) => () => void;
+  onTopCenterTitlebarHover: (
+    callback: (hovered: boolean) => void,
+  ) => () => void;
+  onKakaoMaintenanceDetected: (
+    callback: (
+      info: KakaoMaintenanceInfo & {
+        gameId: AppConfig["activeGame"];
+        serviceId: "Kakao Games";
+      },
+    ) => void,
+  ) => () => void;
   requestTitleUpdate: () => void;
   initialGameName: string;
 
@@ -508,6 +519,16 @@ export interface NewsItem {
 }
 
 export type NewsCategory = "notice" | "news" | "patch-notes" | "dev-notice";
+
+export interface KakaoMaintenanceInfo {
+  url: string;
+  title: string;
+  description?: string;
+  details: Array<{
+    label: string;
+    value: string;
+  }>;
+}
 
 export interface NewsContent {
   id: string;

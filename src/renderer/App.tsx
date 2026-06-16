@@ -18,6 +18,7 @@ import {
   UpdateStatus,
   PatchProgress,
   ThemeDefinition,
+  KakaoMaintenanceInfo,
 } from "../shared/types";
 import { DOWNLOAD_URLS, SUPPORT_URLS } from "../shared/urls";
 
@@ -33,6 +34,7 @@ import FontCatalogModal from "./components/modals/FontCatalogModal";
 import FontManagerModal from "./components/modals/FontManagerModal";
 import FontMigrationModal from "./components/modals/FontMigrationModal";
 import { ForcedRepairModal } from "./components/modals/ForcedRepairModal";
+import KakaoMaintenanceModal from "./components/modals/KakaoMaintenanceModal";
 import KakaoStarterUacModal from "./components/modals/KakaoStarterUacModal";
 import MigrationModal from "./components/modals/MigrationModal";
 import NoticeModal from "./components/modals/NoticeModal";
@@ -59,6 +61,11 @@ interface StatusMessageConfig {
   message: string;
   timeout: number; // -1 for infinite (sticky), otherwise duration in ms
 }
+
+type KakaoMaintenanceModalInfo = KakaoMaintenanceInfo & {
+  gameId: AppConfig["activeGame"];
+  serviceId: "Kakao Games";
+};
 
 // Status Message Mapping (Configuration)
 const STATUS_MESSAGES: Record<RunStatus, StatusMessageConfig> = {
@@ -212,6 +219,8 @@ function App() {
   const [isMigrationModalOpen, setIsMigrationModalOpen] = useState(false); // [UAC Migration]
   const [isKakaoStarterUacModalOpen, setIsKakaoStarterUacModalOpen] =
     useState(false);
+  const [kakaoMaintenanceInfo, setKakaoMaintenanceInfo] =
+    useState<KakaoMaintenanceModalInfo | null>(null);
   const [isFontMigrationOpen, setIsFontMigrationOpen] = useState(false);
 
   // --- Global Game State ---
@@ -412,6 +421,14 @@ function App() {
         );
       }
 
+      if (window.electronAPI.onKakaoMaintenanceDetected) {
+        cleanups.push(
+          window.electronAPI.onKakaoMaintenanceDetected((info) => {
+            setKakaoMaintenanceInfo(info);
+          }),
+        );
+      }
+
       // Signal to Main that Renderer is ready to receive UAC migration requests
       window.electronAPI.reportUacMigrationReady();
 
@@ -468,6 +485,8 @@ function App() {
 
   // Launcher Title State (Managed by Main Process via Events)
   const [appTitle, setAppTitle] = useState<string | undefined>(undefined);
+  const [isTopCenterTitlebarHovered, setIsTopCenterTitlebarHovered] =
+    useState(false);
 
   useEffect(() => {
     if (window.electronAPI?.onTitleUpdated) {
@@ -477,6 +496,12 @@ function App() {
       window.electronAPI.requestTitleUpdate();
       return cleanup;
     }
+  }, []);
+
+  useEffect(() => {
+    return window.electronAPI?.onTopCenterTitlebarHover?.(
+      setIsTopCenterTitlebarHovered,
+    );
   }, []);
 
   // Patch Modal State
@@ -1213,6 +1238,11 @@ function App() {
         onDecline={handleKakaoStarterUacDecline}
       />
 
+      <KakaoMaintenanceModal
+        info={kakaoMaintenanceInfo}
+        onClose={() => setKakaoMaintenanceInfo(null)}
+      />
+
       <FontMigrationModal
         isOpen={isFontMigrationOpen}
         onConfirm={handleFontMigrationConfirm}
@@ -1382,7 +1412,11 @@ function App() {
           }}
         >
           {/* Gothic Top Frame Decorations (Now Inside Main Content) */}
-          <div className="frame-decoration top-center">
+          <div
+            className={`frame-decoration top-center ${
+              isTopCenterTitlebarHovered ? "titlebar-hover" : ""
+            }`}
+          >
             {/* Blue Fire Overlay (Localized Ripple) */}
             <div className="top-center-blue" />
             {/* Interactive Hit Zone for Blue Fire (Top Central Demon) */}

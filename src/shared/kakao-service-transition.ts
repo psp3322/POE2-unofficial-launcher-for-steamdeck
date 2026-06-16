@@ -18,6 +18,11 @@ export const KAKAO_SERVICE_TRANSITION_EFFECTIVE_AT =
 export const KAKAO_SERVICE_TRANSITION_CLEANUP_PR_AFTER =
   "2026-06-18T00:00:00+09:00";
 
+export const KAKAO_POE_INSPECTION_URL =
+  "https://pathofexile.kakaogames.com/inspection";
+export const KAKAO_SERVICE_INSPECTION_URL =
+  "https://service.kakaogames.com/inspection?game=all";
+
 export const KAKAO_SERVICE_TRANSITION_DECISIONS = [
   "The official notice identifies kakaogames.com as the new platform URL, but does not publish stable game-specific PoE1/PoE2 start URLs before the transfer.",
   "The launcher keeps ASIS Daum URLs as a transition fallback and prefers TOBE URLs after 2026-06-17 10:00 KST.",
@@ -164,6 +169,31 @@ export function isKakaoStarterInstallPopupUrl(url: URL): boolean {
 
   const pathname = url.pathname.toLowerCase();
   return pathname.includes("/popup/") && pathname.includes("starter");
+}
+
+export function isKakaoInspectionUrl(url: URL): boolean {
+  const pathname = url.pathname.replace(/\/+$/, "");
+
+  if (
+    url.hostname === "pathofexile.kakaogames.com" &&
+    pathname === "/inspection"
+  ) {
+    return true;
+  }
+
+  return (
+    url.hostname === "service.kakaogames.com" &&
+    pathname === "/inspection" &&
+    url.searchParams.get("game") === "all"
+  );
+}
+
+export function isKakaoInspectionUrlString(value: string): boolean {
+  try {
+    return isKakaoInspectionUrl(new URL(value));
+  } catch {
+    return false;
+  }
 }
 
 function createUrlCandidate(

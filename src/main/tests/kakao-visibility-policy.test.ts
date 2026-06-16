@@ -132,6 +132,12 @@ describe("kakao visibility policy", () => {
     expect(
       shouldRevealUnhandledAutomatedPage("GAME_START_POE2", "about:blank"),
     ).toBe(false);
+    expect(
+      shouldRevealUnhandledAutomatedPage(
+        "GAME_START_POE2",
+        "https://service.kakaogames.com/inspection?game=all#autoStart",
+      ),
+    ).toBe(false);
   });
 
   it("detects Kakao game login redirects during background validation", () => {

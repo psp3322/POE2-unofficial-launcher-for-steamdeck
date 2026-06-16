@@ -249,6 +249,9 @@ export default defineConfig({
   server: {
     port: 54321,
     strictPort: true,
+    watch: {
+      ignored: ["**/.tmp/kakao-page-dumps/**"],
+    },
   },
   define: defines,
 });

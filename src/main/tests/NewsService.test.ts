@@ -102,6 +102,30 @@ describe("NewsService", () => {
     expect(items[0].id).toBe("12345");
   });
 
+  it("falls back to Kakao maintenance info when forum fetch redirects to inspection", async () => {
+    (globalThis.fetch as Mock).mockResolvedValue({
+      ok: true,
+      url: "https://pathofexile.kakaogames.com/inspection",
+      text: () =>
+        Promise.resolve(`
+          <div class="construction__data">
+            <ul>
+              <li><div><strong>점검시간</strong><div>2026년 06월 17일 07:00 ~ 06월 17일 10:00</div></div></li>
+              <li><div><strong>점검내용</strong><div>카카오게임즈 서비스 전환을 위한 점검</div></div></li>
+            </ul>
+          </div>
+        `),
+    });
+
+    const items = await service.fetchNewsList("POE2", "Kakao Games", "notice");
+
+    expect(items).toHaveLength(1);
+    expect(items[0].title).toBe("카카오게임즈 점검 안내");
+    expect(items[0].link).toBe("https://pathofexile.kakaogames.com/inspection");
+    expect(items[0].date).toBe("2026년 06월 17일");
+    expect(service.getContentFromCache(items[0].id)).toContain("점검내용");
+  });
+
   it("should fetch post content correctly", async () => {
     const mockHtml = `
       <div class="forumPost">

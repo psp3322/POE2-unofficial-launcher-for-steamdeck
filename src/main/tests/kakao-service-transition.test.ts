@@ -4,6 +4,7 @@ import {
   getKakaoGameStartUrlCandidates,
   getKakaoPrimaryBaseUrl,
   getKakaoUrlPhase,
+  isKakaoInspectionUrl,
   isKakaoLauncherUrl,
   isKakaoMemberUrl,
   isKakaoPoeHomeUrl,
@@ -125,6 +126,24 @@ describe("kakao service transition policy", () => {
         new URL(
           "https://member.kakaogames.com/popup/install_kakaogamesstarter",
         ),
+      ),
+    ).toBe(false);
+  });
+
+  it("recognizes Kakao maintenance inspection URLs", () => {
+    expect(
+      isKakaoInspectionUrl(
+        new URL("https://pathofexile.kakaogames.com/inspection"),
+      ),
+    ).toBe(true);
+    expect(
+      isKakaoInspectionUrl(
+        new URL("https://service.kakaogames.com/inspection?game=all"),
+      ),
+    ).toBe(true);
+    expect(
+      isKakaoInspectionUrl(
+        new URL("https://service.kakaogames.com/inspection?game=poe2"),
       ),
     ).toBe(false);
   });

@@ -1,6 +1,7 @@
 import Store from "electron-store";
 import { parse } from "node-html-parser";
 
+import { isKakaoInspectionUrlString } from "../../shared/kakao-service-transition";
 import {
   MAX_NEWS_COUNT,
   NEWS_REFRESH_INTERVAL,
@@ -17,6 +18,11 @@ import {
   NewsContent,
   AppConfig,
 } from "../../shared/types";
+import {
+  createKakaoMaintenanceNewsItem,
+  extractKakaoMaintenanceInfoFromHtml,
+  formatKakaoMaintenanceContent,
+} from "../kakao/maintenance-info";
 import { Logger } from "../utils/logger";
 
 type ForumNewsCategory = Extract<NewsCategory, "notice" | "patch-notes">;
@@ -373,6 +379,42 @@ export class NewsService {
 
       const html = await response.text();
       const root = parse(html);
+      const finalUrl = response.url || url;
+      const lastReadIds = this.store.get("lastReadIds");
+      const maintenanceInfo =
+        service === "Kakao Games" || isKakaoInspectionUrlString(finalUrl)
+          ? extractKakaoMaintenanceInfoFromHtml(html, finalUrl)
+          : null;
+
+      if (maintenanceInfo) {
+        const items = [
+          createKakaoMaintenanceNewsItem(
+            maintenanceInfo,
+            category,
+            lastReadIds,
+          ),
+        ];
+        this.updateCache(
+          items[0].id,
+          formatKakaoMaintenanceContent(maintenanceInfo),
+        );
+
+        const cachedItems = this.getCacheItems(key);
+        const isChanged = JSON.stringify(cachedItems) !== JSON.stringify(items);
+
+        if (isChanged) {
+          const allItems = this.store.get("items");
+          allItems[key] = items;
+          this.store.set("items", allItems);
+
+          if (notify) this.emitUpdated();
+          this.logger.log(`Maintenance notice updated for ${key}.`);
+          this.garbageCollect();
+        }
+
+        this.markRefreshed(key);
+        return { items, changed: isChanged, refreshed: true };
+      }
 
       let table = root.getElementById("view_forum_table");
       if (!table) {
@@ -381,7 +423,6 @@ export class NewsService {
 
       const rows = table ? table.querySelectorAll("tr") : [];
       const items: NewsItem[] = [];
-      const lastReadIds = this.store.get("lastReadIds");
 
       for (const row of rows) {
         if (items.length >= MAX_NEWS_COUNT) break;
@@ -581,6 +622,17 @@ export class NewsService {
       });
 
       const html = await response.text();
+      const maintenanceInfo = extractKakaoMaintenanceInfoFromHtml(
+        html,
+        response.url || link,
+      );
+
+      if (maintenanceInfo) {
+        const cleanHtml = formatKakaoMaintenanceContent(maintenanceInfo);
+        this.updateCache(id, cleanHtml);
+        return cleanHtml;
+      }
+
       const isMarkdown =
         link.toLowerCase().endsWith(".md") ||
         id.startsWith("dev-notice-") ||

@@ -486,6 +486,7 @@ img {
 }
 
 /* Ripple Activation: Reveal the filter overlay */
+.top-center.titlebar-hover .top-center-blue,
 .top-center:has(.top-center-trigger:hover) .top-center-blue {
   opacity: 1;
   transform: scale(1);

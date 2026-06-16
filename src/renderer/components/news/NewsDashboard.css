@@ -310,6 +310,59 @@
   margin: 8px 0;
 }
 
+.kakao-maintenance-content {
+  color: #d6d6d6;
+}
+
+.kakao-maintenance-summary {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.kakao-maintenance-icon {
+  color: #dfcf99;
+  font-size: 28px;
+  line-height: 1;
+  margin-top: 2px;
+}
+
+.kakao-maintenance-summary h3 {
+  margin: 0 0 6px;
+  color: #dfcf99;
+  font-size: 15px;
+}
+
+.kakao-maintenance-summary p {
+  margin: 0;
+  color: #aeb2b4;
+}
+
+.kakao-maintenance-details {
+  margin: 0;
+  border-top: 1px solid rgba(175, 148, 79, 0.24);
+}
+
+.kakao-maintenance-detail {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.kakao-maintenance-detail dt {
+  color: #909090;
+  font-weight: 700;
+}
+
+.kakao-maintenance-detail dd {
+  margin: 0;
+  color: #e4e4e4;
+  overflow-wrap: anywhere;
+}
+
 /* Browser View Button */
 .news-browser-btn {
   position: absolute;

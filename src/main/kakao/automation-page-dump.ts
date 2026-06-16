@@ -52,6 +52,13 @@ type ArchiveAutomationDumpSessionOptions = {
 const MIN_DUMP_INTERVAL_MS = 1000;
 const DUMP_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const DUMP_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const DIRECTORY_REMOVE_MAX_RETRIES = 5;
+const DIRECTORY_REMOVE_RETRY_DELAY_MS = 100;
+const RETRIABLE_DIRECTORY_REMOVE_ERRORS = new Set([
+  "EBUSY",
+  "ENOTEMPTY",
+  "EPERM",
+]);
 const lastDumpAtByKey = new Map<string, number>();
 let activeSession: AutomationDumpSession | null = null;
 let cleanupTimer: NodeJS.Timeout | null = null;
@@ -438,7 +445,33 @@ async function hasFiles(dir: string): Promise<boolean> {
 }
 
 async function removeDirectory(dir: string) {
-  await fs.rm(dir, { recursive: true, force: true });
+  try {
+    await fs.rm(dir, {
+      recursive: true,
+      force: true,
+      maxRetries: DIRECTORY_REMOVE_MAX_RETRIES,
+      retryDelay: DIRECTORY_REMOVE_RETRY_DELAY_MS,
+    });
+  } catch (error) {
+    if (isRetriableDirectoryRemoveError(error)) {
+      logger.warn(
+        `[KakaoPageDump] Diagnostic dump directory cleanup was skipped after retries: ${dir} (${String(error)})`,
+      );
+      return;
+    }
+
+    throw error;
+  }
+}
+
+function isRetriableDirectoryRemoveError(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof error.code === "string" &&
+    RETRIABLE_DIRECTORY_REMOVE_ERRORS.has(error.code)
+  );
 }
 
 function buildPageLabel(url: string) {

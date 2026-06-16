@@ -24,6 +24,7 @@ import {
 } from "./handlers/GameProcessStatusHandler";
 import { GameStatusSyncHandler } from "./handlers/GameStatusSyncHandler";
 import { InactiveWindowVisibilityHandler } from "./handlers/InactiveWindowVisibilityHandler";
+import { KakaoMaintenanceUISyncHandler } from "./handlers/KakaoMaintenanceUISyncHandler";
 import { StartPoe1KakaoHandler } from "./handlers/StartPoe1KakaoHandler";
 import { StartPoe2KakaoHandler } from "./handlers/StartPoe2KakaoHandler";
 import { StartPoeGggHandler } from "./handlers/StartPoeGggHandler";
@@ -65,6 +66,7 @@ export const CORE_EVENT_HANDLERS = [
   ChangelogUISyncHandler,
   UacHandler,
   InactiveWindowVisibilityHandler,
+  KakaoMaintenanceUISyncHandler,
 ] as const;
 
 export function registerCoreEventHandlers() {
