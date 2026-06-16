@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.5](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/compare/1.3.4...1.3.5) (2026-06-16)
+
+
+### Bug Fixes
+
+* 카카오게임즈가 점검 중 일 때 비공식런처에서도 표시 될 수 있도록 개선 ([d5fd43b](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/d5fd43bfe3847c5d649080a96ae65100be05cc61))
+* 특정 이스터에그가 머리에 감각이 없?는 문제 수정 ([0fbd284](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/0fbd2843396a3621a41826d5150351f0c531d987))
+
 ## [1.3.4](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/compare/1.3.3...1.3.4) (2026-06-16)
 
 
