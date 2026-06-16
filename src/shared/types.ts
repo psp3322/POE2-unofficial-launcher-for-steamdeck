@@ -433,6 +433,9 @@ export interface ElectronAPI {
   openPath: (path: string) => Promise<void>;
   setWindowTitle: (title: string) => void;
   onTitleUpdated: (callback: (title: string) => void) => () => void;
+  onTopCenterTitlebarHover: (
+    callback: (hovered: boolean) => void,
+  ) => () => void;
   requestTitleUpdate: () => void;
   initialGameName: string;
 

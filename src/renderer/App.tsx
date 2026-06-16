@@ -468,6 +468,8 @@ function App() {
 
   // Launcher Title State (Managed by Main Process via Events)
   const [appTitle, setAppTitle] = useState<string | undefined>(undefined);
+  const [isTopCenterTitlebarHovered, setIsTopCenterTitlebarHovered] =
+    useState(false);
 
   useEffect(() => {
     if (window.electronAPI?.onTitleUpdated) {
@@ -477,6 +479,12 @@ function App() {
       window.electronAPI.requestTitleUpdate();
       return cleanup;
     }
+  }, []);
+
+  useEffect(() => {
+    return window.electronAPI?.onTopCenterTitlebarHover?.(
+      setIsTopCenterTitlebarHovered,
+    );
   }, []);
 
   // Patch Modal State
@@ -1382,7 +1390,11 @@ function App() {
           }}
         >
           {/* Gothic Top Frame Decorations (Now Inside Main Content) */}
-          <div className="frame-decoration top-center">
+          <div
+            className={`frame-decoration top-center ${
+              isTopCenterTitlebarHovered ? "titlebar-hover" : ""
+            }`}
+          >
             {/* Blue Fire Overlay (Localized Ripple) */}
             <div className="top-center-blue" />
             {/* Interactive Hit Zone for Blue Fire (Top Central Demon) */}

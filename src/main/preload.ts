@@ -253,6 +253,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.on("app:title-updated", handler);
     return () => ipcRenderer.off("app:title-updated", handler);
   },
+  onTopCenterTitlebarHover: (callback: (hovered: boolean) => void) => {
+    const handler = (_event: IpcRendererEvent, hovered: boolean) =>
+      callback(hovered);
+    ipcRenderer.on("app:top-center-titlebar-hover", handler);
+    return () => ipcRenderer.off("app:top-center-titlebar-hover", handler);
+  },
   requestTitleUpdate: () => ipcRenderer.send("app:request-title"),
 
   // [UAC Migration]

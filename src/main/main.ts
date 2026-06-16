@@ -1805,6 +1805,86 @@ const triggerDevToolsSync = () => {
 // Cache for title to prevent spam
 let lastBroadcastedTitle: string | null = null;
 
+const TITLE_BAR_HEIGHT = 32;
+const TOP_CENTER_HOVER_WIDTH = 220;
+
+let isTopCenterTitlebarHovered = false;
+let topCenterTitlebarHoverPollTimer: NodeJS.Timeout | null = null;
+
+function isInTopCenterTitlebarHoverZone(
+  win: BrowserWindow,
+  x: number,
+  y: number,
+) {
+  const [contentWidth] = win.getContentSize();
+  const left = (contentWidth - TOP_CENTER_HOVER_WIDTH) / 2;
+  return (
+    x >= left &&
+    x <= left + TOP_CENTER_HOVER_WIDTH &&
+    y >= 0 &&
+    y <= TITLE_BAR_HEIGHT
+  );
+}
+
+function publishTopCenterTitlebarHover(win: BrowserWindow, hovered: boolean) {
+  if (isTopCenterTitlebarHovered === hovered) return;
+
+  isTopCenterTitlebarHovered = hovered;
+  if (!win.webContents.isDestroyed()) {
+    win.webContents.send("app:top-center-titlebar-hover", hovered);
+  }
+}
+
+function stopTopCenterTitlebarHoverPolling() {
+  if (!topCenterTitlebarHoverPollTimer) return;
+  clearInterval(topCenterTitlebarHoverPollTimer);
+  topCenterTitlebarHoverPollTimer = null;
+}
+
+function startTopCenterTitlebarHoverPolling(win: BrowserWindow) {
+  if (topCenterTitlebarHoverPollTimer) return;
+
+  topCenterTitlebarHoverPollTimer = setInterval(() => {
+    if (win.isDestroyed()) {
+      stopTopCenterTitlebarHoverPolling();
+      return;
+    }
+
+    if (!win.isVisible()) {
+      publishTopCenterTitlebarHover(win, false);
+      return;
+    }
+
+    const cursor = screen.getCursorScreenPoint();
+    const bounds = win.getBounds();
+    const x = cursor.x - bounds.x;
+    const y = cursor.y - bounds.y;
+
+    publishTopCenterTitlebarHover(
+      win,
+      isInTopCenterTitlebarHoverZone(win, x, y),
+    );
+  }, 100);
+  topCenterTitlebarHoverPollTimer.unref?.();
+}
+
+function setupTopCenterTitlebarHoverTracking(win: BrowserWindow) {
+  if (process.platform !== "win32") return;
+
+  const clearHover = () => {
+    publishTopCenterTitlebarHover(win, false);
+    stopTopCenterTitlebarHoverPolling();
+  };
+
+  startTopCenterTitlebarHoverPolling(win);
+  win.on("show", () => startTopCenterTitlebarHoverPolling(win));
+  win.on("hide", clearHover);
+  win.on("closed", () => {
+    isTopCenterTitlebarHovered = false;
+    stopTopCenterTitlebarHoverPolling();
+  });
+}
+
 /**
  * Calculates the current title based on global config/state and broadcasts it
  * to the Window, Tray, and Renderer (via Event).
@@ -1861,6 +1941,7 @@ async function createWindow() {
       preload: path.join(__dirname, "preload.js"),
     },
   });
+  setupTopCenterTitlebarHoverTracking(mainWindow);
 
   // [Security] Force external links to open in default browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
