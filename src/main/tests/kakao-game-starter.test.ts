@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   extractStarterExePath,
+  getKakaoGameStarterMigrationRequest,
   isAnyStarterRunAsInvokerEnabled,
   isStarterMissingRunAsInvoker,
   resolveInstalledKakaoGameStarters,
+  type ResolvedKakaoGameStarter,
   type KakaoGameStarterUacStatus,
 } from "../utils/uac/kakao-game-starter";
 
@@ -111,6 +113,37 @@ describe("Kakao game starter resolver", () => {
     expect(isStarterMissingRunAsInvoker(statuses, "kakaogames")).toBe(true);
     expect(isStarterMissingRunAsInvoker(statuses, "daum")).toBe(false);
   });
+
+  it("asks for Kakao Games starter installation when only DaumGameStarter exists", () => {
+    const request = getKakaoGameStarterMigrationRequest([
+      createResolvedStarter("daum"),
+    ]);
+
+    expect(request).toMatchObject({
+      action: "install-kakaogames",
+      daumExePath:
+        "C:\\Users\\Default\\AppData\\Roaming\\DaumGames\\DaumGameStarter.exe",
+      installerUrl:
+        "https://common.gdn.gamecdn.net/live/KakaogamesStarterSetup.exe",
+    });
+  });
+
+  it("does not ask for migration when Kakao Games starter is already installed", () => {
+    expect(
+      getKakaoGameStarterMigrationRequest([
+        createResolvedStarter("kakaogames"),
+        createResolvedStarter("daum"),
+      ]),
+    ).toBeNull();
+  });
+
+  it("does not ask for migration when DaumGameStarter is absent", () => {
+    expect(
+      getKakaoGameStarterMigrationRequest([
+        createResolvedStarter("kakaogames"),
+      ]),
+    ).toBeNull();
+  });
 });
 
 function createStarterStatus(
@@ -125,5 +158,19 @@ function createStarterStatus(
     exePath: `C:\\Users\\Default\\AppData\\Roaming\\${label}\\${label}.exe`,
     source: "test",
     runAsInvokerEnabled,
+  };
+}
+
+function createResolvedStarter(
+  id: "kakaogames" | "daum",
+): ResolvedKakaoGameStarter {
+  const label = id === "kakaogames" ? "KakaogamesStarter" : "DaumGameStarter";
+  const folder = id === "kakaogames" ? "KakaoGames" : "DaumGames";
+
+  return {
+    id,
+    label,
+    exePath: `C:\\Users\\Default\\AppData\\Roaming\\${folder}\\${label}.exe`,
+    source: "test",
   };
 }

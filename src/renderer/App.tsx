@@ -19,6 +19,7 @@ import {
   PatchProgress,
   ThemeDefinition,
   KakaoMaintenanceInfo,
+  KakaoGameStarterMigrationRequest,
 } from "../shared/types";
 import { DOWNLOAD_URLS, SUPPORT_URLS } from "../shared/urls";
 
@@ -35,6 +36,7 @@ import FontManagerModal from "./components/modals/FontManagerModal";
 import FontMigrationModal from "./components/modals/FontMigrationModal";
 import { ForcedRepairModal } from "./components/modals/ForcedRepairModal";
 import KakaoMaintenanceModal from "./components/modals/KakaoMaintenanceModal";
+import KakaoStarterMigrationModal from "./components/modals/KakaoStarterMigrationModal";
 import KakaoStarterUacModal from "./components/modals/KakaoStarterUacModal";
 import MigrationModal from "./components/modals/MigrationModal";
 import NoticeModal from "./components/modals/NoticeModal";
@@ -219,6 +221,8 @@ function App() {
   const [isMigrationModalOpen, setIsMigrationModalOpen] = useState(false); // [UAC Migration]
   const [isKakaoStarterUacModalOpen, setIsKakaoStarterUacModalOpen] =
     useState(false);
+  const [kakaoStarterMigrationRequest, setKakaoStarterMigrationRequest] =
+    useState<KakaoGameStarterMigrationRequest | null>(null);
   const [kakaoMaintenanceInfo, setKakaoMaintenanceInfo] =
     useState<KakaoMaintenanceModalInfo | null>(null);
   const [isFontMigrationOpen, setIsFontMigrationOpen] = useState(false);
@@ -421,6 +425,14 @@ function App() {
         );
       }
 
+      if (window.electronAPI.onKakaoStarterMigrationRequest) {
+        cleanups.push(
+          window.electronAPI.onKakaoStarterMigrationRequest((request) => {
+            setKakaoStarterMigrationRequest(request);
+          }),
+        );
+      }
+
       if (window.electronAPI.onKakaoMaintenanceDetected) {
         cleanups.push(
           window.electronAPI.onKakaoMaintenanceDetected((info) => {
@@ -481,6 +493,17 @@ function App() {
   const handleKakaoStarterUacDecline = async () => {
     await window.electronAPI?.declineKakaoStarterUacBypass();
     setIsKakaoStarterUacModalOpen(false);
+  };
+
+  const handleOpenKakaoStarterInstaller = async () => {
+    return (
+      (await window.electronAPI?.openKakaoGamesStarterInstaller()) === true
+    );
+  };
+
+  const handleCloseKakaoStarterMigration = () => {
+    setKakaoStarterMigrationRequest(null);
+    void window.electronAPI?.dismissKakaoStarterMigrationPrompt();
   };
 
   // Launcher Title State (Managed by Main Process via Events)
@@ -1236,6 +1259,12 @@ function App() {
         isOpen={isKakaoStarterUacModalOpen}
         onConfirm={handleKakaoStarterUacConfirm}
         onDecline={handleKakaoStarterUacDecline}
+      />
+
+      <KakaoStarterMigrationModal
+        request={kakaoStarterMigrationRequest}
+        onInstall={handleOpenKakaoStarterInstaller}
+        onClose={handleCloseKakaoStarterMigration}
       />
 
       <KakaoMaintenanceModal

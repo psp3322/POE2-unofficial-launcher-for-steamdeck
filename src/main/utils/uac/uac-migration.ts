@@ -6,6 +6,7 @@ import { app } from "electron";
 import { logger } from "../logger";
 import { PowerShellManager } from "../powershell";
 import {
+  getKakaoGameStarterMigrationRequest,
   isAnyStarterRunAsInvokerEnabled,
   isStarterMissingRunAsInvoker,
   resolveInstalledKakaoGameStarters,
@@ -258,6 +259,13 @@ export const SimpleUacBypass = {
 
   async isDaumGameStarterMissingRunAsInvoker(): Promise<boolean> {
     return isInstalledStarterMissingRunAsInvoker("daum");
+  },
+};
+
+export const KakaoGameStarterMigration = {
+  async getRequest() {
+    const starters = await resolveInstalledKakaoGameStarters(getRegValue);
+    return getKakaoGameStarterMigrationRequest(starters);
   },
 };
 

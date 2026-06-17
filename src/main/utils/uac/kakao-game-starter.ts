@@ -1,5 +1,7 @@
 import { existsSync } from "fs";
 
+import type { KakaoGameStarterMigrationRequest } from "../../../shared/types";
+
 export type KakaoGameStarterId = "kakaogames" | "daum";
 
 export type KakaoGameStarterDefinition = {
@@ -27,6 +29,9 @@ export type RegistryReader = (
 ) => Promise<string | null>;
 
 export type PathExists = (path: string) => boolean;
+
+export const KAKAO_GAMES_STARTER_INSTALLER_URL =
+  "https://common.gdn.gamecdn.net/live/KakaogamesStarterSetup.exe";
 
 export const KAKAO_GAME_STARTERS = [
   {
@@ -105,6 +110,21 @@ export function isStarterMissingRunAsInvoker(
   return statuses.some(
     (starter) => starter.id === id && !starter.runAsInvokerEnabled,
   );
+}
+
+export function getKakaoGameStarterMigrationRequest(
+  starters: readonly ResolvedKakaoGameStarter[],
+): KakaoGameStarterMigrationRequest | null {
+  const kakaoStarter = starters.find((starter) => starter.id === "kakaogames");
+  const daumStarter = starters.find((starter) => starter.id === "daum");
+
+  if (!daumStarter || kakaoStarter) return null;
+
+  return {
+    action: "install-kakaogames",
+    installerUrl: KAKAO_GAMES_STARTER_INSTALLER_URL,
+    daumExePath: daumStarter.exePath,
+  };
 }
 
 async function resolveStarterExecutable(
