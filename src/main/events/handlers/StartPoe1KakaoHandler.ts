@@ -1,7 +1,7 @@
 import {
   getKakaoGameStartUrlCandidates,
-  type KakaoTransitionUrlCandidate,
-} from "../../../shared/kakao-service-transition";
+  type KakaoGameStartUrlCandidate,
+} from "../../../shared/kakao-url-policy";
 import { AppConfig } from "../../../shared/types";
 import { extractKakaoMaintenanceInfoFromWebContents } from "../../kakao/maintenance-info";
 import { logger } from "../../utils/logger";
@@ -159,23 +159,17 @@ export const StartPoe1KakaoHandler: EventHandler<UIEvent> = {
 
 async function loadFirstAvailableCandidate(
   gameWindow: BrowserWindow,
-  candidates: KakaoTransitionUrlCandidate[],
-): Promise<KakaoTransitionUrlCandidate | null> {
+  candidates: KakaoGameStartUrlCandidate[],
+): Promise<KakaoGameStartUrlCandidate | null> {
   for (const candidate of candidates) {
-    logger.log(
-      `[StartPoe1KakaoHandler] Loading ${candidate.phase.toUpperCase()} URL: ${
-        candidate.url
-      }`,
-    );
+    logger.log(`[StartPoe1KakaoHandler] Loading Kakao URL: ${candidate.url}`);
 
     try {
       await gameWindow.loadURL(candidate.url);
       return candidate;
     } catch (error) {
       logger.warn(
-        `[StartPoe1KakaoHandler] Failed to load ${candidate.phase.toUpperCase()} URL: ${
-          candidate.url
-        }`,
+        `[StartPoe1KakaoHandler] Failed to load Kakao URL: ${candidate.url}`,
         error,
       );
     }
