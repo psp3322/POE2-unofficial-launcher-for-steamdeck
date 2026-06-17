@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.6](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/compare/1.3.5...1.3.6) (2026-06-17)
+
+
+### Bug Fixes
+
+* 카카오게임즈 서비스 전환 후 실행 흐름 개선 ([50cb9c3](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/50cb9c313d98facc61d7e6b8608b061855e07ff4))
+* 카카오게임즈 서비스 전환 후 실행 흐름 개선 ([be3f5db](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/be3f5dbae49adbb34c319543748fedf6d7a80879))
+
 ## [1.3.5](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/compare/1.3.4...1.3.5) (2026-06-16)
 
 
