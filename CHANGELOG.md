@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.7](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/compare/1.3.6...1.3.7) (2026-06-17)
+
+
+### Bug Fixes
+
+* DaumGameStarter가 설치되어 있는 경우 KakaoGamesStarter 설치 안내 ([77dbafa](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/77dbafa0439c7f1c1390ee60ed1b1abe3649e51e))
+* KakaoGamesStarter가 설치되어 있는 경우 DaumGameStarter 제거 안내 ([c938e69](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/c938e6966144544951bc90238f8bfe3795207b1a))
+
 ## [1.3.6](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/compare/1.3.5...1.3.6) (2026-06-17)
 
 
