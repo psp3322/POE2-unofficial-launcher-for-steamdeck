@@ -941,6 +941,11 @@ ipcMain.handle("kakao-starter-migration:open-installer", async () => {
   return true;
 });
 
+ipcMain.handle("kakao-starter-migration:uninstall-daum", async () => {
+  logger.log("[Main] User confirmed DaumGameStarter uninstall.");
+  return await KakaoGameStarterMigration.uninstallDaumGameStarter();
+});
+
 ipcMain.handle("kakao-starter-migration:dismiss", async () => {
   logger.log("[Main] Kakao game starter migration prompt dismissed.");
   await requestKakaoGamesStarterUacRepairIfNeeded();

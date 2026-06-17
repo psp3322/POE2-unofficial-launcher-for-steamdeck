@@ -9,6 +9,7 @@ import {
   getKakaoGameStarterMigrationRequest,
   isAnyStarterRunAsInvokerEnabled,
   isStarterMissingRunAsInvoker,
+  parseWindowsExecutableCommand,
   resolveInstalledKakaoGameStarters,
   type KakaoGameStarterId,
   type KakaoGameStarterUacStatus,
@@ -267,6 +268,50 @@ export const KakaoGameStarterMigration = {
     const starters = await resolveInstalledKakaoGameStarters(getRegValue);
     return getKakaoGameStarterMigrationRequest(starters);
   },
+
+  async uninstallDaumGameStarter(): Promise<boolean> {
+    const uninstallCommand = await findDaumGameStarterUninstallCommand();
+
+    if (!uninstallCommand) {
+      logger.warn(
+        "[KakaoGameStarterMigration] DaumGameStarter uninstall command was not found.",
+      );
+      return false;
+    }
+
+    const parsed = parseWindowsExecutableCommand(uninstallCommand);
+
+    if (!parsed) {
+      logger.warn(
+        `[KakaoGameStarterMigration] Could not parse DaumGameStarter uninstall command: ${uninstallCommand}`,
+      );
+      return false;
+    }
+
+    const script = [
+      `$filePath = '${escapePowerShellSingleQuotedString(parsed.filePath)}'`,
+      `$arguments = '${escapePowerShellSingleQuotedString(parsed.arguments)}'`,
+      "if ([string]::IsNullOrWhiteSpace($arguments)) {",
+      "  Start-Process -FilePath $filePath -ErrorAction Stop",
+      "} else {",
+      "  Start-Process -FilePath $filePath -ArgumentList $arguments -ErrorAction Stop",
+      "}",
+    ].join("\n");
+
+    const result = await PowerShellManager.getInstance().execute(script, false);
+
+    if (result.code !== 0) {
+      logger.error(
+        `[KakaoGameStarterMigration] Failed to start DaumGameStarter uninstaller: ${result.stderr}`,
+      );
+      return false;
+    }
+
+    logger.log(
+      `[KakaoGameStarterMigration] Started DaumGameStarter uninstaller: ${uninstallCommand}`,
+    );
+    return true;
+  },
 };
 
 async function setRunAsInvokerForStarters(
@@ -394,4 +439,57 @@ function formatStarterStatuses(statuses: KakaoGameStarterUacStatus[]): string {
         } (${starter.exePath})`,
     )
     .join(", ");
+}
+
+async function findDaumGameStarterUninstallCommand(): Promise<string | null> {
+  const script = `
+$roots = @(
+  "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*",
+  "HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*",
+  "HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*"
+)
+
+$entries = foreach ($root in $roots) {
+  Get-ItemProperty -Path $root -ErrorAction SilentlyContinue
+}
+
+$target = $entries | Where-Object {
+  $text = @(
+    $_.DisplayName,
+    $_.Publisher,
+    $_.InstallLocation,
+    $_.UninstallString,
+    $_.QuietUninstallString
+  ) -join "\`n"
+
+  $text -match "(?i)(DaumGameStarter|Daum Game Starter|DaumGames|다음게임 스타터|다음 게임 스타터)"
+} | Select-Object -First 1
+
+if ($null -ne $target) {
+  if ($target.UninstallString) {
+    $target.UninstallString
+  } elseif ($target.QuietUninstallString) {
+    $target.QuietUninstallString
+  }
+}
+`;
+
+  const result = await PowerShellManager.getInstance().execute(
+    script,
+    false,
+    true,
+  );
+
+  if (result.code !== 0) {
+    logger.error(
+      `[KakaoGameStarterMigration] Failed to query DaumGameStarter uninstall command: ${result.stderr}`,
+    );
+    return null;
+  }
+
+  return result.stdout.trim() || null;
+}
+
+function escapePowerShellSingleQuotedString(value: string): string {
+  return value.replace(/'/g, "''");
 }

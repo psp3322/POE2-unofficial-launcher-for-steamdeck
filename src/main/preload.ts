@@ -310,6 +310,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("kakao-starter-uac:decline"),
   openKakaoGamesStarterInstaller: () =>
     ipcRenderer.invoke("kakao-starter-migration:open-installer"),
+  uninstallDaumGameStarter: () =>
+    ipcRenderer.invoke("kakao-starter-migration:uninstall-daum"),
   dismissKakaoStarterMigrationPrompt: () =>
     ipcRenderer.invoke("kakao-starter-migration:dismiss"),
 

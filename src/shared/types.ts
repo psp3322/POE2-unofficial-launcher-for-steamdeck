@@ -463,6 +463,7 @@ export interface ElectronAPI {
   confirmKakaoStarterUacBypass: () => Promise<boolean>;
   declineKakaoStarterUacBypass: () => Promise<boolean>;
   openKakaoGamesStarterInstaller: () => Promise<boolean>;
+  uninstallDaumGameStarter: () => Promise<boolean>;
   dismissKakaoStarterMigrationPrompt: () => Promise<boolean>;
 
   // [Fatal Error Handling]
@@ -536,9 +537,10 @@ export interface KakaoMaintenanceInfo {
 }
 
 export interface KakaoGameStarterMigrationRequest {
-  action: "install-kakaogames";
+  action: "install-kakaogames" | "remove-daum";
   installerUrl: string;
   daumExePath: string;
+  kakaoExePath?: string;
 }
 
 export interface NewsContent {

@@ -5,6 +5,7 @@ import {
   getKakaoGameStarterMigrationRequest,
   isAnyStarterRunAsInvokerEnabled,
   isStarterMissingRunAsInvoker,
+  parseWindowsExecutableCommand,
   resolveInstalledKakaoGameStarters,
   type ResolvedKakaoGameStarter,
   type KakaoGameStarterUacStatus,
@@ -61,7 +62,9 @@ describe("Kakao game starter resolver", () => {
   it("falls back to the known install path when registry lookup is missing", async () => {
     const starters = await resolveInstalledKakaoGameStarters(
       async () => null,
-      (path) => path.includes("\\KakaoGames\\KakaogamesStarter.exe"),
+      (path) =>
+        path ===
+        "C:\\Users\\Default\\AppData\\Roaming\\KakaoGames\\KakaogamesStarter.exe",
     );
 
     expect(starters).toEqual([
@@ -73,6 +76,36 @@ describe("Kakao game starter resolver", () => {
         source: "fallback",
       },
     ]);
+  });
+
+  it("falls back to the current user APPDATA install path", async () => {
+    const previousAppData = process.env.APPDATA;
+    process.env.APPDATA = "C:\\Users\\test\\AppData\\Roaming";
+
+    try {
+      const starters = await resolveInstalledKakaoGameStarters(
+        async () => null,
+        (path) =>
+          path ===
+          "C:\\Users\\test\\AppData\\Roaming\\KakaoGames\\KakaogamesStarter.exe",
+      );
+
+      expect(starters).toEqual([
+        {
+          id: "kakaogames",
+          label: "KakaogamesStarter",
+          exePath:
+            "C:\\Users\\test\\AppData\\Roaming\\KakaoGames\\KakaogamesStarter.exe",
+          source: "fallback",
+        },
+      ]);
+    } finally {
+      if (previousAppData === undefined) {
+        delete process.env.APPDATA;
+      } else {
+        process.env.APPDATA = previousAppData;
+      }
+    }
   });
 
   it("ignores legacy proxy commands and missing executable paths", async () => {
@@ -128,13 +161,19 @@ describe("Kakao game starter resolver", () => {
     });
   });
 
-  it("does not ask for migration when Kakao Games starter is already installed", () => {
-    expect(
-      getKakaoGameStarterMigrationRequest([
-        createResolvedStarter("kakaogames"),
-        createResolvedStarter("daum"),
-      ]),
-    ).toBeNull();
+  it("asks to remove DaumGameStarter when both starters exist", () => {
+    const request = getKakaoGameStarterMigrationRequest([
+      createResolvedStarter("kakaogames"),
+      createResolvedStarter("daum"),
+    ]);
+
+    expect(request).toMatchObject({
+      action: "remove-daum",
+      daumExePath:
+        "C:\\Users\\Default\\AppData\\Roaming\\DaumGames\\DaumGameStarter.exe",
+      kakaoExePath:
+        "C:\\Users\\Default\\AppData\\Roaming\\KakaoGames\\KakaogamesStarter.exe",
+    });
   });
 
   it("does not ask for migration when DaumGameStarter is absent", () => {
@@ -143,6 +182,22 @@ describe("Kakao game starter resolver", () => {
         createResolvedStarter("kakaogames"),
       ]),
     ).toBeNull();
+  });
+
+  it("parses quoted and unquoted Windows uninstall commands", () => {
+    expect(
+      parseWindowsExecutableCommand(
+        '"C:\\Program Files\\DaumGames\\Uninstall.exe" /uninstall',
+      ),
+    ).toEqual({
+      filePath: "C:\\Program Files\\DaumGames\\Uninstall.exe",
+      arguments: "/uninstall",
+    });
+
+    expect(parseWindowsExecutableCommand("MsiExec.exe /X{TEST-GUID}")).toEqual({
+      filePath: "MsiExec.exe",
+      arguments: "/X{TEST-GUID}",
+    });
   });
 });
 

@@ -501,6 +501,10 @@ function App() {
     );
   };
 
+  const handleUninstallDaumGameStarter = async () => {
+    return (await window.electronAPI?.uninstallDaumGameStarter()) === true;
+  };
+
   const handleCloseKakaoStarterMigration = () => {
     setKakaoStarterMigrationRequest(null);
     void window.electronAPI?.dismissKakaoStarterMigrationPrompt();
@@ -1264,6 +1268,7 @@ function App() {
       <KakaoStarterMigrationModal
         request={kakaoStarterMigrationRequest}
         onInstall={handleOpenKakaoStarterInstaller}
+        onUninstallDaum={handleUninstallDaumGameStarter}
         onClose={handleCloseKakaoStarterMigration}
       />
 
