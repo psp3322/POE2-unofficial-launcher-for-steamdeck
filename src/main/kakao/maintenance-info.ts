@@ -6,7 +6,7 @@ import {
   isKakaoInspectionUrl,
   isKakaoInspectionUrlString,
   KAKAO_POE_INSPECTION_URL,
-} from "../../shared/kakao-service-transition";
+} from "../../shared/kakao-url-policy";
 
 import type {
   KakaoMaintenanceInfo,

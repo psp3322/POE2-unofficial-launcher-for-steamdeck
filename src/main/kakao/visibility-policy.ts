@@ -1,7 +1,7 @@
 import {
   isKakaoGameLoginRedirectUrl,
   isKakaoInspectionUrlString,
-} from "../../shared/kakao-service-transition";
+} from "../../shared/kakao-url-policy";
 
 export const USER_REQUIRED_PAGE_REVEAL_DELAY_MS = 1200;
 export const UNHANDLED_PAGE_REVEAL_DELAY_MS = 1200;

@@ -15,13 +15,14 @@ import {
   USER_REQUIRED_PAGE_REVEAL_DELAY_MS,
 } from "./visibility-policy";
 import {
-  getKakaoUrlPhase,
+  isKakaoGamesAgreementUrl,
+  isKakaoGamesMemberLoginUrl,
   isKakaoLauncherUrl,
   isKakaoMemberUrl,
   isKakaoPoeHomeUrl,
   isKakaoStarterInstallPopupUrl,
   isKakaoSecurityCenterUrl,
-} from "../../shared/kakao-service-transition";
+} from "../../shared/kakao-url-policy";
 import { AppConfig } from "../../shared/types";
 import { logger } from "../utils/preload-logger";
 
@@ -109,6 +110,10 @@ const SELECTORS = {
     // Select first account in list (target a[role="button"] for semantic click)
     FIRST_ACCOUNT: ".list_easy li:first-child a[role='button']",
   },
+  KAKAO_GAMES_MEMBER: {
+    BTN_KAKAO_LOGIN: "button.btn-common.btn-type--icon.btn-type__emph3",
+    BTN_KAKAO_ICON: ".icon-kakaocapri",
+  },
   ACCOUNT: {
     // Stage 1: GGB (Global Gate Bar) - Daum Game Login
     GGB_NICKNAME: "#a_kg_ggb_nickname",
@@ -180,15 +185,16 @@ function reportAutomationFailure(handlerName: string, error: unknown) {
   });
 }
 
-function requestStartUrlFallback(handlerName: string) {
-  const currentUrl = new URL(window.location.href);
-  ipcRenderer.send("kakao:start-url-fallback-request", {
+function reportStartButtonTimeout(handlerName: string) {
+  const message = `${handlerName} timed out while waiting for the Kakao game start button.`;
+  ipcRenderer.send("kakao:automation-failure", {
+    errorCode: "KAKAO_START_BUTTON_TIMEOUT",
     handlerName,
-    phase: activeGameContext
-      ? getKakaoUrlPhase(currentUrl, activeGameContext.gameId)
-      : getKakaoUrlPhase(currentUrl),
     url: window.location.href,
     context: activeGameContext,
+    name: "Error",
+    message,
+    stack: undefined,
   });
 }
 
@@ -316,7 +322,7 @@ function observeAndInteract(
 
 /**
  * POE1 Main Page Handler
- * Matches Kakao PoE1 homepage candidates during service transition.
+ * Matches the Kakao PoE1 homepage during a game-start flow.
  */
 const PoeMainHandler: PageHandler = {
   name: "PoeMainHandler",
@@ -338,7 +344,7 @@ const PoeMainHandler: PageHandler = {
         return false;
       },
       10000,
-      () => requestStartUrlFallback(PoeMainHandler.name),
+      () => reportStartButtonTimeout(PoeMainHandler.name),
     );
   },
 };
@@ -454,7 +460,7 @@ const DaumGameLoginValidationHandler: PageHandler = {
 
 /**
  * POE2 Main Page Handler
- * Matches Kakao PoE2 homepage candidates during service transition.
+ * Matches the Kakao PoE2 homepage during a game-start flow.
  * Handles Intro Modal & Game Start Button
  */
 const Poe2MainHandler: PageHandler = {
@@ -519,7 +525,7 @@ const Poe2MainHandler: PageHandler = {
         return false;
       },
       10000,
-      () => requestStartUrlFallback(Poe2MainHandler.name),
+      () => reportStartButtonTimeout(Poe2MainHandler.name),
     );
   },
 };
@@ -869,6 +875,61 @@ const KakaoSimpleLoginHandler: PageHandler = {
   },
 };
 
+const KakaoGamesMemberLoginHandler: PageHandler = {
+  name: "KakaoGamesMemberLoginHandler",
+  description: "Kakao Games Member Login - Auto Click Kakao Login",
+  match: (url) => isKakaoGamesMemberLoginUrl(url),
+  timeoutMs: -1,
+  triggeredBy: [
+    "GAME_START_POE1",
+    "GAME_START_POE2",
+    "ACCOUNT_VALIDATION",
+    "ACCOUNT_MANUAL_LOGIN",
+  ],
+  execute: (context) => {
+    logger.log(`[Handler] Executing ${KakaoGamesMemberLoginHandler.name}`);
+
+    observeAndInteract((obs) => {
+      const kakaoLoginButton =
+        document.querySelector(SELECTORS.KAKAO_GAMES_MEMBER.BTN_KAKAO_LOGIN) ||
+        Array.from(document.querySelectorAll("button")).find((button) => {
+          const text = button.textContent?.replace(/\s+/g, " ").trim() ?? "";
+          return (
+            text.includes("카카오 로그인") ||
+            Boolean(
+              button.querySelector(SELECTORS.KAKAO_GAMES_MEMBER.BTN_KAKAO_ICON),
+            )
+          );
+        });
+
+      if (safeClick(kakaoLoginButton as HTMLElement, "Kakao Games Login")) {
+        context.setVisible(false);
+        if (obs) obs.disconnect();
+        return true;
+      }
+
+      return false;
+    });
+  },
+};
+
+const KakaoGamesAgreementHandler: PageHandler = {
+  name: "KakaoGamesAgreementHandler",
+  description: "Kakao Games Agreement Page",
+  match: (url) => isKakaoGamesAgreementUrl(url),
+  visibility: "user-required",
+  timeoutMs: -1,
+  triggeredBy: [
+    "GAME_START_POE1",
+    "GAME_START_POE2",
+    "ACCOUNT_VALIDATION",
+    "ACCOUNT_MANUAL_LOGIN",
+  ],
+  execute: () => {
+    logger.log(`[Handler] Executing ${KakaoGamesAgreementHandler.name}`);
+  },
+};
+
 const KakaoAuthHandler: PageHandler = {
   name: "KakaoAuthHandler",
   description: "Kakao OAuth Consent",
@@ -1138,6 +1199,8 @@ const HANDLERS: PageHandler[] = [
   KakaoSimpleLoginHandler, // Priority 1: Automated account selection (matches /login/simple)
   KakaoQRLoginHandler, // Priority 2: QR Login auto-check
   KakaoAuthHandler, // Priority 3: Automated OAuth consent
+  KakaoGamesMemberLoginHandler,
+  KakaoGamesAgreementHandler,
   KakaoLoginValidationHandler, // Priority 3: Roadblock/Failure capture for other /login pages
   KakaoManualValidationHandler, // Success Detector for manual mode
   DaumGameLoginValidationHandler,

@@ -1,7 +1,7 @@
 import Store from "electron-store";
 import { parse } from "node-html-parser";
 
-import { isKakaoInspectionUrlString } from "../../shared/kakao-service-transition";
+import { isKakaoInspectionUrlString } from "../../shared/kakao-url-policy";
 import {
   MAX_NEWS_COUNT,
   NEWS_REFRESH_INTERVAL,

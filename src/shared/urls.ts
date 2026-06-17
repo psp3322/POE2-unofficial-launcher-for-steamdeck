@@ -13,8 +13,8 @@ export const BASE_URLS: ServiceGameMap = {
     POE2: "https://pathofexile2.com",
   },
   "Kakao Games": {
-    POE1: "https://poe.game.daum.net",
-    POE2: "https://pathofexile2.game.daum.net",
+    POE1: "https://poe.kakaogames.com",
+    POE2: "https://pathofexile2.kakaogames.com/main",
   },
 };
 
@@ -25,8 +25,8 @@ export const DOWNLOAD_URLS: ServiceGameMap = {
     POE2: "https://pathofexile2.com/download",
   },
   "Kakao Games": {
-    POE1: "https://poe.game.daum.net/kr/download",
-    POE2: "https://poe2.game.daum.net/download",
+    POE1: "https://poe.kakaogames.com/download",
+    POE2: "https://pathofexile2.kakaogames.com/main",
   },
 };
 
@@ -37,7 +37,7 @@ export const KAKAO_GAMES_STARTER_DOWNLOAD_URL =
 // Forums bases are per-service (GGG shares domain, Kakao shares domain)
 export const FORUM_URLS: Record<AppConfig["serviceChannel"], string> = {
   GGG: "https://www.pathofexile.com/forum/view-forum",
-  "Kakao Games": "https://poe.game.daum.net/forum/view-forum",
+  "Kakao Games": "https://poe.kakaogames.com/forum/view-forum",
 };
 
 // 4. Support & External Links
@@ -66,7 +66,7 @@ export const TRADE_URLS: ServiceGameMap = {
     POE2: "https://www.pathofexile.com/trade2",
   },
   "Kakao Games": {
-    POE1: "https://poe.game.daum.net/trade",
-    POE2: "https://poe.game.daum.net/trade2",
+    POE1: "https://poe.kakaogames.com/trade",
+    POE2: "https://poe.kakaogames.com/trade2",
   },
 };

@@ -142,22 +142,8 @@ describe("kakao visibility policy", () => {
 
   it("detects Kakao game login redirects during background validation", () => {
     expect(
-      isDaumGameLoginRedirect(new URL("https://kakaogames.com/login")),
+      isDaumGameLoginRedirect(new URL("https://poe.kakaogames.com/login")),
     ).toBe(true);
-
-    /* kakao-transition:legacy-start */
-    expect(
-      isDaumGameLoginRedirect(new URL("https://poe.game.daum.net/login")),
-    ).toBe(true);
-    expect(
-      isDaumGameLoginRedirect(
-        new URL("https://pathofexile2.game.daum.net/login?returnUrl=/"),
-      ),
-    ).toBe(true);
-    expect(isDaumGameLoginRedirect(new URL("https://poe.game.daum.net/"))).toBe(
-      false,
-    );
-    /* kakao-transition:legacy-end */
 
     expect(
       isDaumGameLoginRedirect(new URL("https://accounts.kakao.com/login")),
@@ -165,11 +151,15 @@ describe("kakao visibility policy", () => {
   });
 
   it("signals Daum game login-required only when the redirect page stays current", () => {
-    const loginUrl = "https://poe.game.daum.net/login?__cf_chl_rt_tk=challenge";
+    const loginUrl =
+      "https://poe.kakaogames.com/login?__cf_chl_rt_tk=challenge";
 
     expect(shouldSignalDaumGameLoginRequired(loginUrl, loginUrl)).toBe(true);
     expect(
-      shouldSignalDaumGameLoginRequired(loginUrl, "https://poe.game.daum.net/"),
+      shouldSignalDaumGameLoginRequired(
+        loginUrl,
+        "https://poe.kakaogames.com/",
+      ),
     ).toBe(false);
   });
 

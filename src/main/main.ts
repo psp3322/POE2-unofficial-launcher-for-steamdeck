@@ -25,11 +25,6 @@ import {
   deleteConfigWithEvent,
 } from "./utils/config-utils";
 import { DEBUG_APP_CONFIG } from "../shared/config";
-import {
-  getKakaoGameStartUrlCandidates,
-  type KakaoGameId,
-  type KakaoTransitionUrlPhase,
-} from "../shared/kakao-service-transition";
 import { getGameName, getLauncherTitle, getAppName } from "../shared/naming";
 import {
   AppConfig,
@@ -451,16 +446,6 @@ type KakaoAutomationFailurePayload = {
   } | null;
 };
 
-type KakaoStartUrlFallbackPayload = {
-  handlerName?: string;
-  phase?: KakaoTransitionUrlPhase | null;
-  url?: string;
-  context?: {
-    gameId?: AppConfig["activeGame"];
-    serviceId?: AppConfig["serviceChannel"];
-  } | null;
-};
-
 /**
  * Get configuration value considering environment variable priority.
  * This does not persist the forced value to the store.
@@ -510,14 +495,6 @@ function createKakaoAutomationError(payload: KakaoAutomationFailurePayload) {
 
 function sanitizeKakaoFailureReason(value: string) {
   return value.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
-}
-
-function isExpectedExternalProtocolAbort(error: unknown): boolean {
-  const navigationError = error as Error & { code?: number };
-  return Boolean(
-    navigationError?.message?.includes("ERR_ABORTED") ||
-    navigationError?.code === -3,
-  );
 }
 
 function formatKakaoStartFailureLog(input: {
@@ -649,108 +626,6 @@ ipcMain.on(
       )}`,
       targetWindow: sourceWindow,
       triggerContext: getNavigationTrigger(senderId) ?? undefined,
-    });
-  },
-);
-
-ipcMain.on(
-  "kakao:start-url-fallback-request",
-  async (event, payload: KakaoStartUrlFallbackPayload) => {
-    if (!appContext) return;
-
-    const senderId = event.sender.id;
-    const mappedContext = windowContextMap.get(senderId);
-    const activeSessionContext = gameSessionTracker.getActiveSessionContext();
-    const gameId =
-      payload.context?.gameId ||
-      mappedContext?.gameId ||
-      activeSessionContext?.gameId;
-    const serviceId =
-      payload.context?.serviceId ||
-      mappedContext?.serviceId ||
-      activeSessionContext?.serviceId;
-
-    if (!gameId || serviceId !== "Kakao Games") {
-      logger.warn(
-        `[KakaoTransition] Ignored start URL fallback request from unknown context: ${senderId}`,
-      );
-      return;
-    }
-
-    const sourceWindow = BrowserWindow.fromWebContents(event.sender);
-    if (!sourceWindow || sourceWindow.isDestroyed()) {
-      logger.warn(
-        "[KakaoTransition] Ignored fallback request: window missing.",
-      );
-      return;
-    }
-
-    const candidates = getKakaoGameStartUrlCandidates(gameId as KakaoGameId);
-    const currentIndex = candidates.findIndex(
-      (candidate) => candidate.phase === payload.phase,
-    );
-    const nextCandidate = candidates[currentIndex + 1];
-
-    if (!nextCandidate) {
-      await finalizeKakaoStartFailure({
-        gameId,
-        serviceId,
-        errorCode: "KAKAO_START_URL_FALLBACK_EXHAUSTED",
-        error: new Error(
-          `Kakao start URL fallback exhausted after ${payload.phase || "unknown"} phase: ${
-            payload.url || "unknown URL"
-          }`,
-        ),
-        dumpReason: `start-url-fallback-exhausted-${sanitizeKakaoFailureReason(
-          payload.handlerName || "unknown",
-        )}`,
-        targetWindow: sourceWindow,
-        triggerContext: getNavigationTrigger(senderId) ?? undefined,
-      });
-      return;
-    }
-
-    logger.warn(
-      `[KakaoTransition] ${payload.handlerName || "unknown handler"} timed out on ${
-        payload.phase || "unknown"
-      } URL. Retrying ${nextCandidate.phase.toUpperCase()} URL: ${
-        nextCandidate.url
-      }`,
-    );
-
-    if (typeof setNavigationTrigger === "function") {
-      setNavigationTrigger(sourceWindow.webContents.id, `GAME_START_${gameId}`);
-    }
-
-    try {
-      await sourceWindow.loadURL(nextCandidate.url);
-    } catch (error) {
-      if (isExpectedExternalProtocolAbort(error)) {
-        logger.log(
-          "[KakaoTransition] Fallback navigation aborted (-3) as expected for external protocol launch.",
-        );
-        return;
-      }
-
-      logger.error(
-        `[KakaoTransition] Failed to load fallback URL: ${nextCandidate.url}`,
-        error,
-      );
-      await finalizeKakaoStartFailure({
-        gameId,
-        serviceId,
-        errorCode: "KAKAO_START_URL_FALLBACK_LOAD_FAILED",
-        error: error instanceof Error ? error : new Error(String(error)),
-        dumpReason: `start-url-fallback-load-failed-${nextCandidate.phase}`,
-        targetWindow: sourceWindow,
-        triggerContext: getNavigationTrigger(senderId) ?? undefined,
-      });
-      return;
-    }
-
-    sourceWindow.webContents.send("execute-game-start", {
-      gameId,
-      serviceId,
     });
   },
 );
