@@ -16,6 +16,7 @@ import {
   ImportSelection,
   GameLaunchContext,
   KakaoMaintenanceInfo,
+  KakaoGameStarterMigrationRequest,
 } from "../shared/types";
 
 const logger = new PreloadLogger({ type: "PRELOAD", typeColor: "#8BE9FD" });
@@ -291,12 +292,28 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.on("kakao-starter-uac:request", handler);
     return () => ipcRenderer.off("kakao-starter-uac:request", handler);
   },
+  onKakaoStarterMigrationRequest: (
+    callback: (request: KakaoGameStarterMigrationRequest) => void,
+  ) => {
+    const handler = (
+      _event: IpcRendererEvent,
+      request: KakaoGameStarterMigrationRequest,
+    ) => callback(request);
+    ipcRenderer.on("kakao-starter-migration:request", handler);
+    return () => ipcRenderer.off("kakao-starter-migration:request", handler);
+  },
   reportUacMigrationReady: () => ipcRenderer.send("uac-migration:ready"),
   confirmUacMigration: () => ipcRenderer.send("uac-migration:confirm"),
   confirmKakaoStarterUacBypass: () =>
     ipcRenderer.invoke("kakao-starter-uac:confirm"),
   declineKakaoStarterUacBypass: () =>
     ipcRenderer.invoke("kakao-starter-uac:decline"),
+  openKakaoGamesStarterInstaller: () =>
+    ipcRenderer.invoke("kakao-starter-migration:open-installer"),
+  uninstallDaumGameStarter: () =>
+    ipcRenderer.invoke("kakao-starter-migration:uninstall-daum"),
+  dismissKakaoStarterMigrationPrompt: () =>
+    ipcRenderer.invoke("kakao-starter-migration:dismiss"),
 
   initialGameName: getGameName(
     ipcRenderer.sendSync("config:get-sync", "activeGame"),

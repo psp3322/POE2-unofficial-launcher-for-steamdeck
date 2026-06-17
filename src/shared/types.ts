@@ -455,10 +455,16 @@ export interface ElectronAPI {
   // [UAC Migration]
   onUacMigrationRequest: (callback: () => void) => () => void;
   onKakaoStarterUacRequest: (callback: () => void) => () => void;
+  onKakaoStarterMigrationRequest: (
+    callback: (request: KakaoGameStarterMigrationRequest) => void,
+  ) => () => void;
   reportUacMigrationReady: () => void;
   confirmUacMigration: () => void;
   confirmKakaoStarterUacBypass: () => Promise<boolean>;
   declineKakaoStarterUacBypass: () => Promise<boolean>;
+  openKakaoGamesStarterInstaller: () => Promise<boolean>;
+  uninstallDaumGameStarter: () => Promise<boolean>;
+  dismissKakaoStarterMigrationPrompt: () => Promise<boolean>;
 
   // [Fatal Error Handling]
   onFatalError: (callback: (errorDetails: string) => void) => () => void;
@@ -528,6 +534,13 @@ export interface KakaoMaintenanceInfo {
     label: string;
     value: string;
   }>;
+}
+
+export interface KakaoGameStarterMigrationRequest {
+  action: "install-kakaogames" | "remove-daum";
+  installerUrl: string;
+  daumExePath: string;
+  kakaoExePath?: string;
 }
 
 export interface NewsContent {

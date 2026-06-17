@@ -1,5 +1,7 @@
 import { existsSync } from "fs";
 
+import type { KakaoGameStarterMigrationRequest } from "../../../shared/types";
+
 export type KakaoGameStarterId = "kakaogames" | "daum";
 
 export type KakaoGameStarterDefinition = {
@@ -8,6 +10,7 @@ export type KakaoGameStarterDefinition = {
   protocol: string;
   protocolCommandKeys: readonly string[];
   fallbackExePath: string;
+  fallbackSubPath: string;
 };
 
 export type ResolvedKakaoGameStarter = {
@@ -28,6 +31,9 @@ export type RegistryReader = (
 
 export type PathExists = (path: string) => boolean;
 
+export const KAKAO_GAMES_STARTER_INSTALLER_URL =
+  "https://common.gdn.gamecdn.net/live/KakaogamesStarterSetup.exe";
+
 export const KAKAO_GAME_STARTERS = [
   {
     id: "kakaogames",
@@ -40,6 +46,7 @@ export const KAKAO_GAME_STARTERS = [
     ],
     fallbackExePath:
       "C:\\Users\\Default\\AppData\\Roaming\\KakaoGames\\KakaogamesStarter.exe",
+    fallbackSubPath: "KakaoGames\\KakaogamesStarter.exe",
   },
   {
     id: "daum",
@@ -52,6 +59,7 @@ export const KAKAO_GAME_STARTERS = [
     ],
     fallbackExePath:
       "C:\\Users\\Default\\AppData\\Roaming\\DaumGames\\DaumGameStarter.exe",
+    fallbackSubPath: "DaumGames\\DaumGameStarter.exe",
   },
 ] as const satisfies readonly KakaoGameStarterDefinition[];
 
@@ -107,6 +115,58 @@ export function isStarterMissingRunAsInvoker(
   );
 }
 
+export function getKakaoGameStarterMigrationRequest(
+  starters: readonly ResolvedKakaoGameStarter[],
+): KakaoGameStarterMigrationRequest | null {
+  const kakaoStarter = starters.find((starter) => starter.id === "kakaogames");
+  const daumStarter = starters.find((starter) => starter.id === "daum");
+
+  if (!daumStarter) return null;
+
+  if (kakaoStarter) {
+    return {
+      action: "remove-daum",
+      installerUrl: KAKAO_GAMES_STARTER_INSTALLER_URL,
+      daumExePath: daumStarter.exePath,
+      kakaoExePath: kakaoStarter.exePath,
+    };
+  }
+
+  return {
+    action: "install-kakaogames",
+    installerUrl: KAKAO_GAMES_STARTER_INSTALLER_URL,
+    daumExePath: daumStarter.exePath,
+  };
+}
+
+export type WindowsExecutableCommand = {
+  filePath: string;
+  arguments: string;
+};
+
+export function parseWindowsExecutableCommand(
+  command: string,
+): WindowsExecutableCommand | null {
+  const trimmed = command.trim();
+  if (!trimmed) return null;
+
+  const quoted = trimmed.match(/^"([^"]+)"\s*(.*)$/);
+  if (quoted?.[1]) {
+    return {
+      filePath: quoted[1],
+      arguments: quoted[2]?.trim() ?? "",
+    };
+  }
+
+  const unquoted = trimmed.match(/^(\S+)(?:\s+(.*))?$/);
+  if (!unquoted?.[1]) return null;
+
+  return {
+    filePath: unquoted[1],
+    arguments: unquoted[2]?.trim() ?? "",
+  };
+}
+
 async function resolveStarterExecutable(
   starter: KakaoGameStarterDefinition,
   readRegistryValue: RegistryReader,
@@ -126,11 +186,13 @@ async function resolveStarterExecutable(
     }
   }
 
-  if (pathExists(starter.fallbackExePath)) {
+  for (const fallbackExePath of getStarterFallbackExePaths(starter)) {
+    if (!pathExists(fallbackExePath)) continue;
+
     return {
       id: starter.id,
       label: starter.label,
-      exePath: starter.fallbackExePath,
+      exePath: fallbackExePath,
       source: "fallback",
     };
   }
@@ -138,7 +200,28 @@ async function resolveStarterExecutable(
   return null;
 }
 
+function getStarterFallbackExePaths(
+  starter: KakaoGameStarterDefinition,
+): string[] {
+  const candidates = [
+    joinWindowsPath(process.env.APPDATA, starter.fallbackSubPath),
+    joinWindowsPath(process.env.LOCALAPPDATA, starter.fallbackSubPath),
+    starter.fallbackExePath,
+  ].filter((path): path is string => Boolean(path));
+
+  return Array.from(new Set(candidates.map(normalizeWindowsPath)));
+}
+
 function isUsableStarterPath(exePath: string): boolean {
   const normalized = exePath.toLowerCase();
   return normalized.endsWith(".exe") && !normalized.includes("wscript.exe");
+}
+
+function joinWindowsPath(root: string | undefined, subPath: string): string {
+  if (!root) return "";
+  return `${root.replace(/[\\/]+$/, "")}\\${subPath}`;
+}
+
+function normalizeWindowsPath(targetPath: string): string {
+  return targetPath.replace(/\//g, "\\");
 }

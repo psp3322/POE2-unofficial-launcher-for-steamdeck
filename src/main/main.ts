@@ -107,7 +107,12 @@ import {
   syncInstallLocation,
 } from "./utils/registry";
 import { RemoteVersionResolver } from "./utils/RemoteVersionResolver";
-import { LegacyUacManager, SimpleUacBypass } from "./utils/uac/uac-migration";
+import { KAKAO_GAMES_STARTER_INSTALLER_URL } from "./utils/uac/kakao-game-starter";
+import {
+  KakaoGameStarterMigration,
+  LegacyUacManager,
+  SimpleUacBypass,
+} from "./utils/uac/uac-migration";
 import {
   applyResolutionRules,
   enforceConstraints,
@@ -895,6 +900,10 @@ ipcMain.on("uac-migration:ready", async () => {
     return;
   }
 
+  if (await requestKakaoGameStarterMigrationIfNeeded()) {
+    return;
+  }
+
   await requestKakaoGamesStarterUacRepairIfNeeded();
 });
 
@@ -925,6 +934,38 @@ ipcMain.handle("kakao-starter-uac:decline", async () => {
   setConfigWithEvent("skipDaumGameStarterUac", false);
   return true;
 });
+
+ipcMain.handle("kakao-starter-migration:open-installer", async () => {
+  logger.log("[Main] Opening Kakao Games starter installer link.");
+  await shell.openExternal(KAKAO_GAMES_STARTER_INSTALLER_URL);
+  return true;
+});
+
+ipcMain.handle("kakao-starter-migration:uninstall-daum", async () => {
+  logger.log("[Main] User confirmed DaumGameStarter uninstall.");
+  return await KakaoGameStarterMigration.uninstallDaumGameStarter();
+});
+
+ipcMain.handle("kakao-starter-migration:dismiss", async () => {
+  logger.log("[Main] Kakao game starter migration prompt dismissed.");
+  await requestKakaoGamesStarterUacRepairIfNeeded();
+  return true;
+});
+
+async function requestKakaoGameStarterMigrationIfNeeded(): Promise<boolean> {
+  const request = await KakaoGameStarterMigration.getRequest();
+
+  if (!request) return false;
+
+  logger.log(
+    `[Main] Kakao game starter migration prompt requested: ${request.action}`,
+  );
+  context.mainWindow?.webContents.send(
+    "kakao-starter-migration:request",
+    request,
+  );
+  return true;
+}
 
 async function requestKakaoGamesStarterUacRepairIfNeeded(): Promise<void> {
   if (getEffectiveConfig("skipDaumGameStarterUac") !== true) return;
