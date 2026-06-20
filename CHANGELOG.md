@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.4.0](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/compare/1.3.7...1.4.0) (2026-06-20)
+
+
+### Features
+
+* 게임이 설치되어 있지만 런처에서 감지에 실패한 경우 수동으로 경로를 지정할 수 있도록 개선 ([c25e7b7](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/c25e7b7f52ac661a21b6d8de88af65bada5ae31b))
+* 메인 화면에서 커스텀 폰트 설정에 바로 접근할 수 있도록 개선 ([cab1c85](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/cab1c854e62740bfb244a81afd47cb7521abae81))
+* 외부 요인으로 런처에 저장된 경로와 레지스트리 경로가 다를 경우 확인 창을 표시하도록 개선 ([74d2f15](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/74d2f153505cd26a416a0cfcb02b9e2e4fb581b0))
+
+
+### Bug Fixes
+
+* 카카오게임즈 페이지 구조 변경으로 `설정 - 계정`의 로그인 확인이 멈추는 문제 수정 ([7db1c86](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/7db1c8627e2e7a7b88f7d542526e878570f92d96))
+* 커스텀 폰트 관리의 베타 표기를 제거 ([6ad78e1](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/6ad78e10e983394da186bfd77650a17e596121d3))
+* 한국인 모드의 베타 표기를 제거 ([5271555](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/5271555d5639e22253df2f7f5723245999b9d6b2))
+
 ## [1.3.7](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/compare/1.3.6...1.3.7) (2026-06-17)
 
 
