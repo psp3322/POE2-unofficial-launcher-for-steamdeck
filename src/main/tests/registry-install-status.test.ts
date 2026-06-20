@@ -131,6 +131,24 @@ HKEY_CURRENT_USER\\Software\\DaumGames\\POE2
     ).resolves.toBe("installed");
     await expect(isGameInstalled("Kakao Games", "POE2")).resolves.toBe(true);
 
+    expect(mocks.stat).toHaveBeenCalledWith(
+      `${installPath}\\PathOfExile_KG.exe`,
+    );
+  });
+
+  it("keeps GGG install verification on PathOfExile.exe", async () => {
+    const installPath = String.raw`C:\Games\Path of Exile 2`;
+    mocks.powershellExecute.mockResolvedValue({
+      stdout: installPath,
+      stderr: "",
+      code: 0,
+    });
+    mocks.stat.mockResolvedValue({ isFile: () => true });
+
+    await expect(getGameInstallationStatus("GGG", "POE2")).resolves.toBe(
+      "installed",
+    );
+
     expect(mocks.stat).toHaveBeenCalledWith(`${installPath}\\PathOfExile.exe`);
   });
 
@@ -271,7 +289,7 @@ HKEY_CURRENT_USER\\Software\\DaumGames\\POE2
       }),
     );
     mocks.stat.mockImplementation(async (targetPath: string) => {
-      if (targetPath === `${stalePath}\\PathOfExile.exe`) {
+      if (targetPath === `${stalePath}\\PathOfExile_KG.exe`) {
         throw Object.assign(new Error("missing"), { code: "ENOENT" });
       }
 
@@ -306,7 +324,7 @@ HKEY_CURRENT_USER\\Software\\DaumGames\\POE2
       }),
     );
     mocks.stat.mockImplementation(async (targetPath: string) => {
-      if (targetPath === `${stalePath}\\PathOfExile.exe`) {
+      if (targetPath === `${stalePath}\\PathOfExile_KG.exe`) {
         throw Object.assign(new Error("missing"), { code: "ENOENT" });
       }
 
@@ -325,7 +343,7 @@ HKEY_CURRENT_USER\\Software\\DaumGames\\POE2
 
     expect(diagnostics.hasPathConflict).toBe(true);
     expect(diagnostics.recommendedSource).toBe("registry");
-    expect(diagnostics.executableName).toBe("PathOfExile.exe");
+    expect(diagnostics.executableName).toBe("PathOfExile_KG.exe");
     expect(diagnostics.config.path).toBe(stalePath);
     expect(diagnostics.config.verification).toBe("missing");
     expect(diagnostics.registry.path).toBe(registryPath);
@@ -535,7 +553,7 @@ HKEY_CURRENT_USER\\Software\\DaumGames\\POE2
     });
   });
 
-  it("rejects a manually selected folder without PathOfExile.exe", async () => {
+  it("rejects a manually selected Kakao folder without PathOfExile_KG.exe", async () => {
     const installPath = String.raw`E:\Games\Path of Exile 2`;
     mocks.contextProviderGet.mockReturnValue(
       createContext({
@@ -599,7 +617,7 @@ HKEY_CURRENT_USER\\Software\\DaumGames\\POE2
     );
   });
 
-  it("returns uninstalled when a registry path does not contain PathOfExile.exe", async () => {
+  it("returns uninstalled when a Kakao registry path does not contain PathOfExile_KG.exe", async () => {
     const installPath = String.raw`C:\Games\Path of Exile 2`;
     mocks.powershellExecute.mockResolvedValue({
       stdout: installPath,
@@ -619,7 +637,7 @@ HKEY_CURRENT_USER\\Software\\DaumGames\\POE2
       expect.stringContaining("registry=path-invalid"),
     );
     expect(mocks.loggerLog).toHaveBeenCalledWith(
-      expect.stringContaining("PathOfExile.exe missing"),
+      expect.stringContaining("PathOfExile_KG.exe missing"),
     );
   });
 

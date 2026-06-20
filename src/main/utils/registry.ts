@@ -57,7 +57,13 @@ type ConfiguredInstallPathResult =
   | { state: "found"; path: string }
   | { state: "empty" | "context-unavailable"; path: null };
 
-const GAME_EXECUTABLE_NAME = "PathOfExile.exe";
+const GAME_EXECUTABLE_NAMES = {
+  "Kakao Games": "PathOfExile_KG.exe",
+  GGG: "PathOfExile.exe",
+} as const satisfies Record<ServiceChannel, string>;
+
+const getGameExecutableName = (serviceId: AppConfig["serviceChannel"]) =>
+  GAME_EXECUTABLE_NAMES[serviceId];
 
 /**
  * Registry Mapping for Game Installation Paths
@@ -577,17 +583,20 @@ export const writeRegistryValue = async (
   }
 };
 
-const getGameExecutablePath = (installPath: string) =>
-  path.join(installPath, GAME_EXECUTABLE_NAME);
+const getGameExecutablePath = (
+  serviceId: AppConfig["serviceChannel"],
+  installPath: string,
+) => path.join(installPath, getGameExecutableName(serviceId));
 
 const verifyGameInstallPath = async (
+  serviceId: AppConfig["serviceChannel"],
   installPath: string,
 ): Promise<{
   status: InstallPathVerificationStatus;
   executablePath: string;
   error?: string;
 }> => {
-  const executablePath = getGameExecutablePath(installPath);
+  const executablePath = getGameExecutablePath(serviceId, installPath);
 
   try {
     const stats = await fs.stat(executablePath);
@@ -657,15 +666,17 @@ const formatDiagnostics = (diagnostics: string[]) => {
 };
 
 const formatPathCheckFailure = (
+  serviceId: AppConfig["serviceChannel"],
   source: "config" | "registry",
   installPath: string,
   status: InstallPathVerificationStatus,
   error?: string,
 ) => {
-  const executablePath = getGameExecutablePath(installPath);
+  const executableName = getGameExecutableName(serviceId);
+  const executablePath = getGameExecutablePath(serviceId, installPath);
 
   if (status === "missing") {
-    return `${source}=path-invalid (${GAME_EXECUTABLE_NAME} missing at ${executablePath})`;
+    return `${source}=path-invalid (${executableName} missing at ${executablePath})`;
   }
 
   return `${source}=path-check-blocked (${executablePath}: ${error || "unknown error"})`;
@@ -698,7 +709,10 @@ const resolveGameInstallPath = async (
 
   if (configuredPath.path !== null) {
     const configuredInstallPath = configuredPath.path;
-    const configuredStatus = await verifyGameInstallPath(configuredInstallPath);
+    const configuredStatus = await verifyGameInstallPath(
+      serviceId,
+      configuredInstallPath,
+    );
 
     if (configuredStatus.status === "valid") {
       return { path: configuredInstallPath, source: "config", diagnostics };
@@ -707,6 +721,7 @@ const resolveGameInstallPath = async (
     configuredVerifyError = configuredStatus.error;
     diagnostics.push(
       formatPathCheckFailure(
+        serviceId,
         "config",
         configuredInstallPath,
         configuredStatus.status,
@@ -732,7 +747,10 @@ const resolveGameInstallPath = async (
     return { path: null, verifyError: configuredVerifyError, diagnostics };
   }
 
-  const registryStatus = await verifyGameInstallPath(registryResult.value);
+  const registryStatus = await verifyGameInstallPath(
+    serviceId,
+    registryResult.value,
+  );
 
   if (registryStatus.status === "valid") {
     if (configuredPath.state === "empty") {
@@ -748,6 +766,7 @@ const resolveGameInstallPath = async (
 
   diagnostics.push(
     formatPathCheckFailure(
+      serviceId,
       "registry",
       registryResult.value,
       registryStatus.status,
@@ -806,7 +825,10 @@ export const getGameInstallPathDiagnostics = async (
   };
 
   if (configuredPath.path) {
-    const verification = await verifyGameInstallPath(configuredPath.path);
+    const verification = await verifyGameInstallPath(
+      serviceId,
+      configuredPath.path,
+    );
     configDiagnostic.verification = verification.status;
     configDiagnostic.executablePath = verification.executablePath;
     configDiagnostic.error = verification.error;
@@ -825,7 +847,10 @@ export const getGameInstallPathDiagnostics = async (
   };
 
   if (registryResult.ok && registryResult.value) {
-    const verification = await verifyGameInstallPath(registryResult.value);
+    const verification = await verifyGameInstallPath(
+      serviceId,
+      registryResult.value,
+    );
     registryDiagnostic.verification = verification.status;
     registryDiagnostic.executablePath = verification.executablePath;
     registryDiagnostic.error = verification.error;
@@ -838,7 +863,7 @@ export const getGameInstallPathDiagnostics = async (
   return {
     serviceId,
     gameId,
-    executableName: GAME_EXECUTABLE_NAME,
+    executableName: getGameExecutableName(serviceId),
     config: configDiagnostic,
     registry: registryDiagnostic,
     hasPathConflict,
@@ -872,7 +897,10 @@ export const setGameInstallPath = async (
     };
   }
 
-  const verification = await verifyGameInstallPath(normalizedInstallPath);
+  const verification = await verifyGameInstallPath(
+    serviceId,
+    normalizedInstallPath,
+  );
   if (verification.status !== "valid") {
     return {
       ok: false,
@@ -880,7 +908,7 @@ export const setGameInstallPath = async (
       verification: verification.status,
       error:
         verification.error ||
-        `${GAME_EXECUTABLE_NAME} was not found in the selected folder.`,
+        `${getGameExecutableName(serviceId)}를 선택한 폴더에서 찾을 수 없습니다.`,
       diagnostics: await getGameInstallPathDiagnostics(serviceId, gameId),
     };
   }
@@ -927,7 +955,7 @@ export const resolveGameInstallPathConflict = async (
     };
   }
 
-  const verification = await verifyGameInstallPath(configPath);
+  const verification = await verifyGameInstallPath(serviceId, configPath);
   if (verification.status !== "valid") {
     return {
       ok: false,
@@ -936,7 +964,7 @@ export const resolveGameInstallPathConflict = async (
       verification: verification.status,
       error:
         verification.error ||
-        `${GAME_EXECUTABLE_NAME} was not found in the launcher config path.`,
+        `런처 설정 경로에서 ${getGameExecutableName(serviceId)}를 찾을 수 없습니다.`,
       diagnostics,
     };
   }
@@ -1084,7 +1112,7 @@ export const setDaumGameStarterCommand = async (
 };
 
 /**
- * Checks if the game is installed by verifying PathOfExile.exe in the resolved folder.
+ * Checks if the game is installed by verifying the service-specific executable in the resolved folder.
  */
 export const getGameInstallationStatus = async (
   serviceId: AppConfig["serviceChannel"],

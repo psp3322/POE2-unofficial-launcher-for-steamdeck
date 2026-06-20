@@ -148,7 +148,7 @@ const getGamePathSaveErrorMessage = (
   fallback?: string,
 ) => {
   if (verification === "missing") {
-    return "선택한 폴더에서 PathOfExile.exe를 찾을 수 없습니다.";
+    return fallback || "선택한 폴더에서 게임 실행 파일을 찾을 수 없습니다.";
   }
 
   if (verification === "unknown") {
