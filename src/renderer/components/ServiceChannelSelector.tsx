@@ -1,28 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
 
 import { AppConfig } from "../../shared/types";
-import imgGGG from "../assets/img-ci-ggg_150x67.png";
-import imgKakao from "../assets/img-ci-kakaogames_158x28.png";
+import { SERVICE_CHANNEL_ASSETS } from "../utils/service-channel-assets";
 import "./ServiceChannelSelector.css";
 
 type ServiceChannel = AppConfig["serviceChannel"];
-
-interface ServiceChannelInfo {
-  logo: string;
-  alt: string;
-}
-
-// Extensible Configuration Map
-const CHANNEL_CONFIG: Record<ServiceChannel, ServiceChannelInfo> = {
-  "Kakao Games": {
-    logo: imgKakao,
-    alt: "Kakao Games",
-  },
-  GGG: {
-    logo: imgGGG,
-    alt: "Grinding Gear Games",
-  },
-};
 
 interface ServiceChannelSelectorProps {
   channel: ServiceChannel;
@@ -55,7 +37,7 @@ const ServiceChannelSelector: React.FC<ServiceChannelSelectorProps> = ({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isOpen]);
 
-  const activeInfo = CHANNEL_CONFIG[channel];
+  const activeInfo = SERVICE_CHANNEL_ASSETS[channel];
 
   return (
     <div className="service-channel-container" ref={containerRef}>
@@ -74,30 +56,33 @@ const ServiceChannelSelector: React.FC<ServiceChannelSelectorProps> = ({
             />
           </div>
 
-          {/* Dropdown List (Automatic based on CHANNEL_CONFIG) */}
+          {/* Dropdown List (Automatic based on shared channel assets) */}
           {isOpen && (
             <div className="custom-dropdown-list">
-              {(Object.keys(CHANNEL_CONFIG) as ServiceChannel[]).map((key) => {
-                const info = CHANNEL_CONFIG[key];
-                return (
-                  <div
-                    key={key}
-                    className={`custom-dropdown-item ${
-                      channel === key ? "selected" : ""
-                    }`}
-                    onClick={() => {
-                      onChannelChange(key);
-                      setIsOpen(false);
-                    }}
-                  >
-                    <img
-                      src={info.logo}
-                      alt={info.alt}
-                      className="channel-logo"
-                    />
-                  </div>
-                );
-              })}
+              {(Object.keys(SERVICE_CHANNEL_ASSETS) as ServiceChannel[]).map(
+                (key) => {
+                  const info = SERVICE_CHANNEL_ASSETS[key];
+
+                  return (
+                    <div
+                      key={key}
+                      className={`custom-dropdown-item ${
+                        channel === key ? "selected" : ""
+                      }`}
+                      onClick={() => {
+                        onChannelChange(key);
+                        setIsOpen(false);
+                      }}
+                    >
+                      <img
+                        src={info.logo}
+                        alt={info.alt}
+                        className="channel-logo"
+                      />
+                    </div>
+                  );
+                },
+              )}
             </div>
           )}
         </div>

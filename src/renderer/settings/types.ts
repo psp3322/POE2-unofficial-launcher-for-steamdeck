@@ -273,6 +273,11 @@ export interface SettingText extends BaseSettingItem {
  */
 export interface SettingButton extends BaseSettingItem {
   type: "button";
+  /**
+   * 이 값이 존재하면 Electron Store를 사용하지 않고, UI 상태로만 관리됩니다.
+   * (액션 버튼은 보통 false를 사용합니다.)
+   */
+  defaultValue?: boolean;
   /** 버튼에 표시될 텍스트 */
   buttonText: string;
   /** 버튼 스타일 변형 (default, primary, danger 등) */

@@ -722,6 +722,28 @@ export const SETTINGS_CONFIG: SettingsCategory[] = [
     icon: "sports_esports",
     sections: [
       {
+        id: "install_path",
+        title: "설치 경로",
+        items: [
+          {
+            id: "openGamePathDiagnosticBtn",
+            type: "button",
+            defaultValue: false,
+            label: "게임 경로 진단",
+            buttonText: "열기",
+            variant: "primary",
+            description:
+              "서비스와 게임별 설치 경로를 확인하거나 직접 지정합니다.",
+            icon: "folder_open",
+            onClickListener: () => {
+              window.dispatchEvent(
+                new CustomEvent("open-game-path-diagnostic-modal"),
+              );
+            },
+          },
+        ],
+      },
+      {
         id: "adv_process",
         title: "프로세스 관리",
         items: [
