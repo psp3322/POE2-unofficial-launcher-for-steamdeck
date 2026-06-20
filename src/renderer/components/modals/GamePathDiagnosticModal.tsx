@@ -29,14 +29,18 @@ interface GamePathDiagnosticModalProps {
   errorMessage?: string;
   highlightManual?: boolean;
   showRegistrySyncConfirm?: boolean;
+  showRegistryClearConfirm?: boolean;
   manualSaveToastId?: number;
   onClose: () => void;
   onContextChange: (serviceId: ServiceChannel, gameId: ActiveGame) => void;
   onUsePath: (source: GamePathSource) => void;
+  onClearPath: (source: GamePathSource) => void;
   onManualSelect: () => void;
   onRegistrySyncConfirmClose: () => void;
+  onRegistryClearConfirmClose: () => void;
   onKeepLauncherConfig: () => void;
   onSyncRegistry: () => void;
+  onConfirmClearRegistry: () => void;
   onInstall?: () => void;
 }
 
@@ -95,6 +99,10 @@ const getEmptyPathText = (source: GamePathSource) => {
 
 const getActionText = (source: GamePathSource) => {
   return source === "registry" ? "이 경로 사용" : "설정 경로 유지";
+};
+
+const getClearActionText = (source: GamePathSource) => {
+  return source === "registry" ? "레지스트리 값 삭제" : "저장된 경로 삭제";
 };
 
 const GAME_LABELS: Record<ActiveGame, string> = {
@@ -244,6 +252,7 @@ const PathOptionCard: React.FC<{
   recommended: boolean;
   busy: boolean;
   onUsePath: (source: GamePathSource) => void;
+  onClearPath: (source: GamePathSource) => void;
   onManualSelect: () => void;
 }> = ({
   title,
@@ -252,11 +261,13 @@ const PathOptionCard: React.FC<{
   recommended,
   busy,
   onUsePath,
+  onClearPath,
   onManualSelect,
 }) => {
   const canUsePath = Boolean(
     diagnostic.path && diagnostic.verification === "valid",
   );
+  const canClearPath = Boolean(diagnostic.path);
   const canReselectConfigPath = Boolean(
     source === "config" &&
     diagnostic.path &&
@@ -301,25 +312,41 @@ const PathOptionCard: React.FC<{
         <div className="game-path-option-error">{diagnostic.error}</div>
       )}
 
-      <button
-        type="button"
-        className={`game-path-action ${
-          recommended ? "primary" : "secondary"
-        } ${canReselectConfigPath ? "reselect" : ""}`}
-        disabled={actionDisabled}
-        onClick={() =>
-          canReselectConfigPath ? onManualSelect() : onUsePath(source)
-        }
-      >
-        <span className="material-symbols-outlined">
-          {canReselectConfigPath
-            ? "folder_open"
-            : source === "registry"
-              ? "sync_alt"
-              : "check"}
-        </span>
-        {canReselectConfigPath ? "다시 선택" : getActionText(source)}
-      </button>
+      <div className="game-path-option-actions">
+        <button
+          type="button"
+          className={`game-path-action ${
+            recommended ? "primary" : "secondary"
+          } ${canReselectConfigPath ? "reselect" : ""}`}
+          disabled={actionDisabled}
+          onClick={() =>
+            canReselectConfigPath ? onManualSelect() : onUsePath(source)
+          }
+        >
+          <span className="material-symbols-outlined">
+            {canReselectConfigPath
+              ? "folder_open"
+              : source === "registry"
+                ? "sync_alt"
+                : "check"}
+          </span>
+          {canReselectConfigPath ? "다시 선택" : getActionText(source)}
+        </button>
+
+        {canClearPath && (
+          <button
+            type="button"
+            className={`game-path-action path-clear ${
+              source === "registry" ? "danger" : "secondary"
+            }`}
+            disabled={busy}
+            onClick={() => onClearPath(source)}
+          >
+            <span className="material-symbols-outlined">delete</span>
+            {getClearActionText(source)}
+          </button>
+        )}
+      </div>
     </section>
   );
 };
@@ -334,14 +361,18 @@ const GamePathDiagnosticModal: React.FC<GamePathDiagnosticModalProps> = ({
   errorMessage,
   highlightManual = false,
   showRegistrySyncConfirm = false,
+  showRegistryClearConfirm = false,
   manualSaveToastId,
   onClose,
   onContextChange,
   onUsePath,
+  onClearPath,
   onManualSelect,
   onRegistrySyncConfirmClose,
+  onRegistryClearConfirmClose,
   onKeepLauncherConfig,
   onSyncRegistry,
+  onConfirmClearRegistry,
   onInstall,
 }) => {
   const manualRowRef = React.useRef<HTMLDivElement>(null);
@@ -411,6 +442,7 @@ const GamePathDiagnosticModal: React.FC<GamePathDiagnosticModalProps> = ({
                   recommended={diagnostics.recommendedSource === "registry"}
                   busy={busy}
                   onUsePath={onUsePath}
+                  onClearPath={onClearPath}
                   onManualSelect={onManualSelect}
                 />
                 <PathOptionCard
@@ -420,6 +452,7 @@ const GamePathDiagnosticModal: React.FC<GamePathDiagnosticModalProps> = ({
                   recommended={diagnostics.recommendedSource === "config"}
                   busy={busy}
                   onUsePath={onUsePath}
+                  onClearPath={onClearPath}
                   onManualSelect={onManualSelect}
                 />
               </div>
@@ -544,6 +577,56 @@ const GamePathDiagnosticModal: React.FC<GamePathDiagnosticModalProps> = ({
               </div>
             </div>
           )}
+
+        {showRegistryClearConfirm && diagnostics?.registry.path && (
+          <div className="game-path-confirm-overlay">
+            <div
+              className="game-path-confirm-dialog is-danger"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="game-path-confirm-icon">
+                <span className="material-symbols-outlined">warning</span>
+              </div>
+              <div className="game-path-confirm-content">
+                <h3>레지스트리 설치 경로를 삭제할까요?</h3>
+                <p>
+                  레지스트리는 게임이 설치될 때 게임 쪽에서 자동으로 추가하는
+                  값입니다. 현재 값이 왜 손상되었거나 달라졌는지는 런처에서 알
+                  수 없습니다.
+                </p>
+                <p>
+                  삭제하면 런처 외부의 게임 실행/패치 프로그램에서 게임 경로를
+                  찾지 못할 수 있습니다.
+                </p>
+                <div className="game-path-confirm-paths">
+                  <div>
+                    <span>삭제 대상</span>
+                    <strong>{diagnostics.registry.path}</strong>
+                  </div>
+                </div>
+              </div>
+              <div className="game-path-confirm-actions">
+                <button
+                  type="button"
+                  className="game-path-action ghost"
+                  disabled={busy}
+                  onClick={onRegistryClearConfirmClose}
+                >
+                  취소
+                </button>
+                <button
+                  type="button"
+                  className="game-path-action danger"
+                  disabled={busy}
+                  onClick={onConfirmClearRegistry}
+                >
+                  <span className="material-symbols-outlined">delete</span>
+                  레지스트리 값 삭제
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {manualSaveToastId && (
           <Toast

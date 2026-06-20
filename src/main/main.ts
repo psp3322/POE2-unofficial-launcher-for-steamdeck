@@ -59,6 +59,10 @@ import {
   IServiceManager,
   UIEvent,
 } from "./events/types";
+import {
+  GAME_INSTALL_STATUS_CONTEXTS,
+  reconcileGameInstallStatus,
+} from "./game/GameInstallStatusReconciler";
 import { GameSessionTracker, SessionContext } from "./game/GameSessionTracker";
 import { registerGameStatusIpc } from "./ipc/game-status-ipc";
 import {
@@ -85,10 +89,6 @@ import {
 } from "./services/register-services";
 import { serviceManager } from "./services/ServiceManager";
 import { themeCacheManager } from "./services/ThemeCacheManager";
-import {
-  getGameStatus,
-  shouldPreserveRuntimeGameStatus,
-} from "./state/GameStatusStore";
 import { getConfig, setupStoreObservers, default as store } from "./store";
 import {
   isAdmin,
@@ -107,7 +107,7 @@ import { PowerShellManager } from "./utils/powershell";
 import {
   getGameInstallPath,
   getGameInstallPathDiagnostics,
-  getGameInstallationStatus,
+  clearGameInstallPath,
   resolveGameInstallPathConflict,
   setGameInstallPath,
   syncInstallLocation,
@@ -791,6 +791,36 @@ ipcMain.handle(
     }
 
     return resolveGameInstallPathConflict(serviceId, gameId, action);
+  },
+);
+
+ipcMain.handle(
+  "game-install-path:clear",
+  async (
+    _event,
+    serviceId: AppConfig["serviceChannel"],
+    gameId: AppConfig["activeGame"],
+    source: "config" | "registry",
+  ) => {
+    if (!isSupportedGameInstallContext(serviceId, gameId)) {
+      throw new Error(
+        `Unsupported game install context: ${serviceId}/${gameId}`,
+      );
+    }
+
+    if (source !== "config" && source !== "registry") {
+      throw new Error(`Unsupported game install path clear source: ${source}`);
+    }
+
+    const result = await clearGameInstallPath(serviceId, gameId, source);
+
+    if (result.ok && source === "registry") {
+      await reconcileGameInstallStatus(appContext, serviceId, gameId, {
+        reason: "manual-registry-path-clear",
+      });
+    }
+
+    return result;
   },
 );
 
@@ -2216,56 +2246,13 @@ async function createWindow() {
   );
 
   // Perform initial installation check for ALL contexts
-  // const initialConfig = getConfig() as AppConfig; (Removed: unused)
   const checkAllGameStatuses = async () => {
-    const combinations = [
-      { game: "POE1", service: "Kakao Games" },
-      { game: "POE2", service: "Kakao Games" },
-      { game: "POE1", service: "GGG" },
-      { game: "POE2", service: "GGG" },
-    ] as const;
-
     logger.log("[Main] Checking initial status for all game contexts...");
 
-    for (const combo of combinations) {
-      const currentStatus = getGameStatus(combo.game, combo.service);
-      if (shouldPreserveRuntimeGameStatus(currentStatus)) {
-        logger.log(
-          `[Main] Preserving active runtime status for ${combo.game} (${combo.service}): ${currentStatus.status}`,
-        );
-        continue;
-      }
-
-      const installationStatus = await getGameInstallationStatus(
-        combo.service as AppConfig["serviceChannel"],
-        combo.game as AppConfig["activeGame"],
-      );
-
-      const latestStatus = getGameStatus(combo.game, combo.service);
-      if (shouldPreserveRuntimeGameStatus(latestStatus)) {
-        logger.log(
-          `[Main] Preserving active runtime status after install check for ${combo.game} (${combo.service}): ${latestStatus.status}`,
-        );
-        continue;
-      }
-
-      await eventBus.emit<GameStatusChangeEvent>(
-        EventType.GAME_STATUS_CHANGE,
-        appContext,
-        {
-          gameId: combo.game as AppConfig["activeGame"],
-          serviceId: combo.service as AppConfig["serviceChannel"],
-          status:
-            installationStatus === "uninstalled"
-              ? "uninstalled"
-              : installationStatus === "unknown"
-                ? "install_check_blocked"
-                : "idle",
-          ...(installationStatus === "unknown"
-            ? { errorCode: "INSTALL_CHECK_UNKNOWN" }
-            : {}),
-        },
-      );
+    for (const { serviceId, gameId } of GAME_INSTALL_STATUS_CONTEXTS) {
+      await reconcileGameInstallStatus(appContext, serviceId, gameId, {
+        reason: "initial-status-check",
+      });
     }
   };
 

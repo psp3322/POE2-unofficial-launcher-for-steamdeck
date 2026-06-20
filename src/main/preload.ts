@@ -19,6 +19,8 @@ import {
   KakaoGameStarterMigrationRequest,
   GameInstallPathConflictAction,
   GameInstallPathConflictResolveResult,
+  GameInstallPathClearResult,
+  GameInstallPathClearSource,
   GameInstallPathDiagnostics,
   GameInstallPathSaveResult,
 } from "../shared/types";
@@ -60,6 +62,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
       gameId,
       action,
     ),
+  clearGameInstallPath: (
+    serviceId: AppConfig["serviceChannel"],
+    gameId: AppConfig["activeGame"],
+    source: GameInstallPathClearSource,
+  ): Promise<GameInstallPathClearResult> =>
+    ipcRenderer.invoke("game-install-path:clear", serviceId, gameId, source),
   minimizeWindow: () => ipcRenderer.send("window-minimize"),
   closeWindow: () => ipcRenderer.send("window-close"),
   getConfig: (

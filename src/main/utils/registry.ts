@@ -13,6 +13,8 @@ import {
   GameInstallPathConflictResolution,
   GameInstallPathConflictResolveResult,
   GameInstallPathConflictResolutions,
+  GameInstallPathClearResult,
+  GameInstallPathClearSource,
   GameInstallPathConfigDiagnostic,
   GameInstallPathDiagnostics,
   GameInstallPaths,
@@ -583,6 +585,34 @@ export const writeRegistryValue = async (
   }
 };
 
+export const deleteRegistryValue = async (
+  regPath: string,
+  key: string,
+  useAdmin: boolean = false,
+): Promise<boolean> => {
+  try {
+    const finalPath = standardizeRegPath(regPath);
+    const safePath = escapePowerShellSingleQuotedString(finalPath);
+    const safeKey = escapePowerShellSingleQuotedString(key);
+
+    const psCommand = `
+      $path = '${safePath}'
+      $name = '${safeKey}'
+      if (Test-Path -LiteralPath $path) {
+        $item = Get-Item -LiteralPath $path -ErrorAction Stop
+        if ($item.GetValueNames() -contains $name) {
+          Remove-ItemProperty -LiteralPath $path -Name $name -ErrorAction Stop
+        }
+      }
+    `.trim();
+
+    const { code } = await runPowerShell(psCommand, useAdmin);
+    return code === 0;
+  } catch (_e) {
+    return false;
+  }
+};
+
 const getGameExecutablePath = (
   serviceId: AppConfig["serviceChannel"],
   installPath: string,
@@ -648,6 +678,16 @@ const writeRegistryInstallPath = async (
   if (!registryInfo) return false;
 
   return writeRegistryValue(registryInfo.path, registryInfo.key, installPath);
+};
+
+const deleteRegistryInstallPath = async (
+  serviceId: AppConfig["serviceChannel"],
+  gameId: AppConfig["activeGame"],
+): Promise<boolean> => {
+  const registryInfo = GAME_INSTALL_REGISTRY_MAP[serviceId]?.[gameId];
+  if (!registryInfo) return false;
+
+  return deleteRegistryValue(registryInfo.path, registryInfo.key);
 };
 
 const getRegistryInstallPathLabel = (
@@ -932,6 +972,58 @@ export const setGameInstallPath = async (
   return {
     ok: true,
     path: normalizedInstallPath,
+    diagnostics: await getGameInstallPathDiagnostics(serviceId, gameId),
+  };
+};
+
+export const clearGameInstallPath = async (
+  serviceId: AppConfig["serviceChannel"],
+  gameId: AppConfig["activeGame"],
+  source: GameInstallPathClearSource,
+): Promise<GameInstallPathClearResult> => {
+  if (source === "config") {
+    const context = ContextProvider.get();
+    if (!context) {
+      return {
+        ok: false,
+        source,
+        error: "App context is not available.",
+        diagnostics: await getGameInstallPathDiagnostics(serviceId, gameId),
+      };
+    }
+
+    const config = context.getConfig() as AppConfig;
+    const currentPaths = normalizeGameInstallPaths(config.gameInstallPaths);
+    const nextValue: GameInstallPaths = {
+      ...currentPaths,
+      [serviceId]: {
+        ...currentPaths[serviceId],
+        [gameId]: "",
+      },
+    };
+
+    setConfigWithEvent(CONFIG_KEYS.GAME_INSTALL_PATHS, nextValue);
+
+    return {
+      ok: true,
+      source,
+      diagnostics: await getGameInstallPathDiagnostics(serviceId, gameId),
+    };
+  }
+
+  const deleted = await deleteRegistryInstallPath(serviceId, gameId);
+  if (!deleted) {
+    return {
+      ok: false,
+      source,
+      error: "Failed to delete registry install path.",
+      diagnostics: await getGameInstallPathDiagnostics(serviceId, gameId),
+    };
+  }
+
+  return {
+    ok: true,
+    source,
     diagnostics: await getGameInstallPathDiagnostics(serviceId, gameId),
   };
 };

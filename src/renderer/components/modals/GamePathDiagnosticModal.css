@@ -361,8 +361,22 @@ img.game-path-channel-logo[alt="Grinding Gear Games"] {
   overflow-wrap: anywhere;
 }
 
-.game-path-option .game-path-action {
+.game-path-option-actions {
+  display: flex;
+  gap: 8px;
   margin-top: auto;
+}
+
+.game-path-option-actions .game-path-action {
+  flex: 1 1 0;
+  min-width: 0;
+  margin-top: 0;
+}
+
+.game-path-action.path-clear {
+  flex: 0 1 auto;
+  padding-right: 12px;
+  padding-left: 12px;
 }
 
 .game-path-manual-row {
@@ -511,11 +525,23 @@ img.game-path-channel-logo[alt="Grinding Gear Games"] {
   box-shadow: 0 24px 58px rgba(0, 0, 0, 0.72);
 }
 
+.game-path-confirm-dialog.is-danger {
+  border-color: rgba(250, 82, 82, 0.52);
+  background:
+    linear-gradient(rgba(250, 82, 82, 0.06), rgba(250, 82, 82, 0.02)),
+    #181818;
+}
+
 .game-path-confirm-icon {
   display: flex;
   align-items: flex-start;
   justify-content: center;
   color: #ffbf33;
+}
+
+.game-path-confirm-dialog.is-danger .game-path-confirm-icon,
+.game-path-confirm-dialog.is-danger .game-path-confirm-content h3 {
+  color: #ff8787;
 }
 
 .game-path-confirm-icon .material-symbols-outlined {

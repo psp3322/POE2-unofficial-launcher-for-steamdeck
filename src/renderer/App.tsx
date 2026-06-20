@@ -82,6 +82,7 @@ type GamePathModalState = {
   errorMessage?: string;
   highlightManual?: boolean;
   showRegistrySyncConfirm?: boolean;
+  showRegistryClearConfirm?: boolean;
   manualSaveToastId?: number;
 };
 
@@ -1175,6 +1176,7 @@ function App() {
         busy: true,
         highlightManual: options?.highlightManual ?? false,
         showRegistrySyncConfirm: false,
+        showRegistryClearConfirm: false,
       });
 
       try {
@@ -1244,6 +1246,7 @@ function App() {
               errorMessage: undefined,
               highlightManual: false,
               showRegistrySyncConfirm: false,
+              showRegistryClearConfirm: false,
             }
           : current,
       );
@@ -1323,6 +1326,7 @@ function App() {
             ? {
                 ...current,
                 showRegistrySyncConfirm: true,
+                showRegistryClearConfirm: false,
                 errorMessage: undefined,
               }
             : current,
@@ -1400,6 +1404,7 @@ function App() {
                 errorMessage: undefined,
                 highlightManual: false,
                 showRegistrySyncConfirm: false,
+                showRegistryClearConfirm: false,
                 manualSaveToastId: Date.now(),
               }
             : current,
@@ -1443,6 +1448,96 @@ function App() {
     );
   }, []);
 
+  const handleGamePathRegistryClearConfirmClose = useCallback(() => {
+    setGamePathModalState((current) =>
+      current ? { ...current, showRegistryClearConfirm: false } : current,
+    );
+  }, []);
+
+  const handleClearGamePath = useCallback(
+    async (source: GamePathSource, confirmed = false) => {
+      if (!window.electronAPI || !gamePathModalState) return;
+
+      if (source === "registry" && !confirmed) {
+        setGamePathModalState((current) =>
+          current
+            ? {
+                ...current,
+                showRegistryClearConfirm: true,
+                showRegistrySyncConfirm: false,
+                errorMessage: undefined,
+              }
+            : current,
+        );
+        return;
+      }
+
+      const { serviceId, gameId } = gamePathModalState;
+      setGamePathModalState((current) =>
+        current
+          ? {
+              ...current,
+              busy: true,
+              errorMessage: undefined,
+              showRegistryClearConfirm: false,
+            }
+          : current,
+      );
+
+      try {
+        const result = await window.electronAPI.clearGameInstallPath(
+          serviceId,
+          gameId,
+          source,
+        );
+
+        if (result.ok) {
+          setGamePathModalState((current) =>
+            current
+              ? {
+                  ...current,
+                  mode: "diagnostic",
+                  diagnostics: result.diagnostics,
+                  busy: false,
+                  errorMessage: undefined,
+                  showRegistrySyncConfirm: false,
+                  showRegistryClearConfirm: false,
+                }
+              : current,
+          );
+          void syncGameState(gameId, serviceId);
+          return;
+        }
+
+        setGamePathModalState((current) =>
+          current
+            ? {
+                ...current,
+                diagnostics: result.diagnostics || current.diagnostics,
+                busy: false,
+                errorMessage:
+                  result.error ||
+                  (source === "registry"
+                    ? "레지스트리 설치 경로를 삭제하지 못했습니다."
+                    : "저장된 게임 경로를 삭제하지 못했습니다."),
+              }
+            : current,
+        );
+      } catch (error) {
+        setGamePathModalState((current) =>
+          current
+            ? {
+                ...current,
+                busy: false,
+                errorMessage: `게임 경로를 삭제하지 못했습니다. ${formatUnknownError(error)}`,
+              }
+            : current,
+        );
+      }
+    },
+    [gamePathModalState, syncGameState],
+  );
+
   const handleResolveGamePathConflict = useCallback(
     async (action: "launcher-config-only" | "sync-registry") => {
       if (!window.electronAPI || !gamePathModalState) return;
@@ -1455,6 +1550,7 @@ function App() {
               busy: true,
               errorMessage: undefined,
               showRegistrySyncConfirm: false,
+              showRegistryClearConfirm: false,
             }
           : current,
       );
@@ -1828,17 +1924,25 @@ function App() {
         showRegistrySyncConfirm={
           gamePathModalState?.showRegistrySyncConfirm ?? false
         }
+        showRegistryClearConfirm={
+          gamePathModalState?.showRegistryClearConfirm ?? false
+        }
         manualSaveToastId={gamePathModalState?.manualSaveToastId}
         onClose={handleGamePathModalClose}
         onContextChange={handleGamePathContextChange}
         onUsePath={handleUseGamePath}
+        onClearPath={(source) => void handleClearGamePath(source)}
         onManualSelect={handleManualGamePathSelect}
         onRegistrySyncConfirmClose={handleGamePathConflictConfirmClose}
+        onRegistryClearConfirmClose={handleGamePathRegistryClearConfirmClose}
         onKeepLauncherConfig={() =>
           void handleResolveGamePathConflict("launcher-config-only")
         }
         onSyncRegistry={() =>
           void handleResolveGamePathConflict("sync-registry")
+        }
+        onConfirmClearRegistry={() =>
+          void handleClearGamePath("registry", true)
         }
         onInstall={
           gamePathModalState?.mode === "missing"

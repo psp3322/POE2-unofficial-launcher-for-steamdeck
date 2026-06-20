@@ -1,26 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { eventBus } from "../events/EventBus";
 import { GameInstallCheckHandler } from "../events/handlers/GameInstallCheckHandler";
 import {
   EventType,
   type AppContext,
   type ConfigChangeEvent,
 } from "../events/types";
-import { getGameInstallationStatus } from "../utils/registry";
 
 const mocks = vi.hoisted(() => ({
-  getGameInstallationStatus: vi.fn(),
+  getGameInstallStatusContextsForConfigChange: vi.fn(),
+  reconcileGameInstallStatus: vi.fn(),
+  shouldReconcileGameInstallStatusOnConfigChange: vi.fn(),
 }));
 
-vi.mock("../events/EventBus", () => ({
-  eventBus: {
-    emit: vi.fn(),
-  },
-}));
-
-vi.mock("../utils/registry", () => ({
-  getGameInstallationStatus: mocks.getGameInstallationStatus,
+vi.mock("../game/GameInstallStatusReconciler", () => ({
+  getGameInstallStatusContextsForConfigChange:
+    mocks.getGameInstallStatusContextsForConfigChange,
+  reconcileGameInstallStatus: mocks.reconcileGameInstallStatus,
+  shouldReconcileGameInstallStatusOnConfigChange:
+    mocks.shouldReconcileGameInstallStatusOnConfigChange,
 }));
 
 const configChangeEvent: ConfigChangeEvent = {
@@ -37,30 +35,45 @@ describe("GameInstallCheckHandler", () => {
     vi.clearAllMocks();
   });
 
-  it("emits a blocked install-check status when installation status is unknown", async () => {
-    vi.mocked(getGameInstallationStatus).mockResolvedValue("unknown");
+  it("delegates config-change filtering to the install status reconciler", () => {
+    mocks.shouldReconcileGameInstallStatusOnConfigChange.mockReturnValue(true);
+
+    expect(
+      GameInstallCheckHandler.condition?.(configChangeEvent, {} as AppContext),
+    ).toBe(true);
+    expect(
+      mocks.shouldReconcileGameInstallStatusOnConfigChange,
+    ).toHaveBeenCalledWith(configChangeEvent);
+  });
+
+  it("reconciles every install status context affected by the config change", async () => {
+    mocks.getGameInstallStatusContextsForConfigChange.mockReturnValue([
+      { gameId: "POE2", serviceId: "Kakao Games" },
+      { gameId: "POE1", serviceId: "GGG" },
+    ]);
 
     const context = {
       getConfig: vi.fn(() => ({
         activeGame: "POE2",
         serviceChannel: "Kakao Games",
       })),
-      processWatcher: {
-        isProcessRunning: vi.fn(() => false),
-      },
     } as unknown as AppContext;
 
     await GameInstallCheckHandler.handle(configChangeEvent, context);
 
-    expect(eventBus.emit).toHaveBeenCalledWith(
-      EventType.GAME_STATUS_CHANGE,
+    expect(mocks.reconcileGameInstallStatus).toHaveBeenNthCalledWith(
+      1,
       context,
-      {
-        gameId: "POE2",
-        serviceId: "Kakao Games",
-        status: "install_check_blocked",
-        errorCode: "INSTALL_CHECK_UNKNOWN",
-      },
+      "Kakao Games",
+      "POE2",
+      { reason: "config-change:activeGame" },
+    );
+    expect(mocks.reconcileGameInstallStatus).toHaveBeenNthCalledWith(
+      2,
+      context,
+      "GGG",
+      "POE1",
+      { reason: "config-change:activeGame" },
     );
   });
 });
