@@ -17,6 +17,10 @@ import {
   GameLaunchContext,
   KakaoMaintenanceInfo,
   KakaoGameStarterMigrationRequest,
+  GameInstallPathConflictAction,
+  GameInstallPathConflictResolveResult,
+  GameInstallPathDiagnostics,
+  GameInstallPathSaveResult,
 } from "../shared/types";
 
 const logger = new PreloadLogger({ type: "PRELOAD", typeColor: "#8BE9FD" });
@@ -29,6 +33,33 @@ contextBridge.exposeInMainWorld("electronAPI", {
     logger.log("[Preload] Sending trigger-game-start to Main Process");
     ipcRenderer.send("trigger-game-start", context);
   },
+  getGameInstallPathDiagnostics: (
+    serviceId: AppConfig["serviceChannel"],
+    gameId: AppConfig["activeGame"],
+  ): Promise<GameInstallPathDiagnostics> =>
+    ipcRenderer.invoke("game-install-path:get-diagnostics", serviceId, gameId),
+  setGameInstallPath: (
+    serviceId: AppConfig["serviceChannel"],
+    gameId: AppConfig["activeGame"],
+    installPath: string,
+  ): Promise<GameInstallPathSaveResult> =>
+    ipcRenderer.invoke("game-install-path:set", serviceId, gameId, installPath),
+  pickGameInstallPath: (
+    serviceId: AppConfig["serviceChannel"],
+    gameId: AppConfig["activeGame"],
+  ): Promise<GameInstallPathSaveResult> =>
+    ipcRenderer.invoke("game-install-path:pick", serviceId, gameId),
+  resolveGameInstallPathConflict: (
+    serviceId: AppConfig["serviceChannel"],
+    gameId: AppConfig["activeGame"],
+    action: GameInstallPathConflictAction,
+  ): Promise<GameInstallPathConflictResolveResult> =>
+    ipcRenderer.invoke(
+      "game-install-path:resolve-conflict",
+      serviceId,
+      gameId,
+      action,
+    ),
   minimizeWindow: () => ipcRenderer.send("window-minimize"),
   closeWindow: () => ipcRenderer.send("window-close"),
   getConfig: (

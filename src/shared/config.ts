@@ -120,7 +120,7 @@ export const CONFIG_METADATA: Record<string, ConfigDefinition> = {
     name: "Aggressive Patch Mode",
     category: "Patch",
     description:
-      "한국인 모드 (BETA): 패치 오류 발생 시 재시도 대기를 생략하고 즉시 대응합니다. 오류 탐지 시 프로세스를 강제 종료하여 즉각적인 자동 복구 단계를 시작합니다.",
+      "한국인 모드: 패치 오류 발생 시 재시도 대기를 생략하고 즉시 대응합니다. 오류 탐지 시 프로세스를 강제 종료하여 즉각적인 자동 복구 단계를 시작합니다.",
   },
   SKIP_DAUM_GAME_STARTER_UAC: {
     key: "skipDaumGameStarterUac",
@@ -159,6 +159,20 @@ export const CONFIG_METADATA: Record<string, ConfigDefinition> = {
     category: "Info",
     description:
       "각 게임 및 서비스별 마지막으로 감지된 버전과 WebRoot 정보를 저장합니다. (자동 관리)",
+  },
+  GAME_INSTALL_PATHS: {
+    key: "gameInstallPaths",
+    name: "Game Install Paths",
+    category: "Game",
+    description:
+      "각 게임 및 서비스별 설치 경로를 저장합니다. 레지스트리에서 확인된 경로는 자동으로 캐싱됩니다.",
+  },
+  GAME_INSTALL_PATH_CONFLICT_RESOLUTIONS: {
+    key: "gameInstallPathConflictResolutions",
+    name: "Game Install Path Conflict Resolutions",
+    category: "Game",
+    description:
+      "사용자가 런처 설정 경로를 유지하기로 확인한 레지스트리/설정 경로 충돌을 저장합니다. (자동 관리)",
   },
   REMOTE_THEME_SETTINGS: {
     key: "remoteThemeSettings",
@@ -241,6 +255,9 @@ export const CONFIG_KEYS = {
   KAKAO_ACCOUNT_ID: CONFIG_METADATA.KAKAO_ACCOUNT_ID.key,
   GGG_ACCOUNT_ID: CONFIG_METADATA.GGG_ACCOUNT_ID.key,
   KNOWN_GAME_VERSIONS: CONFIG_METADATA.KNOWN_GAME_VERSIONS.key,
+  GAME_INSTALL_PATHS: CONFIG_METADATA.GAME_INSTALL_PATHS.key,
+  GAME_INSTALL_PATH_CONFLICT_RESOLUTIONS:
+    CONFIG_METADATA.GAME_INSTALL_PATH_CONFLICT_RESOLUTIONS.key,
   REMOTE_THEME_SETTINGS: CONFIG_METADATA.REMOTE_THEME_SETTINGS.key,
   PATCH_RESERVATIONS: CONFIG_METADATA.PATCH_RESERVATIONS.key,
   SILENT_PATCH_NOTIFICATION: CONFIG_METADATA.SILENT_PATCH_NOTIFICATION.key,
@@ -272,6 +289,26 @@ export const DEFAULT_CONFIG: AppConfig = {
   autoResolution: true,
   resolutionMode: "1440x960",
   knownGameVersions: {},
+  gameInstallPaths: {
+    "Kakao Games": {
+      POE1: "",
+      POE2: "",
+    },
+    GGG: {
+      POE1: "",
+      POE2: "",
+    },
+  },
+  gameInstallPathConflictResolutions: {
+    "Kakao Games": {
+      POE1: null,
+      POE2: null,
+    },
+    GGG: {
+      POE1: null,
+      POE2: null,
+    },
+  },
   remoteThemeSettings: {
     autoApply: true,
     selectedThemes: {

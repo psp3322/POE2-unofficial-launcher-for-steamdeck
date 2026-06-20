@@ -722,6 +722,28 @@ export const SETTINGS_CONFIG: SettingsCategory[] = [
     icon: "sports_esports",
     sections: [
       {
+        id: "install_path",
+        title: "설치 경로",
+        items: [
+          {
+            id: "openGamePathDiagnosticBtn",
+            type: "button",
+            defaultValue: false,
+            label: "게임 경로 진단",
+            buttonText: "열기",
+            variant: "primary",
+            description:
+              "서비스와 게임별 설치 경로를 확인하거나 직접 지정합니다.",
+            icon: "folder_open",
+            onClickListener: () => {
+              window.dispatchEvent(
+                new CustomEvent("open-game-path-diagnostic-modal"),
+              );
+            },
+          },
+        ],
+      },
+      {
         id: "adv_process",
         title: "프로세스 관리",
         items: [
@@ -784,7 +806,7 @@ export const SETTINGS_CONFIG: SettingsCategory[] = [
           {
             id: "openFontManagerBtn",
             type: "button",
-            label: "커스텀 폰트 관리 (BETA)",
+            label: "커스텀 폰트 관리",
             buttonText: "열기",
             variant: "primary",
             description: "게임 내 폰트를 교체하거나 원본으로 복구합니다.",
@@ -810,7 +832,7 @@ export const SETTINGS_CONFIG: SettingsCategory[] = [
           {
             id: "aggressivePatchMode",
             type: "check",
-            label: "한국인 모드 (BETA)",
+            label: "한국인 모드",
             description:
               "단 한번이라도 다운로드에 실패하면 지체없이 강제 종료 후 복구합니다.",
             icon: "offline_bolt",

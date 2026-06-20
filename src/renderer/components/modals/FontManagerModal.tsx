@@ -321,7 +321,7 @@ const FontManagerModal: React.FC<FontManagerModalProps> = ({
         )}
 
         <div className="font-header">
-          <h2>커스텀 폰트 관리 (BETA)</h2>
+          <h2>커스텀 폰트 관리</h2>
           <div className="font-header-actions">
             <button
               onClick={() => setShowDetailSettings(true)}

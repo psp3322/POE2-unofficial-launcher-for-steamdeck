@@ -19,11 +19,30 @@ export interface ConfigDefinition {
 }
 
 export type NewsOpenMode = "inline" | "modal";
+export const SERVICE_CHANNELS = ["Kakao Games", "GGG"] as const;
+export type ServiceChannel = (typeof SERVICE_CHANNELS)[number];
+export const ACTIVE_GAMES = ["POE1", "POE2"] as const;
+export type ActiveGame = (typeof ACTIVE_GAMES)[number];
+export type GameInstallPaths = Record<
+  ServiceChannel,
+  Record<ActiveGame, string>
+>;
+
+export interface GameInstallPathConflictResolution {
+  configPath: string;
+  registryPath: string;
+  resolvedAt: number;
+}
+
+export type GameInstallPathConflictResolutions = Record<
+  ServiceChannel,
+  Record<ActiveGame, GameInstallPathConflictResolution | null>
+>;
 
 export interface AppConfig {
   [key: string]: unknown;
-  serviceChannel: "Kakao Games" | "GGG";
-  activeGame: "POE1" | "POE2";
+  serviceChannel: ServiceChannel;
+  activeGame: ActiveGame;
   dev_mode: boolean;
   debug_console: boolean;
   themeCache: Partial<
@@ -68,6 +87,10 @@ export interface AppConfig {
     { version: string; webRoot: string; timestamp: number }
   >;
 
+  // Game installation paths cached by service/game after registry discovery.
+  gameInstallPaths: GameInstallPaths;
+  gameInstallPathConflictResolutions: GameInstallPathConflictResolutions;
+
   // Remote Theme Settings
   remoteThemeSettings: {
     autoApply: boolean;
@@ -102,6 +125,90 @@ export interface GameLaunchContext {
   gameId: AppConfig["activeGame"];
   serviceId: AppConfig["serviceChannel"];
 }
+
+export type GameInstallPathVerificationStatus =
+  | "valid"
+  | "missing"
+  | "unknown"
+  | "not-checked";
+
+export type GameInstallPathRegistryState =
+  | "found"
+  | "key-missing"
+  | "value-missing"
+  | "value-empty"
+  | "read-failed";
+
+export type GameInstallPathConfigState =
+  | "found"
+  | "empty"
+  | "context-unavailable";
+
+export interface GameInstallPathConfigDiagnostic {
+  source: "config";
+  path: string | null;
+  state: GameInstallPathConfigState;
+  verification: GameInstallPathVerificationStatus;
+  executablePath?: string;
+  error?: string;
+}
+
+export interface GameInstallPathRegistryDiagnostic {
+  source: "registry";
+  path: string | null;
+  state: GameInstallPathRegistryState;
+  verification: GameInstallPathVerificationStatus;
+  executablePath?: string;
+  error?: string;
+  registryPath: string;
+  registryValueName: string;
+}
+
+export interface GameInstallPathDiagnostics {
+  serviceId: AppConfig["serviceChannel"];
+  gameId: AppConfig["activeGame"];
+  executableName: string;
+  config: GameInstallPathConfigDiagnostic;
+  registry: GameInstallPathRegistryDiagnostic;
+  hasPathConflict: boolean;
+  isPathConflictAcknowledged: boolean;
+  recommendedSource: "config" | "registry" | null;
+}
+
+export type GameInstallPathConflictAction =
+  | "launcher-config-only"
+  | "sync-registry";
+
+export type GameInstallPathSaveResult =
+  | {
+      ok: true;
+      path: string;
+      diagnostics: GameInstallPathDiagnostics;
+    }
+  | {
+      ok: false;
+      canceled?: boolean;
+      path?: string;
+      verification: GameInstallPathVerificationStatus;
+      error?: string;
+      diagnostics?: GameInstallPathDiagnostics;
+    };
+
+export type GameInstallPathConflictResolveResult =
+  | {
+      ok: true;
+      action: GameInstallPathConflictAction;
+      path: string;
+      diagnostics: GameInstallPathDiagnostics;
+    }
+  | {
+      ok: false;
+      action: GameInstallPathConflictAction;
+      path?: string;
+      verification: GameInstallPathVerificationStatus;
+      error?: string;
+      diagnostics?: GameInstallPathDiagnostics;
+    };
 
 export interface PatchReservation {
   id: string; // 고유 ID (UUID 또는 timestamp)
@@ -320,6 +427,24 @@ export interface ElectronAPI {
   ) => () => void;
 
   triggerGameStart: (context: GameLaunchContext) => void;
+  getGameInstallPathDiagnostics: (
+    serviceId: AppConfig["serviceChannel"],
+    gameId: AppConfig["activeGame"],
+  ) => Promise<GameInstallPathDiagnostics>;
+  setGameInstallPath: (
+    serviceId: AppConfig["serviceChannel"],
+    gameId: AppConfig["activeGame"],
+    installPath: string,
+  ) => Promise<GameInstallPathSaveResult>;
+  pickGameInstallPath: (
+    serviceId: AppConfig["serviceChannel"],
+    gameId: AppConfig["activeGame"],
+  ) => Promise<GameInstallPathSaveResult>;
+  resolveGameInstallPathConflict: (
+    serviceId: AppConfig["serviceChannel"],
+    gameId: AppConfig["activeGame"],
+    action: GameInstallPathConflictAction,
+  ) => Promise<GameInstallPathConflictResolveResult>;
   minimizeWindow: () => void;
   closeWindow: () => void;
   getConfig: (

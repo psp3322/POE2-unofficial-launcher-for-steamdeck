@@ -46,7 +46,7 @@ export const StartPoeGggHandler: EventHandler<UIEvent> = {
       const installPath = await getGameInstallPath(serviceChannel, activeGame);
 
       if (!installPath) {
-        throw new Error("Could not find game installation path in registry.");
+        throw new Error("Could not resolve game installation path.");
       }
 
       // 3. Notify Processing

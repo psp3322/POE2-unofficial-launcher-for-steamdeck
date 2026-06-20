@@ -1,6 +1,10 @@
 import { ipcRenderer } from "electron";
 
 import {
+  findKakaoAccountValidationElements,
+  getElementText,
+} from "./account-validation-dom";
+import {
   hasVisibleKakaoLoginForm,
   hasVisibleKakaoQrLoginPrompt,
   getSecurityCenterVisibilityState,
@@ -113,14 +117,6 @@ const SELECTORS = {
   KAKAO_GAMES_MEMBER: {
     BTN_KAKAO_LOGIN: "button.btn-common.btn-type--icon.btn-type__emph3",
     BTN_KAKAO_ICON: ".icon-kakaocapri",
-  },
-  ACCOUNT: {
-    // Stage 1: GGB (Global Gate Bar) - Daum Game Login
-    GGB_NICKNAME: "#a_kg_ggb_nickname",
-    GGB_LOGIN_BTN: ".ggb-user a.btn-login:not(#a_kg_ggb_logout)", // Logout button also has btn-login class, exclude it
-    // Stage 2: StatusBar - POE Profile Link
-    STATUS_NICKNAME: "#statusBar .statusItem.loggedInStatus .profile-link a",
-    STATUS_LOGIN_BTN: "#statusBar .row2.loggedOut a.statusItem", // "로그인" text link
   },
 };
 
@@ -367,12 +363,8 @@ const AccountValidationHandler: PageHandler = {
 
     observeAndInteract((obs) => {
       // --- Tier 1: GGB Check (Daum Auth) ---
-      const ggbNickname = document.querySelector(
-        SELECTORS.ACCOUNT.GGB_NICKNAME,
-      );
-      const ggbLoginBtn = document.querySelector(
-        SELECTORS.ACCOUNT.GGB_LOGIN_BTN,
-      );
+      const { ggbNickname, ggbLoginBtn, statusBarNickname, statusBarLoginBtn } =
+        findKakaoAccountValidationElements(document);
 
       if (!ggbNickname) {
         if (ggbLoginBtn) {
@@ -390,21 +382,14 @@ const AccountValidationHandler: PageHandler = {
       const now = Date.now();
       if (now - lastTier1LogTime > 5000) {
         logger.log(
-          `[AccountValidationHandler] Tier 1 Success: GGB Logged in (${ggbNickname.textContent?.trim()})`,
+          `[AccountValidationHandler] Tier 1 Success: GGB Logged in (${getElementText(ggbNickname)})`,
         );
         lastTier1LogTime = now;
       }
 
-      const statusBarNickname = document.querySelector(
-        SELECTORS.ACCOUNT.STATUS_NICKNAME,
-      );
-      const statusBarLoginBtn = document.querySelector(
-        SELECTORS.ACCOUNT.STATUS_LOGIN_BTN,
-      );
-
       // Found POE Account ID!
-      if (statusBarNickname && statusBarNickname.textContent?.trim()) {
-        const accountId = statusBarNickname.textContent.trim();
+      const accountId = getElementText(statusBarNickname);
+      if (accountId) {
         logger.log(
           `[AccountValidationHandler] Tier 2 Success: Found POE Account ID: ${accountId}`,
         );

@@ -14,6 +14,7 @@ import {
   protocol,
   net,
   webContents,
+  type OpenDialogOptions,
 } from "electron";
 import JSZip from "jszip";
 
@@ -27,10 +28,12 @@ import {
 import { DEBUG_APP_CONFIG } from "../shared/config";
 import { getGameName, getLauncherTitle, getAppName } from "../shared/naming";
 import {
+  ACTIVE_GAMES,
   AppConfig,
   NewsCategory,
   DebugLogPayload,
   GameLaunchContext,
+  SERVICE_CHANNELS,
 } from "../shared/types";
 import { BASE_URLS } from "../shared/urls";
 import { syncAutoLaunch } from "./events/handlers/AutoLaunchHandler";
@@ -103,7 +106,10 @@ import { LogParser } from "./utils/LogParser";
 import { PowerShellManager } from "./utils/powershell";
 import {
   getGameInstallPath,
+  getGameInstallPathDiagnostics,
   getGameInstallationStatus,
+  resolveGameInstallPathConflict,
+  setGameInstallPath,
   syncInstallLocation,
 } from "./utils/registry";
 import { RemoteVersionResolver } from "./utils/RemoteVersionResolver";
@@ -659,6 +665,16 @@ ipcMain.handle("debug:get-history", () => {
 
 // [Removed] Old session:logout handler (duplicates new partitioned one)
 
+const isSupportedGameInstallContext = (
+  serviceId: unknown,
+  gameId: unknown,
+): serviceId is AppConfig["serviceChannel"] => {
+  return (
+    SERVICE_CHANNELS.includes(serviceId as AppConfig["serviceChannel"]) &&
+    ACTIVE_GAMES.includes(gameId as AppConfig["activeGame"])
+  );
+};
+
 ipcMain.handle("config:set", (_event, key: string, value: unknown) => {
   // [Safety] Do not persist if the key is forced in dev:test mode
   if (FORCE_DEBUG && DEBUG_KEYS.includes(key)) {
@@ -685,6 +701,98 @@ ipcMain.handle("config:delete", (_event, key: string) => {
   // Use shared utility to Delete & Broadcast
   deleteConfigWithEvent(key);
 });
+
+ipcMain.handle(
+  "game-install-path:get-diagnostics",
+  async (
+    _event,
+    serviceId: AppConfig["serviceChannel"],
+    gameId: AppConfig["activeGame"],
+  ) => {
+    if (!isSupportedGameInstallContext(serviceId, gameId)) {
+      throw new Error(
+        `Unsupported game install context: ${serviceId}/${gameId}`,
+      );
+    }
+
+    return getGameInstallPathDiagnostics(serviceId, gameId);
+  },
+);
+
+ipcMain.handle(
+  "game-install-path:set",
+  async (
+    _event,
+    serviceId: AppConfig["serviceChannel"],
+    gameId: AppConfig["activeGame"],
+    installPath: string,
+  ) => {
+    if (!isSupportedGameInstallContext(serviceId, gameId)) {
+      throw new Error(
+        `Unsupported game install context: ${serviceId}/${gameId}`,
+      );
+    }
+
+    return setGameInstallPath(serviceId, gameId, installPath);
+  },
+);
+
+ipcMain.handle(
+  "game-install-path:pick",
+  async (
+    event,
+    serviceId: AppConfig["serviceChannel"],
+    gameId: AppConfig["activeGame"],
+  ) => {
+    if (!isSupportedGameInstallContext(serviceId, gameId)) {
+      throw new Error(
+        `Unsupported game install context: ${serviceId}/${gameId}`,
+      );
+    }
+
+    const targetWindow = BrowserWindow.fromWebContents(event.sender);
+    const openDialogOptions: OpenDialogOptions = {
+      title: "게임 설치 폴더 선택",
+      buttonLabel: "이 폴더 사용",
+      properties: ["openDirectory"],
+    };
+    const result = targetWindow
+      ? await dialog.showOpenDialog(targetWindow, openDialogOptions)
+      : await dialog.showOpenDialog(openDialogOptions);
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return {
+        ok: false,
+        canceled: true,
+        verification: "not-checked",
+      };
+    }
+
+    return setGameInstallPath(serviceId, gameId, result.filePaths[0]);
+  },
+);
+
+ipcMain.handle(
+  "game-install-path:resolve-conflict",
+  async (
+    _event,
+    serviceId: AppConfig["serviceChannel"],
+    gameId: AppConfig["activeGame"],
+    action: "launcher-config-only" | "sync-registry",
+  ) => {
+    if (!isSupportedGameInstallContext(serviceId, gameId)) {
+      throw new Error(
+        `Unsupported game install context: ${serviceId}/${gameId}`,
+      );
+    }
+
+    if (action !== "launcher-config-only" && action !== "sync-registry") {
+      throw new Error(`Unsupported game install conflict action: ${action}`);
+    }
+
+    return resolveGameInstallPathConflict(serviceId, gameId, action);
+  },
+);
 
 ipcMain.handle(
   "report:save",
