@@ -832,7 +832,7 @@ export const SETTINGS_CONFIG: SettingsCategory[] = [
           {
             id: "aggressivePatchMode",
             type: "check",
-            label: "한국인 모드 (BETA)",
+            label: "한국인 모드",
             description:
               "단 한번이라도 다운로드에 실패하면 지체없이 강제 종료 후 복구합니다.",
             icon: "offline_bolt",

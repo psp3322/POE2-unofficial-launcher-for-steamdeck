@@ -120,7 +120,7 @@ export const CONFIG_METADATA: Record<string, ConfigDefinition> = {
     name: "Aggressive Patch Mode",
     category: "Patch",
     description:
-      "한국인 모드 (BETA): 패치 오류 발생 시 재시도 대기를 생략하고 즉시 대응합니다. 오류 탐지 시 프로세스를 강제 종료하여 즉각적인 자동 복구 단계를 시작합니다.",
+      "한국인 모드: 패치 오류 발생 시 재시도 대기를 생략하고 즉시 대응합니다. 오류 탐지 시 프로세스를 강제 종료하여 즉각적인 자동 복구 단계를 시작합니다.",
   },
   SKIP_DAUM_GAME_STARTER_UAC: {
     key: "skipDaumGameStarterUac",
