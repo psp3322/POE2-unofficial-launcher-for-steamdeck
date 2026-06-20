@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.2](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/compare/1.4.1...1.4.2) (2026-06-20)
+
+
+### Bug Fixes
+
+* 게임 경로 진단에서 저장된 설치 경로를 삭제할 수 있도록 개선 ([125627a](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/125627a7bd7214d3cda4fa84446469d11d446796))
+* 수동 경로 설정이 즉시 반영되지 않는 문제 개선 ([b9670ab](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/b9670ab7198d13206ea953eaf7430b27f1d212f2))
+
 ## [1.4.1](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/compare/1.4.0...1.4.1) (2026-06-20)
 
 
