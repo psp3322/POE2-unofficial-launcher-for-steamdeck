@@ -154,12 +154,14 @@ interface SupportLinksProps {
     timestamp: string | number;
   }) => void;
   onPatchReservationRequest?: () => void;
+  onFontManagerSettingsRequest?: () => void;
 }
 
 const SupportLinks: React.FC<SupportLinksProps> = ({
   remoteVersions,
   onForcedRepairRequest,
   onPatchReservationRequest,
+  onFontManagerSettingsRequest,
 }) => {
   // Define Links Configuration
   const linkDefinitions = useMemo<SupportLinkItemDef[]>(
@@ -172,6 +174,17 @@ const SupportLinks: React.FC<SupportLinksProps> = ({
         onClick: () => {
           if (onPatchReservationRequest) {
             onPatchReservationRequest();
+          }
+        },
+      },
+      {
+        id: "font_manager",
+        type: "link",
+        icon: "font_download",
+        defaultLabel: "커스텀 폰트 설정",
+        onClick: () => {
+          if (onFontManagerSettingsRequest) {
+            onFontManagerSettingsRequest();
           }
         },
       },
@@ -312,7 +325,12 @@ const SupportLinks: React.FC<SupportLinksProps> = ({
         },
       },
     ],
-    [onForcedRepairRequest, onPatchReservationRequest, remoteVersions],
+    [
+      onFontManagerSettingsRequest,
+      onForcedRepairRequest,
+      onPatchReservationRequest,
+      remoteVersions,
+    ],
   );
 
   return (

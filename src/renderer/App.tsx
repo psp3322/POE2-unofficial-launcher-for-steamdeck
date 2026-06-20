@@ -2030,6 +2030,9 @@ function App() {
                   onPatchReservationRequest={() =>
                     setIsPatchReservationOpen(true)
                   }
+                  onFontManagerSettingsRequest={() =>
+                    openSettingsWithFocus("openFontManagerBtn")
+                  }
                 />
               </div>
 
