@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_CONFIG } from "../../shared/config";
 import { ACTIVE_GAMES, SERVICE_CHANNELS } from "../../shared/types";
 import {
+  clearGameInstallPath,
   GAME_INSTALL_REGISTRY_MAP,
   getGameInstallPath,
   getGameInstallPathDiagnostics,
@@ -580,6 +581,80 @@ HKEY_CURRENT_USER\\Software\\DaumGames\\POE2
 
     expect(result.verification).toBe("missing");
     expect(mocks.setConfigWithEvent).not.toHaveBeenCalled();
+  });
+
+  it("clears a saved launcher install path for a service/game pair", async () => {
+    const installPath = String.raw`E:\Games\Path of Exile 2`;
+    mocks.contextProviderGet.mockReturnValue(
+      createContext({
+        "Kakao Games": {
+          POE1: "",
+          POE2: installPath,
+        },
+        GGG: {
+          POE1: "",
+          POE2: "",
+        },
+      }),
+    );
+    mocks.powershellExecute.mockResolvedValue({
+      stdout: "__REG_VALUE_MISSING__",
+      stderr: "",
+      code: 0,
+    });
+
+    const result = await clearGameInstallPath("Kakao Games", "POE2", "config");
+
+    expect(result.ok).toBe(true);
+    expect(mocks.setConfigWithEvent).toHaveBeenCalledWith("gameInstallPaths", {
+      "Kakao Games": {
+        POE1: "",
+        POE2: "",
+      },
+      GGG: {
+        POE1: "",
+        POE2: "",
+      },
+    });
+  });
+
+  it("deletes a registry install path value", async () => {
+    const installPath = String.raw`E:\Games\Path of Exile 2`;
+    mocks.contextProviderGet.mockReturnValue(
+      createContext({
+        "Kakao Games": {
+          POE1: "",
+          POE2: installPath,
+        },
+        GGG: {
+          POE1: "",
+          POE2: "",
+        },
+      }),
+    );
+    mocks.powershellExecute
+      .mockResolvedValueOnce({
+        stdout: "",
+        stderr: "",
+        code: 0,
+      })
+      .mockResolvedValue({
+        stdout: "__REG_VALUE_MISSING__",
+        stderr: "",
+        code: 0,
+      });
+
+    const result = await clearGameInstallPath(
+      "Kakao Games",
+      "POE2",
+      "registry",
+    );
+
+    expect(result.ok).toBe(true);
+    expect(mocks.powershellExecute).toHaveBeenCalledWith(
+      expect.stringContaining("Remove-ItemProperty"),
+      false,
+    );
   });
 
   it("logs both configured path and registry diagnostics when both fail", async () => {

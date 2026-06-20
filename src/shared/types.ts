@@ -179,6 +179,8 @@ export type GameInstallPathConflictAction =
   | "launcher-config-only"
   | "sync-registry";
 
+export type GameInstallPathClearSource = "config" | "registry";
+
 export type GameInstallPathSaveResult =
   | {
       ok: true;
@@ -190,6 +192,19 @@ export type GameInstallPathSaveResult =
       canceled?: boolean;
       path?: string;
       verification: GameInstallPathVerificationStatus;
+      error?: string;
+      diagnostics?: GameInstallPathDiagnostics;
+    };
+
+export type GameInstallPathClearResult =
+  | {
+      ok: true;
+      source: GameInstallPathClearSource;
+      diagnostics: GameInstallPathDiagnostics;
+    }
+  | {
+      ok: false;
+      source: GameInstallPathClearSource;
       error?: string;
       diagnostics?: GameInstallPathDiagnostics;
     };
@@ -445,6 +460,11 @@ export interface ElectronAPI {
     gameId: AppConfig["activeGame"],
     action: GameInstallPathConflictAction,
   ) => Promise<GameInstallPathConflictResolveResult>;
+  clearGameInstallPath: (
+    serviceId: AppConfig["serviceChannel"],
+    gameId: AppConfig["activeGame"],
+    source: GameInstallPathClearSource,
+  ) => Promise<GameInstallPathClearResult>;
   minimizeWindow: () => void;
   closeWindow: () => void;
   getConfig: (

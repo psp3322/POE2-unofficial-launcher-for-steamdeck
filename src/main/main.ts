@@ -107,6 +107,7 @@ import { PowerShellManager } from "./utils/powershell";
 import {
   getGameInstallPath,
   getGameInstallPathDiagnostics,
+  clearGameInstallPath,
   resolveGameInstallPathConflict,
   setGameInstallPath,
   syncInstallLocation,
@@ -790,6 +791,36 @@ ipcMain.handle(
     }
 
     return resolveGameInstallPathConflict(serviceId, gameId, action);
+  },
+);
+
+ipcMain.handle(
+  "game-install-path:clear",
+  async (
+    _event,
+    serviceId: AppConfig["serviceChannel"],
+    gameId: AppConfig["activeGame"],
+    source: "config" | "registry",
+  ) => {
+    if (!isSupportedGameInstallContext(serviceId, gameId)) {
+      throw new Error(
+        `Unsupported game install context: ${serviceId}/${gameId}`,
+      );
+    }
+
+    if (source !== "config" && source !== "registry") {
+      throw new Error(`Unsupported game install path clear source: ${source}`);
+    }
+
+    const result = await clearGameInstallPath(serviceId, gameId, source);
+
+    if (result.ok && source === "registry") {
+      await reconcileGameInstallStatus(appContext, serviceId, gameId, {
+        reason: "manual-registry-path-clear",
+      });
+    }
+
+    return result;
   },
 );
 
