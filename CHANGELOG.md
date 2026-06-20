@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.1](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/compare/1.4.0...1.4.1) (2026-06-20)
+
+
+### Bug Fixes
+
+* 카카오게임즈 설치 감지에서 PathOfExile_KG.exe를 확인하도록 수정 ([e172b4e](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/commit/e172b4e9b6238a92ffa4ab146b9122ea0bd200ec))
+
 ## [1.4.0](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/compare/1.3.7...1.4.0) (2026-06-20)
 
 
