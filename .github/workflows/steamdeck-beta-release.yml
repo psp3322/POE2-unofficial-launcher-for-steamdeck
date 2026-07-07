@@ -34,6 +34,22 @@ jobs:
       - name: Type-check and bundle
         run: npm run build:check
 
+      # electron-builder는 draft가 아닌 릴리즈를 만들 때 태그가 이미 존재해야
+      # 한다 (422 "Published releases must have a valid tag"). workflow_dispatch로
+      # 실행된 경우 태그가 없을 수 있으므로 여기서 만들어 푸시한다.
+      # GITHUB_TOKEN으로 푸시한 태그는 다른 워크플로우를 재귀 트리거하지 않는다.
+      - name: Ensure release tag exists
+        shell: bash
+        run: |
+          TAG="v$(node -p "require('./package.json').version")"
+          echo "Release tag: $TAG"
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "Tag already exists on origin"
+          else
+            git tag -f "$TAG"
+            git push origin "$TAG"
+          fi
+
       - name: Package and publish Windows installer
         run: npx electron-builder --win --publish always
         env:
