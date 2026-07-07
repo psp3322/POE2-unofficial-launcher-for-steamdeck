@@ -1,5 +1,9 @@
+import { execFile } from "node:child_process";
+import * as fsp from "node:fs/promises";
+
 import { logger } from "./logger";
 import { PowerShellManager } from "./powershell";
+import { isWineEnvironment } from "./wine";
 
 /**
  * Get executable paths for a running process by name (Windows)
@@ -8,6 +12,11 @@ import { PowerShellManager } from "./powershell";
 export const getProcessPaths = async (
   processName: string,
 ): Promise<string[]> => {
+  if (isWineEnvironment()) {
+    const infos = await getProcessesInfoViaProcScan([processName]);
+    return [...new Set(infos.map((info) => info.path))];
+  }
+
   try {
     // Check if PowerShell is available and use it robustly via execFile
     // Arg 1: Command string. We don't need outer quotes for valid execFile args usually.
@@ -98,6 +107,10 @@ export const getProcessesInfo = async (
 ): Promise<ProcessInfo[]> => {
   if (processNames.length === 0) return [];
 
+  if (isWineEnvironment()) {
+    return getProcessesInfoViaProcScan(processNames);
+  }
+
   try {
     // [Optimization] Use Get-Process instead of Get-CimInstance for polling.
     // WMI (CIM) is extremely slow and causes AppHangB1 in some environments.
@@ -149,4 +162,74 @@ export const isProcessRunning = async (
 ): Promise<boolean> => {
   const paths = await getProcessPaths(processName);
   return paths.length > 0;
+};
+
+/**
+ * [SteamDeck] Wine/Proton용 프로세스 열거 폴백.
+ *
+ * Wine은 리눅스 루트를 Z:\ 드라이브로 매핑하므로 Z:\proc\<pid>\cmdline을
+ * 읽어 같은 프리픽스에서 실행 중인 게임 프로세스를 찾을 수 있다.
+ *
+ * 주의: 여기서 얻는 pid는 "리눅스" pid라서 taskkill /PID 등 Windows pid를
+ * 기대하는 API에는 쓸 수 없다 (이름 기반 taskkill /IM은 사용 가능).
+ */
+const getProcessesInfoViaProcScan = async (
+  processNames: string[],
+): Promise<ProcessInfo[]> => {
+  const targets = processNames.map((n) => n.toLowerCase());
+  const processes: ProcessInfo[] = [];
+
+  let entries: string[];
+  try {
+    entries = await fsp.readdir("Z:\\proc");
+  } catch (e) {
+    logger.warn("[getProcessesInfoViaProcScan] Unable to read Z:\\proc:", e);
+    return [];
+  }
+
+  for (const entry of entries) {
+    if (!/^\d+$/.test(entry)) continue;
+
+    let cmdline: string;
+    try {
+      cmdline = await fsp.readFile(`Z:\\proc\\${entry}\\cmdline`, "utf8");
+    } catch (_e) {
+      continue; // 프로세스가 이미 종료됐거나 접근 불가
+    }
+
+    // cmdline은 NUL로 구분된 인자 목록. Wine 프로세스는 argv[0] 또는
+    // argv[1]에 exe 경로(Windows식 C:\... 또는 유닉스식 /...)가 온다.
+    const args = cmdline.split("\0").filter(Boolean);
+    for (const arg of args.slice(0, 2)) {
+      const basename = arg.split(/[\\/]/).pop()?.toLowerCase() ?? "";
+      const matched = targets.find((t) => basename === t);
+      if (matched) {
+        processes.push({ pid: Number(entry), name: matched, path: arg });
+        break;
+      }
+    }
+  }
+
+  return processes;
+};
+
+/**
+ * [SteamDeck] taskkill.exe 직접 실행 (PowerShell 세션 미경유).
+ * Wine에도 taskkill.exe는 존재하므로 이름 기반(/IM) 종료에 사용한다.
+ * 실패해도 예외를 던지지 않는다 (fire-and-forget).
+ */
+export const runTaskkillDirect = (args: string[]): Promise<boolean> => {
+  return new Promise((resolve) => {
+    execFile(
+      "taskkill.exe",
+      args,
+      { windowsHide: true, timeout: 10000 },
+      (error) => {
+        if (error) {
+          logger.warn(`[runTaskkillDirect] taskkill ${args.join(" ")}:`, error);
+        }
+        resolve(!error);
+      },
+    );
+  });
 };

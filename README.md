@@ -14,6 +14,8 @@
   <a href="README.md"><b>EN</b></a> | <a href="docs/README_KR.md"><b>KR</b></a>
 </p>
 
+> 🎮 **스팀덱 베타 포크입니다.** 이 저장소는 [NERDHEAD-lab/POE2-unofficial-launcher](https://github.com/NERDHEAD-lab/POE2-unofficial-launcher)를 스팀덱(Proton)에서 실행할 수 있게 수정한 포크입니다. 스팀덱 설치 방법과 알려진 제한은 **[docs/README_STEAMDECK.md](docs/README_STEAMDECK.md)** 를 참고하세요.
+
 > **Disclaimer**: This is an **unofficial** launcher for **Path of Exile** & **Path of Exile 2**. It is not affiliated with Grinding Gear Games or Kakao Games. Use at your own risk.
 
 A Windows desktop launcher that takes the friction out of starting **Path of Exile** and **Path of Exile 2**. It handles the launch process for both the Kakao Games (Korea) client and the Grinding Gear Games (GGG) standalone client, gets rid of the UAC pop-up, lets you swap in your own fonts and UI themes, watches for common patch errors, and shows official news right inside the launcher.

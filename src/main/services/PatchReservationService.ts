@@ -42,6 +42,8 @@ import {
 import { setConfigWithEvent } from "../utils/config-utils";
 import { logger } from "../utils/logger";
 import { PowerShellManager } from "../utils/powershell";
+import { runTaskkillDirect } from "../utils/process";
+import { isWineEnvironment } from "../utils/wine";
 
 export enum PatchTaskStatus {
   IDLE = "IDLE",
@@ -411,16 +413,26 @@ export class PatchReservationService implements IService {
 
     if (pid) {
       eventBus.emit(EventType.PROCESS_WILL_TERMINATE, this.context, { pid });
-      PowerShellManager.getInstance()
-        .execute(`taskkill /PID ${pid} /F /T`, useAdmin)
-        .catch(() => {});
+      // [SteamDeck] Wine에서는 감시로 얻은 pid가 리눅스 pid라 taskkill /PID에
+      // 쓸 수 없다 (엉뚱한 Windows 프로세스를 죽일 수 있음). 이름 기반
+      // /IM 종료(아래)만 사용한다.
+      if (!isWineEnvironment()) {
+        PowerShellManager.getInstance()
+          .execute(`taskkill /PID ${pid} /F /T`, useAdmin)
+          .catch(() => {});
+      }
     }
 
     if (profile) {
       for (const keyword of profile.processKeywords) {
-        PowerShellManager.getInstance()
-          .execute(`taskkill /IM "${keyword}.exe" /F /T`, useAdmin)
-          .catch(() => {});
+        if (isWineEnvironment()) {
+          // Wine에는 PowerShell이 없으므로 taskkill.exe를 직접 실행한다
+          void runTaskkillDirect(["/IM", `${keyword}.exe`, "/F"]);
+        } else {
+          PowerShellManager.getInstance()
+            .execute(`taskkill /IM "${keyword}.exe" /F /T`, useAdmin)
+            .catch(() => {});
+        }
       }
     }
   }

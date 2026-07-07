@@ -5,6 +5,7 @@ import { app } from "electron";
 
 import { logger } from "../logger";
 import { PowerShellManager } from "../powershell";
+import { isWineEnvironment } from "../wine";
 import {
   getKakaoGameStarterMigrationRequest,
   isAnyStarterRunAsInvokerEnabled,
@@ -242,6 +243,9 @@ export const SimpleUacBypass = {
   },
 
   async isRunAsInvokerEnabled(): Promise<boolean> {
+    // [SteamDeck] Wine에는 UAC가 없으므로 항상 "적용됨"으로 취급
+    if (isWineEnvironment()) return true;
+
     const statuses = await getStarterUacStatuses();
     const isEnabled = isAnyStarterRunAsInvokerEnabled(statuses);
 
@@ -318,6 +322,15 @@ async function setRunAsInvokerForStarters(
   starters: ResolvedKakaoGameStarter[],
   enable: boolean,
 ): Promise<boolean> {
+  // [SteamDeck] Wine에는 UAC가 없어서 승격 팝업 자체가 발생하지 않는다.
+  // RUNASINVOKER 설정의 목적(팝업 제거)이 이미 달성된 상태이므로 성공으로 처리.
+  if (isWineEnvironment()) {
+    logger.log(
+      "[SimpleUac] Wine/Proton detected: UAC does not exist here, treating RUNASINVOKER as already applied.",
+    );
+    return true;
+  }
+
   if (starters.length === 0) {
     logger.error(
       "[SimpleUac] Aborting RUNASINVOKER configuration: no matching Kakao Games starter executable found.",

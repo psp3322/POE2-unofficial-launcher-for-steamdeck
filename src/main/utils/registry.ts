@@ -553,6 +553,51 @@ export const readRegistryValue = async (
   return result.ok ? result.value : null;
 };
 
+const writeRegistryWithRegExe = async (
+  regPath: string,
+  key: string,
+  value: string,
+): Promise<boolean> => {
+  const addPath = toRegExePath(regPath);
+  if (!addPath) return false;
+
+  return new Promise<boolean>((resolve) => {
+    execFile(
+      "reg.exe",
+      ["add", addPath, "/v", key, "/t", "REG_SZ", "/d", value, "/f"],
+      { windowsHide: true, timeout: 5000 },
+      (error) => resolve(!error),
+    );
+  });
+};
+
+const deleteRegistryWithRegExe = async (
+  regPath: string,
+  key: string,
+): Promise<boolean> => {
+  const deletePath = toRegExePath(regPath);
+  if (!deletePath) return false;
+
+  // 값이 없으면 reg.exe delete가 오류를 내므로, 없는 경우를 성공으로 간주
+  const current = await queryRegistryWithRegExe(regPath, key);
+  if (
+    current.ok &&
+    current.state !== "found" &&
+    current.state !== "value-empty"
+  ) {
+    return true;
+  }
+
+  return new Promise<boolean>((resolve) => {
+    execFile(
+      "reg.exe",
+      ["delete", deletePath, "/v", key, "/f"],
+      { windowsHide: true, timeout: 5000 },
+      (error) => resolve(!error),
+    );
+  });
+};
+
 /**
  * Writes a single registry value
  */
@@ -579,9 +624,12 @@ export const writeRegistryValue = async (
     `.trim();
 
     const { code } = await runPowerShell(psCommand, useAdmin);
-    return code === 0;
+    if (code === 0) return true;
+
+    // [SteamDeck] PowerShell이 없는 Wine 환경 폴백 (읽기 폴백과 대칭)
+    return await writeRegistryWithRegExe(regPath, key, value);
   } catch (_e) {
-    return false;
+    return writeRegistryWithRegExe(regPath, key, value).catch(() => false);
   }
 };
 
@@ -607,9 +655,12 @@ export const deleteRegistryValue = async (
     `.trim();
 
     const { code } = await runPowerShell(psCommand, useAdmin);
-    return code === 0;
+    if (code === 0) return true;
+
+    // [SteamDeck] PowerShell이 없는 Wine 환경 폴백 (읽기 폴백과 대칭)
+    return await deleteRegistryWithRegExe(regPath, key);
   } catch (_e) {
-    return false;
+    return deleteRegistryWithRegExe(regPath, key).catch(() => false);
   }
 };
 

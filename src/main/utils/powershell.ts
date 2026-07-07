@@ -3,7 +3,11 @@ import { randomUUID } from "node:crypto";
 import net from "node:net";
 
 import { Logger } from "./logger";
+import { isWineEnvironment } from "./wine";
 import { AppContext } from "../events/types";
+
+const WINE_POWERSHELL_UNAVAILABLE =
+  "PowerShell is not available in this Wine/Proton (Steam Deck) environment; the command was skipped.";
 
 export class UACDeniedException extends Error {
   constructor(message = "관리자 권한 요청이 사용자에 의해 취소되었습니다.") {
@@ -444,6 +448,7 @@ export class PowerShellManager {
   private adminSession: SessionState = this.createEmptySession();
   private normalSession: SessionState = this.createEmptySession();
   private isDestroyed: boolean = false;
+  private wineNoticeLogged: boolean = false;
 
   private constructor() {}
 
@@ -503,6 +508,17 @@ export class PowerShellManager {
       logger.silent().log(`> ${command}`);
     } else {
       logger.log(`> ${command}`);
+    }
+
+    // [SteamDeck] Wine에는 powershell.exe가 없거나 동작하지 않는 stub이라,
+    // 세션 스폰을 시도하면 ENOENT 또는 요청당 10~30초 타임아웃이 발생한다.
+    // 즉시 실패를 돌려줘서 호출부의 기존 폴백/무시 경로를 타게 한다.
+    if (isWineEnvironment()) {
+      if (!this.wineNoticeLogged) {
+        this.wineNoticeLogged = true;
+        logger.warn(WINE_POWERSHELL_UNAVAILABLE);
+      }
+      return { stdout: "", stderr: WINE_POWERSHELL_UNAVAILABLE, code: 1 };
     }
 
     // 1. Ensure Session

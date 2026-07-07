@@ -4,6 +4,7 @@ import { setConfigWithEvent } from "../../utils/config-utils";
 import { LogParser } from "../../utils/LogParser";
 import { PowerShellManager } from "../../utils/powershell";
 import { getGameInstallPath } from "../../utils/registry";
+import { isWineEnvironment } from "../../utils/wine";
 import { eventBus } from "../EventBus";
 import {
   AppContext,
@@ -307,7 +308,16 @@ export const LogErrorHandler: EventHandler<LogErrorDetectedEvent> = {
     if (errorCount >= effectiveThreshold && session && !session.alerted) {
       session.alerted = true;
 
-      if (aggressiveMode) {
+      if (aggressiveMode && isWineEnvironment()) {
+        // [SteamDeck] Wine에서는 감시로 얻은 pid가 리눅스 pid라 taskkill /PID로
+        // 죽일 수 없다 (pid가 겹치면 엉뚱한 프로세스를 죽임). 일반 모드처럼
+        // 프로세스 종료를 기다렸다가 복구를 트리거한다.
+        emitLog(
+          context,
+          `[AutoPatch] ⚡ Aggressive kill is not supported on Wine/Proton. Waiting for PID ${pid} to exit to trigger fix.`,
+          true,
+        );
+      } else if (aggressiveMode) {
         // [Korean Mode] Aggressive Kill
         emitLog(
           context,
