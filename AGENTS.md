@@ -75,6 +75,29 @@ Routine fixes and edits inside an agreed task proceed without asking.
 반드시 사용자 승인 후 실행 (stop-and-ask #4와 동일). 커밋은 WSL husky 제약
 시 Windows에서 수행하거나 단건 승인으로 처리 (아래 WSL 규칙).
 
+**커밋 규약** — 커밋 제목은 release-please가 CHANGELOG(릴리스 노트)로
+사용자에게 그대로 노출한다(본문은 미노출). Conventional Commits
+(`feat`/`fix`/`refactor`/`perf`/`docs`/`chore`/`internal`) 준수 —
+형식·type-enum은 commitlint(`commit-msg` 훅)이 강제하고, 아래 의미 판단은
+규율로 지킨다.
+
+- **노출 타입의 제목 = 사용자 관점 결과**, 코드 메커니즘 아님. "어느
+  화면/기능에서 무엇이 달라졌나"를 한국어로, diff 없이 이해되게
+  자기완결적으로. 관용구: `<맥락>에서 <증상> 문제 수정/개선`, `<조건>일 때
+<동작>하도록 개선`, `<기능>을 <동작>할 수 있도록 개선`.
+- **타입은 diff 모양이 아니라 사용자 영향으로 선택.** 동작·문구·UI가 바뀌면
+  리팩터 위주여도 노출 타입으로 — 잘못된 동작·표시의 교정 = `fix`(patch),
+  새 기능·동작 추가 = `feat`(minor), 호환성 파괴 = `!`(major, stop-and-ask).
+  규모 작은 기능 개선은 `fix`로, 경계가 애매하면 사용자에게 확인. 순수 내부
+  정리만 `refactor`, 빌드·툴링·CI·내부 문서 잡무는 `chore`/`internal`(숨김).
+  `docs`는 노출 타입 — 사용자 문서에만. 섹션 매핑은
+  `release-please-config.json`.
+- **hidden 타입만으로는 릴리스가 잘리지 않는다**(release-please가 "no user
+  facing commits"로 스킵). 사용자 대상 변경에 `chore`를 붙이면 배포가
+  누락되고, 노출 타입(refactor 포함)은 단독으로도 릴리스 PR을 만든다.
+- **본문 = 기술 상세**(왜/어떻게·근거·테스트·blast radius). 자명한 수정은
+  생략 가능.
+
 **마무리 체크리스트(6단계)**: ① 위키 raw 노트
 (`~/project_llm_wiki/raw/projects/poe2-launcher/`) 작성 — `/ingest`는 위키
 저장소에서 수행(불가 시 사용자에게 요청) ② work 문서를 `docs/archive/`로
@@ -179,6 +202,11 @@ pre-commit hook failing on unrs-resolver, etc.), ask the user to run
 If a pre-commit hook fails in WSL due to native-binding mismatch, do not try
 to fix the environment. Either ask the user to commit from Windows, or get
 explicit approval for `--no-verify` for that single commit.
+
+The `commit-msg` hook (commitlint) is pure JS with no native bindings, so it
+runs fine in WSL — unlike the eslint/vitest binding issues above. Do not
+generalize the pre-commit WSL breakage to it or reach for `--no-verify` on its
+account.
 
 Tasks requiring in-game verification (e.g. font work, launcher boot): a
 passing build is not sufficient — always request the user's live check on
