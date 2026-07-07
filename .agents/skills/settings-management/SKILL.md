@@ -11,7 +11,8 @@ screen**, follow this declarative UI approach.
 
 > **⚠️ PREREQUISITE — do this first:** If the setting persists an `AppConfig`
 > field, you MUST complete the `config-management` skill (AppConfig type +
-> `CONFIG_METADATA` + `CONFIG_KEYS` + `DEFAULT_CONFIG`) BEFORE wiring UI here.
+> `CONFIG_METADATA` + `DEFAULT_CONFIG`, plus legacy `CONFIG_KEYS` only if
+> referenced) BEFORE wiring UI here.
 > Skipping it produces an ORPHANED config and fails `config-integrity.test.ts`.
 > This UI skill covers only the settings-screen rendering layer. A field with
 > no settings-screen control (service-/modal-/auto-managed, e.g. `appliedFonts`)
@@ -19,7 +20,7 @@ screen**, follow this declarative UI approach.
 
 ## 🚨 CRITICAL RULE: NO HARDCODING IN UI COMPONENTS
 
-- All settings components (`CheckItem`, `SwitchItem`, etc.) located in `src/renderer/settings/items/` are **pure UI components**.
+- All settings components (`CheckItem`, `SwitchItem`, etc.) located in `src/renderer/components/settings/items/` are **pure UI components**.
 - NEVER hardcode specific setting `id` checks (e.g., `if (id === "dev_mode")`) inside these renderer UI components.
 - ALL business logic, conditional rendering, validations, and dynamic UI updates MUST be done through the Context API hooks (`onInit`, `onChangeListener`, `dependsOn`) inside `src/renderer/settings/settings-config.ts`.
 
@@ -67,9 +68,11 @@ Available `type` properties:
 
 Use these methods within the `SettingItem` configuration block to manipulate the app reacting to state changes.
 
-### `dependsOn: string`
+### `dependsOn: string | { key: string; value: SettingValue }`
 
-- Pass another setting's `id`. The current setting will only render if the parent setting evaluates to `true`.
+- String form: render only when the parent setting is truthy.
+- Object form: render only when the parent setting equals `value`
+  (`src/renderer/settings/types.ts`).
 
 ### `onInit: (context) => void`
 
@@ -77,7 +80,7 @@ Fired when the setting is mounted.
 
 - `context.setValue(value)`: Programmatically alter the value.
 - `context.addDescription(text, variant)`: Attach an inline descriptive block (`variant` can be `'default' | 'info' | 'warning' | 'error'`).
-- `context.clearDescription()`: Wipe dynamic descriptions.
+- `context.resetDescription()`: Wipe dynamic descriptions.
 - `context.setDisabled(boolean)`: Lock the component.
 - `context.setVisible(boolean)`: Hide the component.
 
@@ -124,10 +127,10 @@ When an AI Agent attempts to add/modify settings, these are the most common poin
 ### Mistake 1: Skipping the config data-layer registration
 
 The single most common failure. `AppConfig` type / `CONFIG_METADATA` /
-`CONFIG_KEYS` / `DEFAULT_CONFIG` registration (and the deep-mutation rule) is
-owned by the **`config-management`** skill — follow it BEFORE this UI skill for
-any persistent field. Skipping it produces an ORPHANED config and fails
-`config-integrity.test.ts`.
+`DEFAULT_CONFIG` registration (plus legacy `CONFIG_KEYS` if referenced, and the
+deep-mutation rule) is owned by the **`config-management`** skill — follow it
+BEFORE this UI skill for any persistent field. Skipping it produces an ORPHANED
+config and fails `config-integrity.test.ts`.
 
 ### Mistake 2: Faking Persistence manually when not needed
 

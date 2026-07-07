@@ -9,7 +9,7 @@
 > `~/project_llm_wiki/raw/projects/poe2-launcher/2026-05-20-font-reapply-fixes.md`(**B2/B3 결함 발견·수정 — §1.2 실측 차단점 해소**)
 >
 > **폰트 무관 잔여작업** (axios hotfix, config-integrity, WSL/precommit
-> 환경 메모 등): `docs/residual-work.md`로 분리됨.
+> 환경 메모 등): `docs/work/2026-05-20-residual-work.md`로 분리됨.
 
 이 문서는 **다음 세션이 컨텍스트 없이 이어받을 수 있도록** 폰트 작업의
 미완 항목만 모았다. 완료 항목은 각 계획서 본문, 폰트 무관 항목은 위 분리

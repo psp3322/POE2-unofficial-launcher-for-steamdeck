@@ -97,11 +97,7 @@ Read the files in this order:
 - `.html`: selectors and page state; use `rg`, not visual guesses.
 - `.png`: final confirmation of the visible surface.
 
-For `security-center.game.daum.net`, do not decide visibility from the URL alone. Classify by DOM state:
-
-- Keep hidden for automatic progress such as `PC정보수집안내_확인_버튼`, `.section--device-save`, `.modal--device-loading`, or body text like `PC 인증 정보 수집 중`.
-- Show immediately for user-required authentication such as MOTP, ARS, KakaoPay, device-name input, or visible code/input selectors.
-- For unknown SecurityCenter screens, delay the reveal and preserve dumps so the next run can add selectors from real HTML.
+For `security-center.game.daum.net`, do not decide visibility from the URL alone — classify by DOM state. **The SecurityCenter visibility-classification policy (which selectors keep-hidden vs show) lives in the `kakao-automation` skill (Rule 3).** Collect and read the dumps here; apply that policy there.
 
 ## What To Report
 
