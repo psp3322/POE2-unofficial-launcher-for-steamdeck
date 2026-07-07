@@ -32,4 +32,11 @@ Use this before implementing any feature or fix that crosses module boundaries o
 
 ## Local Rule
 
-For game status, runtime/process state is stronger than install-check state. Install reconciliation may fill unknown/idle/uninstalled status, but must not overwrite `preparing`, `processing`, `authenticating`, `ready`, or `running` unless the runtime owner has first cleared that state.
+For game status, runtime/process state is stronger than install-check state.
+Install reconciliation emits only `idle` / `uninstalled` /
+`install_check_blocked` (plus `running` when the process is detected), and
+must not overwrite the launch-blocking statuses `preparing`, `processing`,
+`authenticating`, `ready`, `running` (`isLaunchBlockingStatus`,
+`src/main/state/GameStatusStore.ts`) unless the runtime owner has first
+cleared them. `stopping` and `error` are NOT preserved — reconciliation may
+resolve them.

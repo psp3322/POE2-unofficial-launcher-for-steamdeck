@@ -1,8 +1,12 @@
 # 잔여작업 (범용)
 
+> **[2026-07-07 트리아지 종결 · 아카이브]** §1.1·§1.2 해소됨,
+> §1.3(HKCU 폰트 설치)→`docs/Roadmap.md` P2, §2.5(husky pwsh 위임)→루트
+> `AGENTS-ROADMAP.md`, 나머지 §2·§3은 AGENTS.md 성문화 또는 소멸(superseded·user-scope). 참조용 보관.
+
 > 작성일: 2026-05-20 · 브랜치: `fix/custom-font` 작업 중 발견되었으나
 > 폰트 PR과 무관해 분리한 항목.
-> 폰트 전용 잔여작업은 `docs/font-analysis/font-residual-work.md` 참조.
+> 폰트 전용 잔여작업은 `docs/archive/font-analysis/font-residual-work.md` 참조.
 
 이 문서는 **폰트 작업과 분리되어야 할 hotfix 후보**와 **재작업 시 시간
 절약용 환경/도구 메모**를 모은다. 폰트 PR에 끌고 들어가면 안 되는 변경이
@@ -28,7 +32,7 @@
   `axios 1.15.0 → 1.16.1` minor bump.
 - 1.16에서 `AxiosHeaderValue` union이 `number|boolean|AxiosHeaders` 추가되어
   `parseInt(response.headers["content-length"])`가 TypeScript 에러
-  ([src/main/services/PatchManager.ts:445](../src/main/services/PatchManager.ts)).
+  ([src/main/services/PatchManager.ts:445](../../src/main/services/PatchManager.ts)).
 - **현재 상태**: `git checkout master -- package-lock.json && npm ci`로
   1.15.0 회귀, 빌드 통과.
 - **hotfix 처리안**: axios 1.16+ 의도적 업 + 코드 수정 (`String(...)` 캐스팅)

@@ -2,6 +2,7 @@ import React from "react";
 
 import ChangelogView from "./ui/ChangelogView";
 import { UpdateStatus } from "../../shared/types";
+import { getUpdateModalCopy } from "../utils/update-modal-copy";
 
 import "./UpdateModal.css";
 import "./ui/ChangelogView.css";
@@ -31,12 +32,13 @@ const UpdateModal: React.FC<UpdateModalProps> = ({
   const isDownloaded = status.state === "downloaded";
   const progress = status.state === "downloading" ? status.progress : 0;
   const changelogs = isAvailable ? status.changelogs || [] : [];
+  const copy = getUpdateModalCopy(status);
 
   return (
     <div className="update-modal-overlay">
       <div className="update-modal-content">
         <h2 className="update-title">
-          {isDownloaded ? "업데이트 준비 완료!" : "새로운 업데이트가 있습니다!"}
+          {copy.title}
           {!isDownloaded && (
             <span className="update-title-version">
               (v{currentVersion} → v{version})
@@ -46,19 +48,12 @@ const UpdateModal: React.FC<UpdateModalProps> = ({
 
         <div className="update-info-container">
           <p className="update-message">
-            {isDownloaded ? (
-              <>
-                다운로드가 완료되었습니다.
-                <br />
-                런처를 재시작하여 설치를 완료할까요?
-              </>
-            ) : (
-              <>
-                PoE Unofficial Launcher의 새로운 버전이 출시되었습니다.
-                <br />
-                지금 업데이트하시겠습니까?
-              </>
-            )}
+            {copy.messageLines.map((line, index) => (
+              <React.Fragment key={line}>
+                {index > 0 && <br />}
+                {line}
+              </React.Fragment>
+            ))}
           </p>
 
           {/* Content Area - Reuse ChangelogView */}
@@ -97,7 +92,7 @@ const UpdateModal: React.FC<UpdateModalProps> = ({
                   className="btn-update-primary"
                   onClick={() => onInstall(true)}
                 >
-                  재시작하여 설치
+                  {copy.primaryActionText}
                 </button>
                 <button
                   className="btn-update-manual"
@@ -112,7 +107,7 @@ const UpdateModal: React.FC<UpdateModalProps> = ({
                 onClick={onUpdate}
                 disabled={isDownloading}
               >
-                {isDownloading ? "다운로드 중..." : "지금 업데이트"}
+                {copy.primaryActionText}
               </button>
             )}
           </div>
