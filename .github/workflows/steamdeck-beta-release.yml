@@ -1,0 +1,40 @@
+name: SteamDeck Beta Build/Release
+
+# 스팀덱 베타 전용 릴리즈 워크플로우.
+# steamdeck-beta 브랜치에서 버전 태그(v*)를 푸시하면 Windows 설치파일을 빌드해서
+# 이 포크의 GitHub Releases에 prerelease로 올린다 (electron-builder publish).
+# 참고: 포크에서는 Actions 탭에서 워크플로우 실행을 한 번 허용해줘야 동작한다.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # package-lock.json이 package.json과 어긋난 상태라 npm ci 대신 install 사용
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Type-check and bundle
+        run: npm run build:check
+
+      - name: Package and publish Windows installer
+        run: npx electron-builder --win --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
