@@ -65,6 +65,10 @@ import {
 } from "./game/GameInstallStatusReconciler";
 import { GameSessionTracker, SessionContext } from "./game/GameSessionTracker";
 import { runGameSetupInstaller } from "./game/GameSetupInstaller";
+import {
+  isKakaoStarterUrl,
+  launchKakaoGameDirect,
+} from "./game/KakaoDirectLaunch";
 import { registerGameStatusIpc } from "./ipc/game-status-ipc";
 import {
   archiveAutomationDumpSession,
@@ -420,6 +424,31 @@ registerGameStatusIpc({
 if (isWineEnvironment()) {
   app.disableHardwareAcceleration();
   app.commandLine.appendSwitch("disable-gpu-compositing");
+}
+
+// [SteamDeck] Wine 프리픽스에는 KakaoGamesStarter가 설치되어 있지 않아
+// 웹페이지의 kakaogamesstarter:// 프로토콜 핸드오프가 조용히 실패하고
+// 자동화가 "지연 발생"으로 멈춘다. 모든 창(게임 창, 로그인 팝업 포함)에서
+// 스타터 프로토콜을 가로채 게임 실행 파일을 토큰과 함께 직접 실행한다.
+if (isWineEnvironment()) {
+  app.on("web-contents-created", (_event, contents) => {
+    const interceptStarterProtocol = (
+      event: { preventDefault: () => void },
+      url: string,
+    ): void => {
+      if (!isKakaoStarterUrl(url)) return;
+      event.preventDefault();
+      if (appContext) {
+        void launchKakaoGameDirect(appContext, url);
+      } else {
+        logger.error(
+          "[KakaoDirectLaunch] App context not ready; cannot launch game.",
+        );
+      }
+    };
+    contents.on("will-navigate", interceptStarterProtocol);
+    contents.on("will-redirect", interceptStarterProtocol);
+  });
 }
 
 // --- Single Instance Lock ---
