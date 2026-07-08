@@ -6,6 +6,7 @@ import { UpdateStatus } from "../../../shared/types";
 import { changelogService } from "../../services/ChangelogService";
 import { logger } from "../../utils/logger";
 import { PowerShellManager } from "../../utils/powershell";
+import { isWineEnvironment } from "../../utils/wine";
 import {
   AppContext,
   EventHandler,
@@ -17,7 +18,11 @@ import {
 
 // Configure autoUpdater
 autoUpdater.autoDownload = false; // Manual download trigger required
-autoUpdater.autoInstallOnAppQuit = true;
+// [SteamDeck] Wine/Proton에서는 앱 종료 시 NSIS 설치파일을 자동 실행하면
+// electron-builder의 "앱 실행 중" 검사에 걸려 "수동으로 닫아라" 대화상자가
+// 무한 루프에 빠질 수 있다. 자동 설치는 끄고, 업데이트는 사용자가 명시적으로
+// 설치 버튼을 눌렀을 때만 진행한다.
+autoUpdater.autoInstallOnAppQuit = !isWineEnvironment();
 
 // Prevent duplicate listeners
 let isListenerAttached = false;
@@ -203,7 +208,9 @@ const attachUpdateListeners = (context: AppContext) => {
  */
 const checkForUpdatesSmart = async () => {
   try {
-    const repo = "NERDHEAD-lab/POE2-unofficial-launcher";
+    // [SteamDeck] 업데이트는 이 포크의 릴리즈에서 받는다 (app-update.yml의
+    // publish 설정과 일치시켜, 사전 태그 확인도 같은 저장소를 보게 한다).
+    const repo = "psp3322/POE2-unofficial-launcher-for-steamdeck";
     const url = `https://api.github.com/repos/${repo}/releases/latest`;
 
     logger.log(
