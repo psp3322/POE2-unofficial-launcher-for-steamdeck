@@ -127,22 +127,13 @@ export interface GameLaunchContext {
 }
 
 export type GameInstallPathVerificationStatus =
-  | "valid"
-  | "missing"
-  | "unknown"
-  | "not-checked";
+  "valid" | "missing" | "unknown" | "not-checked";
 
 export type GameInstallPathRegistryState =
-  | "found"
-  | "key-missing"
-  | "value-missing"
-  | "value-empty"
-  | "read-failed";
+  "found" | "key-missing" | "value-missing" | "value-empty" | "read-failed";
 
 export type GameInstallPathConfigState =
-  | "found"
-  | "empty"
-  | "context-unavailable";
+  "found" | "empty" | "context-unavailable";
 
 export interface GameInstallPathConfigDiagnostic {
   source: "config";
@@ -176,8 +167,7 @@ export interface GameInstallPathDiagnostics {
 }
 
 export type GameInstallPathConflictAction =
-  | "launcher-config-only"
-  | "sync-registry";
+  "launcher-config-only" | "sync-registry";
 
 export type GameInstallPathClearSource = "config" | "registry";
 
@@ -442,6 +432,10 @@ export interface ElectronAPI {
   ) => () => void;
 
   triggerGameStart: (context: GameLaunchContext) => void;
+  runGameSetupInstaller: (
+    serviceId: AppConfig["serviceChannel"],
+    gameId: AppConfig["activeGame"],
+  ) => Promise<{ ok: boolean; error?: string }>;
   getGameInstallPathDiagnostics: (
     serviceId: AppConfig["serviceChannel"],
     gameId: AppConfig["activeGame"],

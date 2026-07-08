@@ -176,10 +176,7 @@ const NEWS_OPEN_MODE_OPTIONS: Array<{
 // "NULL_REF"  : Crash due to null reference during render
 // "NONE"      : No crash
 const TEST_CRASH_MODE = (import.meta.env.VITE_TEST_CRASH_MODE || "NONE") as
-  | "DELAYED"
-  | "IMMEDIATE"
-  | "NULL_REF"
-  | "NONE";
+  "DELAYED" | "IMMEDIATE" | "NULL_REF" | "NONE";
 
 const TestCrashComponent = () => {
   const [shouldCrash, setShouldCrash] = useState(false);
@@ -1141,10 +1138,31 @@ function App() {
   };
 
   const openDownloadPage = useCallback(
-    (
+    async (
       serviceId: AppConfig["serviceChannel"],
       gameId: AppConfig["activeGame"],
     ) => {
+      // [SteamDeck] 웹 다운로드 페이지 대신 런처가 공식 설치 프로그램을 직접
+      // 받아 실행한다. 브라우저로 받으면 (특히 스팀덱에서) 런처가 접근할 수
+      // 없는 위치에 설치되기 쉽다. 실패하면 기존처럼 다운로드 페이지를 연다.
+      try {
+        const result = await window.electronAPI?.runGameSetupInstaller?.(
+          serviceId,
+          gameId,
+        );
+        if (result?.ok) {
+          logger.log(
+            `[App] Official setup launched in-launcher for ${gameId} / ${serviceId}`,
+          );
+          return;
+        }
+        if (result?.error) {
+          logger.warn(`[App] In-launcher setup failed: ${result.error}`);
+        }
+      } catch (error) {
+        logger.warn(`[App] In-launcher setup threw: ${String(error)}`);
+      }
+
       const downloadUrl = DOWNLOAD_URLS[serviceId][gameId];
       if (downloadUrl) {
         window.open(downloadUrl, "_blank");
@@ -1606,7 +1624,10 @@ function App() {
   const handleGamePathInstall = useCallback(() => {
     if (!gamePathModalState) return;
 
-    openDownloadPage(gamePathModalState.serviceId, gamePathModalState.gameId);
+    void openDownloadPage(
+      gamePathModalState.serviceId,
+      gamePathModalState.gameId,
+    );
     setGamePathModalState(null);
   }, [gamePathModalState, openDownloadPage]);
 

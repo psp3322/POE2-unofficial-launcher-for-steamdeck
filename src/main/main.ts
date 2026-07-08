@@ -64,6 +64,7 @@ import {
   reconcileGameInstallStatus,
 } from "./game/GameInstallStatusReconciler";
 import { GameSessionTracker, SessionContext } from "./game/GameSessionTracker";
+import { runGameSetupInstaller } from "./game/GameSetupInstaller";
 import { registerGameStatusIpc } from "./ipc/game-status-ipc";
 import {
   archiveAutomationDumpSession,
@@ -725,6 +726,18 @@ ipcMain.handle(
     }
 
     return getGameInstallPathDiagnostics(serviceId, gameId);
+  },
+);
+
+// [SteamDeck] 공식 설치 프로그램을 런처가 직접 받아 같은 프리픽스에서 실행
+ipcMain.handle(
+  "game-install:run-setup",
+  async (
+    _event,
+    serviceId: AppConfig["serviceChannel"],
+    gameId: AppConfig["activeGame"],
+  ) => {
+    return runGameSetupInstaller(serviceId, gameId);
   },
 );
 
