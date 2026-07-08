@@ -26,6 +26,7 @@ import {
 import { ContextProvider } from "../context-provider";
 import { setConfigWithEvent } from "../utils/config-utils";
 import { logger } from "../utils/logger";
+import { scanSteamDeckGameInstallPath } from "../utils/steamdeck-scan";
 
 type RegistryReadResult =
   | {
@@ -825,16 +826,46 @@ const resolveGameInstallPath = async (
     diagnostics.push("config=empty");
   }
 
+  // [SteamDeck] 레지스트리 탐지가 실패했을 때, 모든 Proton 프리픽스를 스캔해
+  // 알려진 설치 폴더를 찾는 리눅스식 폴백. 찾으면 config에 저장해 다음부터는
+  // 스캔 없이 바로 쓴다.
+  const trySteamDeckScan = async (): Promise<InstallPathResolution | null> => {
+    const scannedPath = await scanSteamDeckGameInstallPath(serviceId, gameId);
+    if (!scannedPath) return null;
+
+    const scannedStatus = await verifyGameInstallPath(serviceId, scannedPath);
+    if (scannedStatus.status !== "valid") {
+      diagnostics.push(
+        formatPathCheckFailure(
+          serviceId,
+          "registry",
+          scannedPath,
+          scannedStatus.status,
+          scannedStatus.error,
+        ),
+      );
+      return null;
+    }
+
+    diagnostics.push(`deck-scan=found (${scannedPath})`);
+    await persistDiscoveredGameInstallPath(serviceId, gameId, scannedPath);
+    return { path: scannedPath, source: "config", diagnostics };
+  };
+
   const registryResult = await readRegistryInstallPath(serviceId, gameId);
   const registryLabel = getRegistryInstallPathLabel(serviceId, gameId);
 
   if (!registryResult.ok) {
     diagnostics.push(`registry=read-failed (${registryLabel})`);
+    const deckResolution = await trySteamDeckScan();
+    if (deckResolution) return deckResolution;
     return { path: null, error: registryResult.error, diagnostics };
   }
 
   if (!registryResult.value) {
     diagnostics.push(`registry=${registryResult.state} (${registryLabel})`);
+    const deckResolution = await trySteamDeckScan();
+    if (deckResolution) return deckResolution;
     return { path: null, verifyError: configuredVerifyError, diagnostics };
   }
 
@@ -864,6 +895,9 @@ const resolveGameInstallPath = async (
       registryStatus.error,
     ),
   );
+
+  const deckResolution = await trySteamDeckScan();
+  if (deckResolution) return deckResolution;
 
   return {
     path: null,

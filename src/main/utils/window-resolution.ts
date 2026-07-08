@@ -1,6 +1,7 @@
 import { BrowserWindow, screen } from "electron";
 
 import { logger } from "./logger";
+import { isWineEnvironment } from "./wine";
 import { AppConfig } from "../../shared/types";
 
 const BASE_WIDTH = 1440;
@@ -34,6 +35,15 @@ export const applyResolutionRules = (
   );
 
   let changed: boolean;
+
+  // [SteamDeck] Wine/Proton(게임 모드 gamescope)에서는 창 모드가 어중간하게
+  // 스케일되므로, 자동 해상도일 때 화면(1280x800)을 꽉 채우는 풀스크린을 쓴다.
+  // 수동 모드로 바꾸면 아래 일반 로직을 그대로 따른다.
+  if (autoResolution && isWineEnvironment()) {
+    changed = applyFullscreenMode(win);
+    onModeDetermined?.("fullscreen");
+    return changed;
+  }
 
   // 1. Auto Resolution Logic
   if (autoResolution) {

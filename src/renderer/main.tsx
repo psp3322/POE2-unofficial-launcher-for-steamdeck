@@ -7,9 +7,13 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import FatalErrorModal from "./components/modals/FatalErrorModal";
 import { GameStateProvider } from "./contexts/GameStateContext";
 import { DEBUG_APP_CONFIG } from "../shared/config";
+import { initGamepadNav } from "./utils/gamepad-nav";
 import { logger } from "./utils/logger";
 
 import "./App.css";
+
+// [SteamDeck] 게임패드 연결 시 컨트롤러 포커스 내비게이션 활성화
+initGamepadNav();
 
 const isDebug = window.location.hash === DEBUG_APP_CONFIG.HASH;
 
