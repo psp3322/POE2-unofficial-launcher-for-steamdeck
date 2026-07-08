@@ -1,0 +1,37 @@
+name: Release Cleanup
+
+# electron-builder가 자산 병렬 업로드 중 같은 태그로 릴리즈를 중복 생성하는
+# 경쟁 상태가 있다. 이 워크플로우는 지정한 태그의 중복 릴리즈 중
+# latest.yml(업데이트 피드)이 없는 쪽을 삭제한다.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "정리할 릴리즈 태그 (예: v1.4.2-sd.2)"
+        required: true
+        type: string
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Delete duplicate releases without latest.yml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          ids=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq ".[] | select(.tag_name==\"$TAG\") | select([.assets[].name] | index(\"latest.yml\") | not) | .id")
+          if [ -z "$ids" ]; then
+            echo "No duplicate releases found for $TAG"
+            exit 0
+          fi
+          for id in $ids; do
+            echo "Deleting duplicate release $id (tag: $TAG)"
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/$id"
+          done
