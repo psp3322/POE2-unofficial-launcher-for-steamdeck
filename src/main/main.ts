@@ -123,6 +123,7 @@ import {
   applyResolutionRules,
   enforceConstraints,
 } from "./utils/window-resolution";
+import { isWineEnvironment } from "./utils/wine";
 
 // Set App Name explicitly for Windows Branding
 // Dynamically set in broadcastTitleUpdate
@@ -411,6 +412,14 @@ registerGameStatusIpc({
   getActiveSessionContext: () => gameSessionTracker.getActiveSessionContext(),
   getWindowContext: (webContentsId) => windowContextMap.get(webContentsId),
 });
+
+// [SteamDeck] Wine/Proton에서 Electron 40의 GPU 프로세스가 죽으면 창이
+// 안 뜨거나 프로세스가 좀비로 남는다 (이후 설치기가 "앱 실행 중"으로
+// 오인하는 원인이 됨). Wine에서는 하드웨어 가속을 끈다.
+if (isWineEnvironment()) {
+  app.disableHardwareAcceleration();
+  app.commandLine.appendSwitch("disable-gpu-compositing");
+}
 
 // --- Single Instance Lock ---
 const gotTheLock = app.requestSingleInstanceLock();

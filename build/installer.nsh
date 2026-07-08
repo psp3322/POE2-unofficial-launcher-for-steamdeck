@@ -21,27 +21,39 @@
   IfErrors 0 poe2StubDone
 
   ; 설치 위치는 electron-builder가 이전 설치 때 기록한다. Wine에서는 32/64비트
-  ; 레지스트리 뷰가 어긋날 수 있으므로 양쪽을 모두 시도한다.
+  ; 레지스트리 뷰가 어긋날 수 있으므로 양쪽을 시도하고, 레지스트리가 없으면
+  ; 기본 설치 경로($LOCALAPPDATA\Programs)까지 확인한다.
   SetRegView 64
   ReadRegStr $R2 HKCU "${INSTALL_REGISTRY_KEY}" InstallLocation
-  StrCmp $R2 "" 0 poe2StubHavePath
+  IfFileExists "$R2\${PRODUCT_FILENAME}.exe" poe2StubLaunch
   SetRegView 32
   ReadRegStr $R2 HKCU "${INSTALL_REGISTRY_KEY}" InstallLocation
   SetRegView 64
-poe2StubHavePath:
-  StrCmp $R2 "" poe2StubDone
-  IfFileExists "$R2\${PRODUCT_FILENAME}.exe" 0 poe2StubDone
+  IfFileExists "$R2\${PRODUCT_FILENAME}.exe" poe2StubLaunch
+  StrCpy $R2 "$LOCALAPPDATA\Programs\${PRODUCT_FILENAME}"
+  IfFileExists "$R2\${PRODUCT_FILENAME}.exe" poe2StubLaunch poe2StubDone
+poe2StubLaunch:
   SetOutPath "$R2"
   Exec '"$R2\${PRODUCT_FILENAME}.exe"'
   Quit
 poe2StubDone:
 !macroend
 
-!macro customInit
-  ; Check if the app is running and kill it before installation
-  DetailPrint "Checking for running instance..."
-  ExecWait 'taskkill /F /IM "${PRODUCT_FILENAME}.exe" /T' $R0
+; electron-builder 기본 "앱 실행 중" 검사(_CHECK_APP_RUNNING)를 통째로 교체한다.
+; 기본 구현은 nsProcess 플러그인으로 프로세스를 찾고 죽이는데, Wine/Proton에서
+; 종료가 실패하면 "cannot be closed. Please close it manually" 재시도 루프에
+; 빠지고, 스팀 게임 모드에선 그 대화상자가 보이지 않아 설치가 멈춘 것처럼 보인다.
+; 여기서는 Wine에도 있는 taskkill로 조용히 종료 시도만 하고 절대 블로킹하지 않는다.
+; (이 매크로는 설치기와 언인스톨러 양쪽의 CHECK_APP_RUNNING을 대체한다)
+!macro customCheckAppRunning
+  DetailPrint "Closing running instance if any..."
+  nsExec::Exec 'taskkill /F /IM "${APP_EXECUTABLE_FILENAME}" /T'
+  Pop $R9
   Sleep 1000
+!macroend
+
+!macro customInit
+  ; 실행 중 인스턴스 종료는 customCheckAppRunning(설치 섹션에서 호출)이 담당한다
 !macroend
 
 !macro customInstall
@@ -56,12 +68,7 @@ poe2StubDone:
 !macroend
 
 !macro customUnInit
-  ; Check if the app is running and kill it using taskkill (Plugin-free)
-  DetailPrint "Checking for running instance..."
-  ExecWait 'taskkill /F /IM "${PRODUCT_FILENAME}.exe" /T' $R0
-  Sleep 1000
-
-  ; [Cleaned] No extra logic here.
+  ; 실행 중 인스턴스 종료는 customCheckAppRunning(언인스톨러 초기화에서 호출)이 담당한다
   ; Verification: UAC disable logic moved to customUnInstall to support reinstall/update scenarios.
 !macroend
 
