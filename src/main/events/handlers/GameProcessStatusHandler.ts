@@ -213,6 +213,49 @@ const PROCESS_STRATEGIES: ProcessStrategy[] = [
     },
   },
 
+  // 3-1. Kakao x64 Client (PathOfExile_x64_KG.exe)
+  // 스팀덱 직접 실행 경로가 POE2에서 x64 클라이언트를 사용하므로 감시 대상에 포함
+  {
+    processName: "PathOfExile_x64_KG.exe",
+    onStart: (event, context) => {
+      const inferredGameId = getKakaoGameId(event);
+      lastDetectedKakaoLauncher = inferredGameId;
+
+      logger.log(
+        `[GameProcess] Detected PathOfExile_x64_KG.exe. Inferred Game: ${inferredGameId}`,
+      );
+
+      emitGameStatus(context, inferredGameId, "Kakao Games", "running");
+    },
+    onStop: (event, context) => {
+      const inferredGameId = getKakaoGameId(event);
+      const targetContext = {
+        gameId: inferredGameId,
+        serviceId: "Kakao Games" as const,
+      };
+
+      const stoppedPid = event.payload.pid;
+      const isGameRunning = isProcessRunningForContext(
+        context,
+        "PathOfExile_x64_KG.exe",
+        targetContext,
+        stoppedPid,
+      );
+
+      if (isGameRunning) {
+        logger.log(
+          `[GameProcess] PathOfExile_x64_KG.exe stopped, but another instance is running. Status maintained. (Inferred: ${inferredGameId})`,
+        );
+        return;
+      }
+
+      emitGameStatus(context, inferredGameId, "Kakao Games", "stopping");
+      setTimeout(() => {
+        emitGameStatus(context, inferredGameId, "Kakao Games", "idle");
+      }, 3000);
+    },
+  },
+
   // 4. GGG / Generic Client (PathOfExile.exe)
   {
     processName: "PathOfExile.exe",

@@ -23,11 +23,13 @@ import { getGameInstallPath } from "../utils/registry";
 
 const STARTER_SCHEME_PREFIXES = ["kakaogamesstarter://", "daumgamestarter://"];
 
-// 페이로드의 execute 힌트가 비어있거나 신뢰할 수 없을 때 시도할 실행 파일
-const KAKAO_EXECUTABLE_FALLBACKS = [
-  "PathOfExile_KG.exe",
-  "PathOfExile_x64_KG.exe",
-];
+// 페이로드의 execute 힌트가 비어있거나 신뢰할 수 없을 때 시도할 실행 파일.
+// POE2는 원본 poe2-kakao-launcher가 x64 클라이언트를 직접 실행하는 것이
+// 검증된 방식이라 x64를 우선한다 (비-x64를 먼저 실행하면 크래시 사례 있음).
+const KAKAO_EXECUTABLE_FALLBACKS: Record<string, string[]> = {
+  POE1: ["PathOfExile_KG.exe", "PathOfExile_x64_KG.exe"],
+  POE2: ["PathOfExile_x64_KG.exe", "PathOfExile_KG.exe"],
+};
 
 export const isKakaoStarterUrl = (url: string): boolean =>
   STARTER_SCHEME_PREFIXES.some((prefix) => url.startsWith(prefix));
@@ -70,7 +72,7 @@ export const launchKakaoGameDirect = async (
     ...(executeHint && executeHint.toLowerCase().endsWith(".exe")
       ? [executeHint]
       : []),
-    ...KAKAO_EXECUTABLE_FALLBACKS,
+    ...(KAKAO_EXECUTABLE_FALLBACKS[gameId] ?? KAKAO_EXECUTABLE_FALLBACKS.POE2),
   ];
   const executable = candidates.find((name) =>
     fs.existsSync(path.win32.join(installPath, name)),
