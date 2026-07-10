@@ -90,13 +90,53 @@ export const launchKakaoGameDirect = async (
 
   const child = spawn(executablePath, ["--kakao", token, userCode], {
     cwd: installPath,
-    detached: true,
     stdio: "ignore",
   });
+  const startedAt = Date.now();
   child.on("error", (error) => {
     logger.error(`[KakaoDirectLaunch] Failed to spawn game: ${error.message}`);
   });
-  child.unref();
+  child.on("exit", (code, signal) => {
+    const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(1);
+    logger.log(
+      `[KakaoDirectLaunch] Game process exited (code=${code}, signal=${signal}) after ${elapsedSec}s`,
+    );
+    // 클라이언트가 자기 자신을 재실행하고 빠지는 정상 케이스도 있으므로,
+    // 짧게 종료된 경우에만 게임 로그 꼬리를 남겨 원인(토큰 만료, 게이트웨이,
+    // 크래시 등)을 디버그 콘솔에서 바로 볼 수 있게 한다.
+    if (Date.now() - startedAt < 60000) {
+      logGameClientLogTail(installPath);
+    }
+  });
 
   return true;
+};
+
+const GAME_CLIENT_LOG_CANDIDATES = [
+  "logs\\KakaoClient.txt",
+  "logs\\Client.txt",
+];
+const LOG_TAIL_LINES = 30;
+
+const logGameClientLogTail = (installPath: string): void => {
+  for (const relative of GAME_CLIENT_LOG_CANDIDATES) {
+    const logPath = path.win32.join(installPath, relative);
+    try {
+      if (!fs.existsSync(logPath)) continue;
+      const content = fs.readFileSync(logPath, "utf8");
+      const lines = content.split(/\r?\n/).filter(Boolean);
+      const tail = lines.slice(-LOG_TAIL_LINES).join("\n");
+      logger.log(
+        `[KakaoDirectLaunch] --- ${relative} (마지막 ${LOG_TAIL_LINES}줄) ---\n${tail}`,
+      );
+      return;
+    } catch (error) {
+      logger.warn(
+        `[KakaoDirectLaunch] Unable to read game log ${logPath}: ${String(error)}`,
+      );
+    }
+  }
+  logger.warn(
+    `[KakaoDirectLaunch] No game client log found under ${installPath}\\logs`,
+  );
 };
