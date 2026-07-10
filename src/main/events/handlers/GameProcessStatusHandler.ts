@@ -2,6 +2,7 @@ import { AppConfig } from "../../../shared/types";
 import { updateGameStatusCache } from "../../state/GameStatusStore";
 import { processMatchesGameContext } from "../../utils/game-process-context";
 import { logger } from "../../utils/logger";
+import { isWineEnvironment } from "../../utils/wine";
 import { eventBus } from "../EventBus";
 import {
   AppContext,
@@ -289,10 +290,21 @@ export const GameProcessStartHandler: EventHandler<ProcessEvent> = {
       context.mainWindow &&
       !context.mainWindow.isDestroyed()
     ) {
-      logger.log(
-        "[GameProcess] quitOnGameStart is enabled. Closing main window.",
-      );
-      context.mainWindow.close();
+      if (isWineEnvironment()) {
+        // [SteamDeck] 스팀은 런처 프로세스를 "게임"으로 취급해서, 런처가
+        // 종료되면 세션이 끝나 게임까지 같이 죽고 스팀 메인으로 튕긴다.
+        // 종료 대신 창을 숨기고, 게임 종료 시(GameProcessStopHandler)
+        // 다시 보여준다.
+        logger.log(
+          "[GameProcess] quitOnGameStart on Wine/Proton: hiding launcher instead of quitting (quitting would end the Steam game session).",
+        );
+        context.mainWindow.hide();
+      } else {
+        logger.log(
+          "[GameProcess] quitOnGameStart is enabled. Closing main window.",
+        );
+        context.mainWindow.close();
+      }
     }
   },
 };
@@ -311,6 +323,20 @@ export const GameProcessStopHandler: EventHandler<ProcessEvent> = {
 
     if (strategy?.onStop) {
       await strategy.onStop(event, context);
+    }
+
+    // [SteamDeck] 게임 실행 중 숨겨둔 런처 창을 게임 종료 시 복원한다
+    if (
+      isWineEnvironment() &&
+      context.getConfig("quitOnGameStart") === true &&
+      context.mainWindow &&
+      !context.mainWindow.isDestroyed() &&
+      !context.mainWindow.isVisible()
+    ) {
+      logger.log(
+        "[GameProcess] Game stopped: restoring hidden launcher window.",
+      );
+      context.mainWindow.show();
     }
   },
 };
