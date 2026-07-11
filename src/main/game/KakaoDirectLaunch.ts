@@ -121,11 +121,14 @@ export const launchKakaoGameDirect = async (
     logger.log(
       `[KakaoDirectLaunch] Game process exited (code=${code}, signal=${signal}) after ${elapsedSec}s`,
     );
-    // 클라이언트가 자기 자신을 재실행하고 빠지는 정상 케이스도 있으므로,
-    // 짧게 종료된 경우에만 게임 로그 꼬리를 남겨 원인(토큰 만료, 게이트웨이,
-    // 크래시 등)을 디버그 콘솔에서 바로 볼 수 있게 한다.
     if (Date.now() - startedAt < 60000) {
-      logGameClientLogTail(installPath);
+      // 부트스트랩(0.3초 종료)이 실제 클라이언트를 별도 프로세스로 띄우고
+      // 빠지는 구조라, 이 시점의 로그는 사망 원인을 못 담는다. 즉시 한 번,
+      // 그리고 실제 클라이언트가 죽은 뒤를 노려 25초 후 한 번 더 남긴다.
+      logGameClientLogTail(installPath, "부트스트랩 종료 직후");
+      setTimeout(() => {
+        logGameClientLogTail(installPath, "실행 25초 후");
+      }, 25000);
     }
   });
 
@@ -136,9 +139,9 @@ const GAME_CLIENT_LOG_CANDIDATES = [
   "logs\\KakaoClient.txt",
   "logs\\Client.txt",
 ];
-const LOG_TAIL_LINES = 30;
+const LOG_TAIL_LINES = 40;
 
-const logGameClientLogTail = (installPath: string): void => {
+const logGameClientLogTail = (installPath: string, label = ""): void => {
   for (const relative of GAME_CLIENT_LOG_CANDIDATES) {
     const logPath = path.win32.join(installPath, relative);
     try {
@@ -147,7 +150,7 @@ const logGameClientLogTail = (installPath: string): void => {
       const lines = content.split(/\r?\n/).filter(Boolean);
       const tail = lines.slice(-LOG_TAIL_LINES).join("\n");
       logger.log(
-        `[KakaoDirectLaunch] --- ${relative} (마지막 ${LOG_TAIL_LINES}줄) ---\n${tail}`,
+        `[KakaoDirectLaunch] --- ${relative}${label ? ` (${label})` : ""} 마지막 ${LOG_TAIL_LINES}줄 ---\n${tail}`,
       );
       return;
     } catch (error) {
