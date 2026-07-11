@@ -217,6 +217,15 @@ function App() {
   // Configuration State (Unified)
   const [config, setConfigState] = useState<AppConfig>(DEFAULT_CONFIG);
   const [isConfigLoaded, setIsConfigLoaded] = useState(false);
+
+  // [SteamDeck] 덱 전용 UI(lsfg 토글 등) 노출 여부
+  const [isSteamDeck, setIsSteamDeck] = useState(false);
+  useEffect(() => {
+    window.electronAPI
+      ?.isSteamDeck?.()
+      .then((value) => setIsSteamDeck(Boolean(value)))
+      .catch(() => setIsSteamDeck(false));
+  }, []);
   const currentNewsOpenMode: NewsOpenMode =
     config.newsOpenMode === "modal" ? "modal" : "inline";
 
@@ -2176,6 +2185,43 @@ function App() {
                   activeGame={config.activeGame}
                   serviceChannel={config.serviceChannel}
                 />
+
+                {/* [SteamDeck] lsfg-vk 프레임 생성 토글 (게임 재실행 시 적용) */}
+                {isSteamDeck && (
+                  <button
+                    onClick={() =>
+                      window.electronAPI?.setConfig(
+                        "lsfgEnabled",
+                        !(config.lsfgEnabled === true),
+                      )
+                    }
+                    title="Lossless Scaling(lsfg-vk) 프레임 생성 — 변경 후 게임을 다시 실행하면 적용됩니다"
+                    style={{
+                      width: "340px",
+                      margin: "4px 0",
+                      padding: "6px 12px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "8px",
+                      background:
+                        config.lsfgEnabled === true
+                          ? "var(--theme-accent)"
+                          : "rgba(0, 0, 0, 0.45)",
+                      color: config.lsfgEnabled === true ? "#000" : "#ddd",
+                      border: "1px solid var(--theme-accent)",
+                      borderRadius: "6px",
+                      fontSize: "13px",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <span role="img" aria-label="lsfg duck">
+                      🦆
+                    </span>
+                    프레임 생성 {config.lsfgEnabled === true ? "ON" : "OFF"}
+                  </button>
+                )}
 
                 <GameStartButton
                   onClick={handleGameStart}

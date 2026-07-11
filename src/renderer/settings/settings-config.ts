@@ -847,6 +847,18 @@ export const SETTINGS_CONFIG: SettingsCategory[] = [
             variant: "primary",
             description: "게임 내 폰트를 교체하거나 원본으로 복구합니다.",
             icon: "font_download",
+            onInit: async ({ setDisabled, addDescription }) => {
+              // [SteamDeck] 시스템 폰트 설치가 PowerShell/Win32 API 의존이라
+              // 덱에서는 동작하지 않는다
+              const deck = await window.electronAPI?.isSteamDeck?.();
+              if (deck) {
+                setDisabled(true);
+                addDescription(
+                  "스팀덱에서는 시스템 폰트 설치가 지원되지 않아 비활성화되었습니다.",
+                  "warning",
+                );
+              }
+            },
             onClickListener: () => {
               window.dispatchEvent(new CustomEvent("open-font-manager-modal"));
             },

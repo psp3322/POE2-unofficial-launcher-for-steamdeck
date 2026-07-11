@@ -759,6 +759,9 @@ ipcMain.handle(
   },
 );
 
+// [SteamDeck] 렌더러가 스팀덱(Wine) 여부를 조회해 UI를 조정할 수 있게 한다
+ipcMain.handle("env:is-steamdeck", () => isWineEnvironment());
+
 // [SteamDeck] 공식 설치 프로그램을 런처가 직접 받아 같은 프리픽스에서 실행
 ipcMain.handle(
   "game-install:run-setup",
@@ -2050,7 +2053,7 @@ function broadcastTitleUpdate() {
   const version = app.getVersion();
   const activeGame = (getEffectiveConfig("activeGame") || "POE2") as string;
   const gameName = getGameName(activeGame);
-  const appName = getAppName(gameName);
+  const appName = getAppName(gameName, isWineEnvironment());
 
   // 1. Update Application Name (for Notifications, Taskbar/TaskManager)
   // This can be called even before the window is created
@@ -2062,7 +2065,12 @@ function broadcastTitleUpdate() {
     "1440x960") as string;
   const isLowRes = resolutionMode !== "1440x960";
 
-  const title = getLauncherTitle(gameName, version, isLowRes);
+  const title = getLauncherTitle(
+    gameName,
+    version,
+    isLowRes,
+    isWineEnvironment(),
+  );
 
   // 2. Update Window System Title
   mainWindow.setTitle(title);
@@ -2155,7 +2163,9 @@ async function createWindow() {
   mainWindow.on("close", (e) => {
     if (!isQuitting) {
       const config = getConfig() as AppConfig;
-      if (config.closeAction === "minimize") {
+      // [SteamDeck] 게임 모드에는 트레이가 없어서 '트레이로 최소화'가 유령
+      // 프로세스만 남긴다. 덱에서는 X 버튼이 항상 런처를 완전히 종료한다.
+      if (config.closeAction === "minimize" && !isWineEnvironment()) {
         e.preventDefault();
         mainWindow?.hide();
         logger.log("[Main] Window hidden due to 'minimize' closeAction.");

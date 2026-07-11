@@ -50,8 +50,11 @@ export const SUPPORT_URLS = {
     "https://discord.com/channels/1455427555883749439/1479304995940733019",
   DISCORD_SUGGESTIONS:
     "https://discord.com/channels/1455427555883749439/1479304951313469621",
-  ISSUES: "https://github.com/NERDHEAD-lab/POE2-unofficial-launcher/issues",
-  GITHUB_REPO: "https://github.com/NERDHEAD-lab/POE2-unofficial-launcher",
+  // [SteamDeck] 스팀덱 포크 관련 건의/이슈는 포크 저장소로 받는다
+  ISSUES:
+    "https://github.com/psp3322/POE2-unofficial-launcher-for-steamdeck/issues",
+  GITHUB_REPO:
+    "https://github.com/psp3322/POE2-unofficial-launcher-for-steamdeck",
   LATEST_VERSIONS_JSON:
     "https://nerdhead-lab.github.io/POE2-unofficial-launcher/latest-versions.json",
   THEMES_JSON:

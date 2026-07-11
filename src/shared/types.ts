@@ -435,6 +435,7 @@ export interface ElectronAPI {
   ) => () => void;
 
   triggerGameStart: (context: GameLaunchContext) => void;
+  isSteamDeck: () => Promise<boolean>;
   runGameSetupInstaller: (
     serviceId: AppConfig["serviceChannel"],
     gameId: AppConfig["activeGame"],

@@ -35,6 +35,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
     logger.log("[Preload] Sending trigger-game-start to Main Process");
     ipcRenderer.send("trigger-game-start", context);
   },
+  isSteamDeck: (): Promise<boolean> => ipcRenderer.invoke("env:is-steamdeck"),
   runGameSetupInstaller: (
     serviceId: AppConfig["serviceChannel"],
     gameId: AppConfig["activeGame"],

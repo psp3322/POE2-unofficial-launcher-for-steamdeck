@@ -26,9 +26,11 @@ export function getLauncherTitle(
   gameName: string,
   version: string,
   isLowRes: boolean,
+  isSteamDeck = false,
 ): string {
   const resolutionInfo = isLowRes ? " [저해상도 모드]" : "";
-  return `${gameName} Unofficial Launcher v${version}${resolutionInfo}`;
+  const edition = isSteamDeck ? " SD" : "";
+  return `${gameName} Unofficial Launcher${edition} v${version}${resolutionInfo}`;
 }
 
 /**
@@ -36,6 +38,6 @@ export function getLauncherTitle(
  * @param gameName Formatted game name.
  * @returns Unified app name.
  */
-export function getAppName(gameName: string): string {
-  return `${gameName} Unofficial Launcher`;
+export function getAppName(gameName: string, isSteamDeck = false): string {
+  return `${gameName} Unofficial Launcher${isSteamDeck ? " SD" : ""}`;
 }

@@ -163,6 +163,16 @@ const SupportLinks: React.FC<SupportLinksProps> = ({
   onPatchReservationRequest,
   onFontManagerSettingsRequest,
 }) => {
+  // [SteamDeck] 시스템 폰트 설치가 PowerShell/Win32 API 의존이라 덱에서는
+  // 동작하지 않으므로 폰트 메뉴를 숨긴다
+  const [isSteamDeck, setIsSteamDeck] = useState(false);
+  useEffect(() => {
+    window.electronAPI
+      ?.isSteamDeck?.()
+      .then((value) => setIsSteamDeck(Boolean(value)))
+      .catch(() => setIsSteamDeck(false));
+  }, []);
+
   // Define Links Configuration
   const linkDefinitions = useMemo<SupportLinkItemDef[]>(
     () => [
@@ -177,17 +187,21 @@ const SupportLinks: React.FC<SupportLinksProps> = ({
           }
         },
       },
-      {
-        id: "font_manager",
-        type: "link",
-        icon: "font_download",
-        defaultLabel: "커스텀 폰트 설정",
-        onClick: () => {
-          if (onFontManagerSettingsRequest) {
-            onFontManagerSettingsRequest();
-          }
-        },
-      },
+      ...(isSteamDeck
+        ? []
+        : [
+            {
+              id: "font_manager",
+              type: "link",
+              icon: "font_download",
+              defaultLabel: "커스텀 폰트 설정",
+              onClick: () => {
+                if (onFontManagerSettingsRequest) {
+                  onFontManagerSettingsRequest();
+                }
+              },
+            } as SupportLinkItemDef,
+          ]),
       {
         id: "force_restore",
         type: "link",
@@ -330,6 +344,7 @@ const SupportLinks: React.FC<SupportLinksProps> = ({
       onForcedRepairRequest,
       onPatchReservationRequest,
       remoteVersions,
+      isSteamDeck,
     ],
   );
 
