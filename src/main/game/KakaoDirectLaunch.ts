@@ -98,6 +98,20 @@ export const launchKakaoGameDirect = async (
     cwd: installPath,
     stdio: "ignore",
   });
+
+  // 직접 실행이 자동화의 종착점이므로 감시 타이머를 꺼서
+  // "자동화 진행 중 지연이 발생했습니다" 경고가 뜨지 않게 하고,
+  // 게임 위로 자동화 창이 올라오지 않도록 숨긴다.
+  context.disableValidationMode();
+  const automationWindow = context.getActiveAutomationWindow?.();
+  if (
+    automationWindow &&
+    !automationWindow.isDestroyed() &&
+    context.hideAutomationWindow
+  ) {
+    context.hideAutomationWindow(automationWindow, "direct-launch-success");
+  }
+
   const startedAt = Date.now();
   child.on("error", (error) => {
     logger.error(`[KakaoDirectLaunch] Failed to spawn game: ${error.message}`);
