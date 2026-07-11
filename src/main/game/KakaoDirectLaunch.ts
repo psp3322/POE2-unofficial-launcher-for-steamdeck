@@ -23,10 +23,12 @@ import { getGameInstallPath } from "../utils/registry";
 
 const STARTER_SCHEME_PREFIXES = ["kakaogamesstarter://", "daumgamestarter://"];
 
-// 페이로드의 execute 힌트가 비어있거나 신뢰할 수 없을 때 시도할 실행 파일.
-// POE2는 원본 poe2-kakao-launcher가 x64 클라이언트를 직접 실행하는 것이
-// 검증된 방식이라 x64를 우선한다 (비-x64를 먼저 실행하면 크래시 사례 있음).
-const KAKAO_EXECUTABLE_FALLBACKS: Record<string, string[]> = {
+// 게임 클라이언트 실행 파일 (poe1/poe2-kakao-launcher에서 스팀덱 검증된 순서).
+// 주의: 페이로드의 execute 힌트를 우선하면 안 된다 — 힌트가 게임 자체 패처
+// (POE_Launcher.exe / POE2_Launcher.exe)를 가리킬 수 있는데, 패처는 --kakao
+// 토큰 인자를 처리하지 못해 창이 뜨자마자 종료된다. 검증된 클라이언트 exe를
+// 먼저 쓰고 힌트는 최후 수단으로만 사용한다.
+const KAKAO_CLIENT_EXECUTABLES: Record<string, string[]> = {
   POE1: ["PathOfExile_KG.exe", "PathOfExile_x64_KG.exe"],
   POE2: ["PathOfExile_x64_KG.exe", "PathOfExile_KG.exe"],
 };
@@ -68,12 +70,14 @@ export const launchKakaoGameDirect = async (
     return false;
   }
 
-  const candidates = [
-    ...(executeHint && executeHint.toLowerCase().endsWith(".exe")
-      ? [executeHint]
-      : []),
-    ...(KAKAO_EXECUTABLE_FALLBACKS[gameId] ?? KAKAO_EXECUTABLE_FALLBACKS.POE2),
-  ];
+  const knownClients =
+    KAKAO_CLIENT_EXECUTABLES[gameId] ?? KAKAO_CLIENT_EXECUTABLES.POE2;
+  const hintIsUsable =
+    executeHint &&
+    executeHint.toLowerCase().endsWith(".exe") &&
+    // 게임 자체 패처(*_Launcher.exe)는 --kakao 인자를 못 받으므로 제외
+    !executeHint.toLowerCase().includes("launcher");
+  const candidates = [...knownClients, ...(hintIsUsable ? [executeHint] : [])];
   const executable = candidates.find((name) =>
     fs.existsSync(path.win32.join(installPath, name)),
   );
