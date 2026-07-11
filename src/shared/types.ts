@@ -74,6 +74,9 @@ export interface AppConfig {
   processWatchMode: "resource-saving" | "always-on";
   launcherVersion: string;
   aggressivePatchMode: boolean;
+  /** [SteamDeck] lsfg-vk 프레임 생성을 게임 프로세스에 적용 (conf.toml 관리) */
+  lsfgEnabled: boolean;
+  lsfgMultiplier: "2" | "3" | "4";
   skipDaumGameStarterUac: boolean;
   autoResolution: boolean;
   resolutionMode: "1440x960" | "1080x720" | "fullscreen";

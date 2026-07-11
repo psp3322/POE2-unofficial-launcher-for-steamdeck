@@ -108,6 +108,7 @@ import {
   printBanner,
 } from "./utils/logger";
 import { LogParser } from "./utils/LogParser";
+import { applyLsfgConfig } from "./utils/lsfg-config";
 import { PowerShellManager } from "./utils/powershell";
 import {
   getGameInstallPath,
@@ -1835,6 +1836,31 @@ const mainEventHandlers = [
           eventBus.emit(EventType.UPDATE_WINDOW_TITLE, context, undefined);
         }
         syncDebugWindow("ConfigChange");
+      }
+    },
+  },
+  {
+    // [SteamDeck] 런처 설정으로 lsfg-vk 프레임 생성을 게임 프로세스에만
+    // 등록/해제한다 (리눅스 쪽 conf.toml을 Z: 드라이브로 편집)
+    id: "LsfgSettingsHandler",
+    targetEvent: EventType.CONFIG_CHANGE,
+    condition: (event: ConfigChangeEvent) =>
+      event.payload.key === "lsfgEnabled" ||
+      event.payload.key === "lsfgMultiplier",
+    handle: async (_event: ConfigChangeEvent, _context: AppContext) => {
+      const config = getConfig() as AppConfig;
+      const enabled = config.lsfgEnabled === true;
+      const multiplier = Number(config.lsfgMultiplier) || 2;
+
+      const result = await applyLsfgConfig(enabled, multiplier);
+      if (!result.ok) {
+        logger.warn(`[Main] lsfg-vk config update failed: ${result.error}`);
+        return;
+      }
+      if (enabled && !result.installed) {
+        logger.warn(
+          "[Main] lsfg-vk config written, but lsfg-vk does not appear to be installed (Decky Lossless Scaling 필요).",
+        );
       }
     },
   },

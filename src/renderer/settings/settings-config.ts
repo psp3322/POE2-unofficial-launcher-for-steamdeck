@@ -566,6 +566,42 @@ export const SETTINGS_CONFIG: SettingsCategory[] = [
           },
         ],
       },
+      {
+        id: "perf_lsfg",
+        title: "Lossless Scaling 프레임 생성 (스팀덱)",
+        items: [
+          {
+            id: "lsfgEnabled",
+            type: "check",
+            label: "게임에 lsfg-vk 프레임 생성 적용",
+            description:
+              "스팀덱 Decky의 Lossless Scaling(lsfg-vk) 설정에 게임 클라이언트만 등록합니다. " +
+              "lsfg-vk가 설치되어 있어야 하며, 스팀 실행옵션의 전역 lsfg 래퍼는 제거하세요 (런처가 후킹되어 크래시합니다). " +
+              "변경 후 게임을 다시 실행하면 적용됩니다.",
+            icon: "auto_awesome_motion",
+            onChangeListener: (val, { showToast }) => {
+              showToast(
+                `[lsfg 프레임 생성] ${val ? "ON — 게임 재실행 시 적용" : "OFF"}`,
+              );
+            },
+          },
+          {
+            id: "lsfgMultiplier",
+            type: "radio",
+            label: "프레임 배율",
+            dependsOn: "lsfgEnabled",
+            options: [
+              { label: "2배 (권장)", value: "2" },
+              { label: "3배", value: "3" },
+              { label: "4배", value: "4" },
+            ],
+            icon: "speed",
+            onChangeListener: (val, { showToast }) => {
+              showToast(`[lsfg 프레임 배율] ${val}배 — 게임 재실행 시 적용`);
+            },
+          },
+        ],
+      },
     ],
   },
   /* {

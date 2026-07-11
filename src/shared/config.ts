@@ -285,6 +285,8 @@ export const DEFAULT_CONFIG: AppConfig = {
   newsOpenMode: "inline",
   processWatchMode: "resource-saving",
   aggressivePatchMode: false,
+  lsfgEnabled: false,
+  lsfgMultiplier: "2",
   skipDaumGameStarterUac: false,
   autoResolution: true,
   resolutionMode: "1440x960",
