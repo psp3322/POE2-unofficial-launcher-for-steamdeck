@@ -2216,9 +2216,24 @@ function App() {
                       cursor: "pointer",
                     }}
                   >
-                    <span role="img" aria-label="lsfg duck">
-                      🦆
-                    </span>
+                    <svg
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                      aria-hidden="true"
+                      style={{ flexShrink: 0 }}
+                    >
+                      <circle cx="8.2" cy="7.2" r="3.9" />
+                      <polygon points="4.6,6.4 0.8,7.6 4.7,8.9" />
+                      <path d="M4.4 12.6c1.6 1.1 3.7 1.7 6 1.7 2.8 0 5.9-.9 8.3-2.5l3.2-2.1c.6 1 .9 2.2.9 3.4 0 4.4-4.4 7.4-10.4 7.4-5 0-8.9-2.5-9.6-6.2z" />
+                      <circle
+                        cx="9.4"
+                        cy="6.4"
+                        r="0.9"
+                        fill="rgba(0,0,0,0.55)"
+                      />
+                    </svg>
                     프레임 생성 {config.lsfgEnabled === true ? "ON" : "OFF"}
                   </button>
                 )}
