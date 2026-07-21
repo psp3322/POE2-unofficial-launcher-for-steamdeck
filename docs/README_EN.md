@@ -24,7 +24,7 @@ This is a fork of [NERDHEAD-lab/POE2-unofficial-launcher](https://github.com/NER
 1. Switch the Steam Deck to **Desktop Mode**
 2. Download the latest `POE2-Unofficial-Launcher-Setup-....exe` from [Releases](https://github.com/psp3322/POE2-unofficial-launcher-for-steamdeck/releases)
 3. In Steam (Desktop Mode), use **"Add a Non-Steam Game"** and add the downloaded file
-4. In the game's Properties → Compatibility, force **Proton 9.0+ (GE-Proton recommended)**
+4. In the game's Properties → Compatibility, force **Proton Experimental (recommended)** or Proton 9.0+
 5. Launch it — installation runs automatically and the launcher opens. **That's it!** Keep using the same shortcut; no path editing needed
 6. Return to Gaming Mode → log in to Kakao in the launcher → start the game
 
