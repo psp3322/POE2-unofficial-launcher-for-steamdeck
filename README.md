@@ -34,7 +34,7 @@
 1. 스팀덱을 **데스크탑 모드**로 전환
 2. [Releases](https://github.com/psp3322/POE2-unofficial-launcher-for-steamdeck/releases)에서 최신 `POE2-Unofficial-Launcher-Setup-....exe` 다운로드
 3. 데스크탑 모드의 Steam에서 **"비 Steam 게임 추가"**로 다운받은 파일 추가
-4. 추가한 게임 속성 → 호환 → **Proton 9.0 이상 (GE-Proton 권장)** 강제 지정
+4. 추가한 게임 속성 → 호환 → **Proton Experimental (권장)** 또는 Proton 9.0 이상 강제 지정
 5. 실행하면 설치가 자동으로 진행되고 런처가 뜹니다 — **여기서 끝!** 경로 수정 없이 이후에도 같은 바로가기만 실행하면 됩니다
 6. 게임 모드로 전환 → 런처에서 카카오 로그인 → 게임 시작
 
