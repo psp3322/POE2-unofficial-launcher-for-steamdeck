@@ -2,6 +2,9 @@ import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+import { dialog } from "electron";
+
+import { runGameSetupInstaller } from "./GameSetupInstaller";
 import { AppConfig } from "../../shared/types";
 import { AppContext } from "../events/types";
 import { logger } from "../utils/logger";
@@ -78,11 +81,25 @@ export const launchKakaoGameDirect = async (
   const gameId = config.activeGame;
 
   const installPath = await getGameInstallPath("Kakao Games", gameId);
+
+  // 게임이 아직 설치되지 않은 경우: Windows에서는 이 프로토콜을 받은
+  // 카카오 스타터가 게임 설치까지 담당한다. 스팀덱에는 스타터가 없으므로
+  // 여기서 공식 설치 프로그램을 대신 실행한다. (그냥 실패시키면 웹페이지가
+  // "스타터를 설치하세요" 팝업을 계속 띄운다)
   if (!installPath) {
-    logger.error(
-      `[KakaoDirectLaunch] Install path not resolved for Kakao Games/${gameId}.`,
+    logger.log(
+      `[KakaoDirectLaunch] Game not installed (Kakao Games/${gameId}). Launching official setup instead of starter.`,
     );
-    return false;
+    lastLaunchAt = Date.now();
+    const setupResult = await runGameSetupInstaller("Kakao Games", gameId);
+    void dialog.showMessageBox({
+      type: setupResult.ok ? "info" : "error",
+      title: "Path of Exile",
+      message: setupResult.ok
+        ? "게임이 설치되어 있지 않아 공식 설치 프로그램을 실행했습니다.\n(다운로드에 시간이 걸릴 수 있습니다)\n\n설치 완료 후 런처에서 게임 시작을 다시 눌러주세요.\n웹페이지의 '카카오게임즈 스타터 설치' 안내는 무시하셔도 됩니다."
+        : `설치 프로그램 실행에 실패했습니다: ${setupResult.error ?? "알 수 없는 오류"}`,
+    });
+    return setupResult.ok;
   }
 
   const knownClients =
