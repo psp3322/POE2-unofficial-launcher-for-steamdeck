@@ -36,10 +36,25 @@ const KAKAO_CLIENT_EXECUTABLES: Record<string, string[]> = {
 export const isKakaoStarterUrl = (url: string): boolean =>
   STARTER_SCHEME_PREFIXES.some((prefix) => url.startsWith(prefix));
 
+// 카카오 페이지는 실행이 감지되지 않으면 프로토콜을 여러 번 재발사한다.
+// 그때마다 게임을 또 실행하면 첫 실행이 토큰을 소모한 뒤라 두 번째 실행이
+// "서버와의 접속이 예기치 않게 해제되었습니다"로 죽는다. 쿨다운으로 중복
+// 실행을 막는다. (재시도는 런처의 게임 시작 버튼으로 새 토큰을 받아야 함)
+const LAUNCH_COOLDOWN_MS = 20000;
+let lastLaunchAt = 0;
+
 export const launchKakaoGameDirect = async (
   context: AppContext,
   url: string,
 ): Promise<boolean> => {
+  const now = Date.now();
+  if (now - lastLaunchAt < LAUNCH_COOLDOWN_MS) {
+    logger.log(
+      `[KakaoDirectLaunch] Ignoring duplicate starter protocol (${((now - lastLaunchAt) / 1000).toFixed(1)}s since last launch).`,
+    );
+    return true;
+  }
+
   let payload = decodeURIComponent(url);
   for (const prefix of STARTER_SCHEME_PREFIXES) {
     payload = payload.replace(prefix, "");
@@ -94,6 +109,7 @@ export const launchKakaoGameDirect = async (
     `[KakaoDirectLaunch] Launching ${executablePath} with Kakao token (direct, no starter)`,
   );
 
+  lastLaunchAt = Date.now();
   const child = spawn(executablePath, ["--kakao", token, userCode], {
     cwd: installPath,
     stdio: "ignore",

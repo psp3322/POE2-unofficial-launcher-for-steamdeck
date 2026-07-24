@@ -449,6 +449,14 @@ if (isWineEnvironment()) {
     };
     contents.on("will-navigate", interceptStarterProtocol);
     contents.on("will-redirect", interceptStarterProtocol);
+    // iframe 안에서 프로토콜을 쏘는 경우까지 커버
+    contents.on("will-frame-navigate", (event) => {
+      if (!isKakaoStarterUrl(event.url)) return;
+      event.preventDefault();
+      if (appContext) {
+        void launchKakaoGameDirect(appContext, event.url);
+      }
+    });
   });
 }
 
@@ -1573,6 +1581,16 @@ const createHandleWindowOpen =
     logger.log(
       `[Main] Window Open Request: ${details.url} (ParentWC: ${parentWebContentsId}, Partition: ${parentPartition || "default"})`,
     );
+
+    // [SteamDeck] 카카오 페이지가 스타터 프로토콜을 window.open()으로 쏘는
+    // 경우가 있다. will-navigate 가로채기는 이 경로를 못 잡으므로 여기서도
+    // 직접 실행으로 연결한다 (놓치면 페이지가 '스타터 설치' 안내를 띄움).
+    if (isWineEnvironment() && isKakaoStarterUrl(details.url)) {
+      if (appContext) {
+        void launchKakaoGameDirect(appContext, details.url);
+      }
+      return { action: "deny" as const };
+    }
 
     const isDebugEnv = process.env.VITE_SHOW_GAME_WINDOW === "true";
     const showInactive = getEffectiveConfig("show_inactive_windows") === true;
